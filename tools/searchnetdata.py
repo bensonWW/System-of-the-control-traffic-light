@@ -5,7 +5,6 @@ def search(road1,road2,road3):
     road1List = []
     fromm = ""
     to = ""
-    roadId = ""
     for idd in roadInfoNametype[road1]:
         fromm = roadInfoNametype[road1][idd]["from"]
         to = roadInfoNametype[road1][idd]["to"]
@@ -22,9 +21,7 @@ def search(road1,road2,road3):
                 to = roadInfoNametype[road3][idd]["from"]
             elif roadInfoNametype[road3][idd]["to"] in FT:
                 to = roadInfoNametype[road3][idd]["to"]
-    for idd in roadInfoNametype[road1]:
-        if roadInfoNametype[road1][idd]["from"] == fromm and roadInfoNametype[road1][idd]["to"] == to:
-            print(idd)
+    return[fromm,to]
 path = "./data/ntut-the way.net.xml"
 tree = ET.parse(path)
 root = tree.getroot()
@@ -42,7 +39,7 @@ for child in root:
         roadInfoNametype[name][idd]["from"] = fromm
         roadInfoNametype[name][idd]["to"] = to
 
-search("新生南路一段","新生南路一段","臨沂街")
+print(search("市民大道二段","新生北路一段62巷","八德路二段"))
 
 #if __name__ == "__main__":
     

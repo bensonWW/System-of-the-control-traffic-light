@@ -30,4 +30,4 @@ def getData():
         os.remove("GetVD.xml")
     return roadInfo
 if __name__ == "__main__":
-    print(getData()["忠孝東路  八德路-林森北路"])
+    print(getData())
