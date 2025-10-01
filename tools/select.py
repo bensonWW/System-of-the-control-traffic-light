@@ -6,7 +6,20 @@ def inrange(lon_min,lat_min, lon_max ,lat_max,StartWgsX,StartWgsY,EndWgsX,EndWgs
     end_in = (lon_min <= EndWgsX <= lon_max and 
               lat_min <= EndWgsY <= lat_max)
     return start_in or end_in
-def main(): 
+def convert(roadInfo,lon_min,lat_min, lon_max ,lat_max):
+    cDeltax = float(sd.getConverposition()[2]) #轉換座標
+    cDeltay = float(sd.getConverposition()[3])
+    for name in roadInfo:
+        lon = float(roadInfo[name]["StartWgsX"])
+        lat = float(roadInfo[name]["StartWgsY"])
+        roadInfo[name]["StartWgsX"] = ((lon - lon_min) / (lon_max - lon_min)) * cDeltax
+        roadInfo[name]["StartWgsY"] = ((lat - lat_min) / (lat_max - lat_min)) * cDeltay
+        lon = float(roadInfo[name]["EndWgsX"])
+        lat = float(roadInfo[name]["EndWgsY"])
+        roadInfo[name]["EndWgsX"] = ((lon - lon_min) / (lon_max - lon_min)) * cDeltax
+        roadInfo[name]["EndWgsY"] = ((lat - lat_min) / (lat_max - lat_min)) * cDeltay
+    return roadInfo
+def select(): 
     roadInfo = gb.getData()
     temp = {}
     lon_min,lat_min, lon_max ,lat_max = sd.getmapscope()
@@ -17,7 +30,11 @@ def main():
         EndWgsY = float(roadInfo[roadName]["EndWgsY"])
         if inrange(lon_min,lat_min, lon_max ,lat_max,StartWgsX,StartWgsY,EndWgsX,EndWgsY):
             temp[roadName] = roadInfo[roadName]
-    roadName = temp
-    print(roadName)
+    roadInfo = temp
+    roadInfo = convert(roadInfo,lon_min,lat_min, lon_max ,lat_max)
+    for roadName in roadInfo:
+        roadInfo[roadName]["from"] = sd.search(roadInfo[roadName]["StartWgsX"],roadInfo[roadName]["StartWgsY"])
+        roadInfo[roadName]["to"] = sd.search(roadInfo[roadName]["EndWgsX"],roadInfo[roadName]["EndWgsY"])
+    print(roadInfo)
 if __name__ == "__main__":
-    main()
+    select()
