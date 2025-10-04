@@ -35,6 +35,6 @@ def select():
     for roadName in roadInfo:
         roadInfo[roadName]["from"] = sd.search(roadInfo[roadName]["StartWgsX"],roadInfo[roadName]["StartWgsY"])
         roadInfo[roadName]["to"] = sd.search(roadInfo[roadName]["EndWgsX"],roadInfo[roadName]["EndWgsY"])
-    print(roadInfo)
+    return roadInfo
 if __name__ == "__main__":
-    select()
+    print(select())
