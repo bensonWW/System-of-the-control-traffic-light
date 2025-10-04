@@ -21,7 +21,7 @@ def search(position_x, position_y):
     position_x, position_y = float(position_x), float(position_y)
 
     for child in root:
-        if child.tag == "junction" and not child.attrib["id"].startswith(":"):
+        if child.tag == "junction" and not child.attrib["id"].startswith(":") and child.attrib["type"] == "traffic_light":
             x, y = float(child.attrib["x"]), float(child.attrib["y"])
             dist = math.dist((x, y), (position_x, position_y))
             roadInfo[child.attrib["id"]] = [x, y, dist]
