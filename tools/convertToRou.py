@@ -23,6 +23,7 @@ def run_duarouter(net_file, trip_file,outputalt_file,output_file):
         print("STDERR:\n", p.stderr)   # ← 這行會告訴你真正的錯
         trip_file = outputalt_file
     p.check_returncode()
+    os.remove("./data/trips.xml")
 def generate_trip(road_info):  
     trip = ET.Element("routes")
     percentage = 0.8
@@ -40,7 +41,6 @@ def generate_trip(road_info):
                       depart = "0")
     ET.ElementTree(trip).write("./data/trips.xml",encoding="utf-8",xml_declaration=True)
     print("已生成")
-
 
 generate_trip(ST.select())
 run_duarouter("./data/ntut-the way.net.xml", "./data/trips.xml", "./data/output.rou.alt.xml","./data/output.rou.xml")
