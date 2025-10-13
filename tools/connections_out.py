@@ -460,12 +460,13 @@ if __name__ == "__main__":
         save_timeline_to_csv(timeline, "traffic_light_timeline.csv")
 
         import os
-        
+        if not os.path.exists("紅綠燈個別檔案"):
+            os.makedirs("紅綠燈個別檔案")
         for tl in traffic_lights:
             try:
                 tl_id = tl['id']
                 safe_tl_id = tl_id.replace('/', '_').replace('\\', '_').replace(':', '_')[:30]
-                individual_output_dir = f"紅綠燈{safe_tl_id}檔案"
+                individual_output_dir = f"紅綠燈個別檔案/紅綠燈{safe_tl_id}檔案"
                 if not os.path.exists(individual_output_dir):
                     os.makedirs(individual_output_dir)
                 basic_info_file = os.path.join(individual_output_dir, f"tl_{safe_tl_id}_info.csv")
