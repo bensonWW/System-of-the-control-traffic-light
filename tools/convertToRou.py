@@ -61,7 +61,7 @@ def generate_trip(road_info):
                           toJunction=road_info[roadName]["to"],
                           begin="0",                
                           end=str(simulation_duration), 
-                          vehsPerHour=str(observed_volume_per_hour), # 使用實際的車流量 (輛/小時)
+                          number=str(int(observed_volume_per_hour)), # 使用實際的車流量 (輛/小時)
                           )
     ET.ElementTree(trip).write("./data/trips.xml",encoding="utf-8",xml_declaration=True)
     print("已生成")
