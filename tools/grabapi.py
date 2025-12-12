@@ -22,7 +22,7 @@ def getData():
         name = ""
         for child2 in child1:
             if(child2.tag.split("}")[1] == "SectionName"):
-                if("高" in child2.text):
+                if("高" in child2.text or "快" in child2.text):
                     name = " "
                 else:
                     name = child2.text
