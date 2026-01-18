@@ -1,5 +1,6 @@
 import xml.etree.ElementTree as ET
 import sumolib as SLB
+import selectRoad as ST
 def getMapData():
     path = "./data/ntut-the way.net.xml"
     tree = ET.parse(path)
@@ -30,10 +31,16 @@ def fixtheRoadData():
     tripPath = "./data/output.rou.xml"
     root = ET.parse(tripPath).getroot()
     net = SLB.net.readNet(path)
+    temp = {}
     for edgeId in mapData:
         vol = 0
         if(mapData[edgeId][2] == False):
-            continue
-            # vol += 
+            edge = net.getEdge(edgeId)
+            fromNode = edge.getFromNode()
+            toNode = edge.getToNode()
+            print()
+            vol +=  ST.select()[fromNode]["TotalVol"]
+            vol +=  ST.select()[toNode]["TotalVol"]
+    return temp
 if __name__ == "__main__":
     print(fixtheRoadData())
