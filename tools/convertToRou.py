@@ -65,6 +65,6 @@ def generate_trip(road_info):
                           )
     ET.ElementTree(trip).write("./data/trips.xml",encoding="utf-8",xml_declaration=True)
     print("已生成")
-
-generate_trip(ST.select())
-run_duarouter("./data/ntut-the way.net.xml", "./data/trips.xml", "./data/output.rou.alt.xml","./data/output.rou.xml")
+if __name__ == "__main__":
+    generate_trip(ST.select())
+    run_duarouter("./data/ntut-the way.net.xml", "./data/trips.xml", "./data/output.rou.alt.xml","./data/output.rou.xml")
