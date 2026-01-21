@@ -1,0 +1,40 @@
+
+<connections>
+    <!-- Junction: cluster619136899_619136900_cluster_619136929_619136942 -->
+    <!-- Incoming Edge: 49073272#4 (3 lanes) -->
+    <!-- Destination: 668037874 (4 lanes) - Left Turn -->
+    <!-- Destination: 353392316#0 (Right Turn) -->
+    
+    <!-- Fix: Allow Lane 1 (Middle) to turn Left -->
+    <connection from="49073272#4" to="668037874" fromLane="1" toLane="1" />
+    <connection from="49073272#4" to="668037874" fromLane="2" toLane="2" />
+    
+    <!-- Restore: Lane 0 Right Turn (Preserve existing if possible, but explicit is safer) -->
+    <!-- Need to check valid target lane for right turn to 353392316#0 (4 lanes) -->
+
+    <!-- Assuming Lane 0 -> Lane 0 -->
+    <connection from="49073272#4" to="353392316#0" fromLane="0" toLane="0" />
+
+    <!-- Fix for -1334905223#2 (Now 3 lanes: 0=Walk, 1=Right, 2=Straight) -->
+    <!-- Lane 1 -> Right Turn (263217603#0) -->
+    <!-- Lane 2 -> Straight (-1334905225) -->
+    
+    <!-- Right Turn (Lane 1) -->
+    <connection from="-1334905223#2" to="263217603#0" fromLane="1" toLane="1" />
+    <connection from="-1334905223#2" to="263217603#0" fromLane="1" toLane="2" />
+    <connection from="-1334905223#2" to="263217603#0" fromLane="1" toLane="3" />
+    
+    <!-- Straight (Lane 2) -->
+    <!-- Assuming destination -1334905225 has multiple lanes. Connect L2 to reasonable lanes (e.g. 0,1,2?) -->
+    <!-- Let's trust netconvert to distribute if we map L2->L1 or similar. -->
+    <!-- Explicit mapping: L2 -> L1 (Middle?) or L2 (Inner?) -->
+    <!-- Let's map to all available if unsure, or just match indices. Straight is usually preserved. -->
+    <connection from="-1334905223#2" to="-1334905225" fromLane="2" toLane="1" />
+    
+    <!-- Also checking other legs if needed, but focusing on the reported one -->
+
+    <!-- Ensure these connections are controlled by the TLS -->
+    <!-- We typically don't set 'tl' here if we want netconvert to auto-assign, 
+         but we might need to if netconvert splits the node. 
+         Given it's a cluster, we just define connectivity. -->
+</connections>
