@@ -73,10 +73,11 @@ if __name__ == "__main__":
     sumoBinary = checkBinary('sumo')
     
     # Or use sumo-gui
-    # sumoBinary = checkBinary('sumo-gui')
+    #sumoBinary = checkBinary('sumo-gui')
 
     # Start TraCI
-    # Added --start to auto-start simulation and --quit-on-end to close GUI when done
-    traci.start([sumoBinary, "-c", "./data/ntut-the way.sumocfg"])
-    
+    # Added --start to auto-start simulation
+    # Added --delay 100 to slow down simulation (100ms per step) for visibility
+    #traci.start([sumoBinary, "-c", "data/ntut-the way.sumocfg", "--tripinfo-output", "tripinfo.xml", "--start", "--delay", "100"])
+    traci.start([sumoBinary, "-c", "data/ntut-the way.sumocfg", "--tripinfo-output", "tripinfo.xml"])
     run()
