@@ -4,4 +4,5 @@ import fixRoadData as FRD
 CTR.generate_trip(ST.select())
 CTR.run_duarouter("./data/ntut-the way.net.xml", "./data/trips.xml", "./data/output.rou.alt.xml","./data/output.rou.xml")
 fixed_volumes = FRD.fixtheRoadData()
-print("Fixed Volumes:", fixed_volumes)
+edgesVolume = FRD.fixtheRoadData()
+FRD.addFlow(edgesVolume)
