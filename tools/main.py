@@ -1,4 +1,7 @@
-import convertToRou as ctr
+import convertToRou as CTR
 import selectRoad as ST
-ctr.generate_trip(ST.select())
-ctr.run_duarouter("./data/ntut-the way.net.xml", "./data/trips.xml", "./data/output.rou.alt.xml","./data/output.rou.xml")
+import fixRoadData as FRD
+CTR.generate_trip(ST.select())
+CTR.run_duarouter("./data/ntut-the way.net.xml", "./data/trips.xml", "./data/output.rou.alt.xml","./data/output.rou.xml")
+fixed_volumes = FRD.fixtheRoadData()
+print("Fixed Volumes:", fixed_volumes)
