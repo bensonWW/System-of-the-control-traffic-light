@@ -55,6 +55,35 @@ def fixtheRoadData():
     for edgeId in temp:
         del edgesVolume[edgeId]
     return edgesVolume
+def addFlow(edgesVolume,T = 300):
+    tree = ET.parse("./data/output.rou.alt.xml")
+    root = tree.getroot()
+    edges = []
+    for edge, num in edgesVolume.items():
+        if num > 0:
+            edges += [edge] * int(num)
+
+    if not edges:
+        return
+
+    gap = T / len(edges)
+    depart = 0.0
+
+    for i, edge in enumerate(edges):
+        v = ET.SubElement(root, "vehicle", {
+            "id": f"addVeh_{i}",
+            "type": "Car2",
+            "depart": f"{depart:.2f}"
+        })
+        ET.SubElement(v, "route", {"edges": edge})
+        depart += gap
+
+    vehicles = [c for c in root if c.tag == "vehicle"]
+    others = [c for c in root if c.tag != "vehicle"]
+    vehicles.sort(key=lambda x: float(x.get("depart", 0)))
+    root[:] = others + vehicles
+
+    tree.write("./data/output.rou.alt.xml", encoding="utf-8", xml_declaration=True)
 if __name__ == "__main__":
     edgesVolume = fixtheRoadData()
     print(edgesVolume)
