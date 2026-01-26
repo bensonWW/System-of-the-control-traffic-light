@@ -51,6 +51,9 @@ def fixtheRoadData():
             for outEdge in outgoingEdgesId:
                 if edgesVolume[outEdge.getID()] == 0:
                     edgesVolume[outEdge.getID()] += int(edgesVolume[edgeId] * ALPHA)
+    temp = getEdgesVolume()
+    for edgeId in temp:
+        del edgesVolume[edgeId]
     return edgesVolume
 if __name__ == "__main__":
     edgesVolume = fixtheRoadData()
