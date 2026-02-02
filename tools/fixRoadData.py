@@ -25,18 +25,34 @@ def getEdgesVolume():
             continue
         for name in roadInfo:
             if(roadInfo[name]["from"] == fromNode and roadInfo[name]["to"] == toNode):
+                passNum = 0
                 for edgeId in passRoads:
                     if edgeId not in finalInfo:
-                        finalInfo[edgeId] = [int(float(roadInfo[name]["TotalVol"])),1]
+                        finalInfo[edgeId] = [int(float(roadInfo[name]["TotalVol"])) * pow(0.75, passNum),1]
                     else:
-                        finalInfo[edgeId][0] += int(float(roadInfo[name]["TotalVol"]))
+                        finalInfo[edgeId][0] += int(float(roadInfo[name]["TotalVol"])) * pow(0.75, passNum)
                         finalInfo[edgeId][1] += 1
+                    passNum += 1
     for edgeId in finalInfo:
         finalInfo[edgeId] = finalInfo[edgeId][0] // finalInfo[edgeId][1]
     return finalInfo
-def fixtheRoadData():
+def generateEmptyEdgesVolume(net,edgesVolume,roadId,visited):
     ALPHA = 0.35
-    MAX_ITERS = 800
+    inComingedges = net.getEdge(roadId).getFromNode().getIncoming()
+    vol = 0
+    for inEdge in inComingedges:
+        inEdgeId = inEdge.getID()
+        if inEdgeId in visited:
+            continue
+        else:
+            visited.add(inEdgeId)
+        if edgesVolume[inEdgeId] == 0:
+            vol += generateEmptyEdgesVolume(net,edgesVolume,inEdgeId,visited) * ALPHA
+        else:
+            vol += edgesVolume[inEdgeId] * ALPHA
+    return vol
+
+def fixtheRoadData():
     net_path = "./data/ntut-the way.net.xml"
     mapData = getMapData()
     edgesVolume = getEdgesVolume()
@@ -44,13 +60,9 @@ def fixtheRoadData():
     for edgeId in mapData:
         if edgeId not in edgesVolume:
             edgesVolume[edgeId] = 0
-    for iter in range(MAX_ITERS):
-        for edgeId in edgesVolume:
-            edge = net.getEdge(edgeId)
-            outgoingEdgesId = edge.getToNode().getOutgoing()
-            for outEdge in outgoingEdgesId:
-                if edgesVolume[outEdge.getID()] == 0:
-                    edgesVolume[outEdge.getID()] += int(edgesVolume[edgeId] * ALPHA)
+    for edgeId in edgesVolume:
+        if edgesVolume[edgeId] == 0:
+            edgesVolume[edgeId] += round(generateEmptyEdgesVolume(net,edgesVolume,edgeId,set()))
     temp = getEdgesVolume()
     for edgeId in temp:
         del edgesVolume[edgeId]
@@ -62,13 +74,10 @@ def addFlow(edgesVolume,T = 300):
     for edge, num in edgesVolume.items():
         if num > 0:
             edges += [edge] * int(num)
-
     if not edges:
         return
-
     gap = T / len(edges)
     depart = 0.0
-
     for i, edge in enumerate(edges):
         v = ET.SubElement(root, "vehicle", {
             "id": f"addVeh_{i}",
@@ -77,12 +86,10 @@ def addFlow(edgesVolume,T = 300):
         })
         ET.SubElement(v, "route", {"edges": edge})
         depart += gap
-
     vehicles = [c for c in root if c.tag == "vehicle"]
     others = [c for c in root if c.tag != "vehicle"]
     vehicles.sort(key=lambda x: float(x.get("depart", 0)))
     root[:] = others + vehicles
-
     tree.write("./data/output.rou.alt.xml", encoding="utf-8", xml_declaration=True)
 if __name__ == "__main__":
     edgesVolume = fixtheRoadData()
