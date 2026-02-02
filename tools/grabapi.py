@@ -22,10 +22,14 @@ def getData():
         name = ""
         for child2 in child1:
             if(child2.tag.split("}")[1] == "SectionName"):
-                name = child2.text
+                if("高" in child2.text or "快" in child2.text):
+                    name = " "
+                else:
+                    name = child2.text
             else:
                 tempDict[child2.tag.split("}")[1]] = child2.text
-        roadInfo[name] = tempDict
+        if(name != " "):
+            roadInfo[name] = tempDict
     if(os.path.exists("GetVD.xml")):
         os.remove("GetVD.xml")
     return roadInfo
