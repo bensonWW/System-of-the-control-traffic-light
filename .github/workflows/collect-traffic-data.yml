@@ -3,8 +3,8 @@ name: Collect Traffic Data
 on:
   schedule:
     # Run every 5 minutes
-    - cron: '*/5 * * * *'
-  workflow_dispatch:  # Allow manual trigger
+    - cron: "*/5 * * * *"
+  workflow_dispatch: # Allow manual trigger
 
 permissions:
   contents: write
@@ -12,7 +12,7 @@ permissions:
 jobs:
   collect-data:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout Data branch
         uses: actions/checkout@v4
@@ -23,7 +23,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
       - name: Debug - List directory contents
         run: |
@@ -61,5 +61,24 @@ jobs:
           else
             TIMESTAMP=$(date +'%Y-%m-%d %H:%M:%S')
             git commit -m "📊 Auto-collect traffic data: ${TIMESTAMP}"
-            git push origin Data
+            
+            # Retry push with pull --rebase to handle concurrent conflicts
+            MAX_RETRIES=3
+            RETRY_COUNT=0
+            while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+              if git push origin Data; then
+                echo "Push successful!"
+                break
+              else
+                RETRY_COUNT=$((RETRY_COUNT + 1))
+                if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+                  echo "Push failed, pulling and retrying (attempt $RETRY_COUNT of $MAX_RETRIES)..."
+                  git pull --rebase origin Data
+                  sleep $((RETRY_COUNT * 2))
+                else
+                  echo "Push failed after $MAX_RETRIES attempts"
+                  exit 1
+                fi
+              fi
+            done
           fi
