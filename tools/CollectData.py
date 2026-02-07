@@ -29,7 +29,7 @@ while True:
     try:
         data = SR.select()
         current_time = datetime.datetime.now()
-        if (current_time - start_time).total_seconds() >= 301:
+        if (current_time - start_time).total_seconds() >= 120:
             filename = f"traffic_data_{current_time.strftime('%Y%m%d_%H%M%S')}.json"
             filepath = os.path.join(output_dir, filename)
             record = {
