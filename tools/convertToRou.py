@@ -49,8 +49,7 @@ def generate_trip(road_info):
         ET.SubElement(trip,
                       "vType",id = f"Car{index}",
                       vClass = "passenger",color = "0,1,0",
-                      length = "5",
-                      maxSpeed = str((float(road_info[roadName]["AvgSpd"]) / percentage) /3.6))
+                      length = "5")
         observed_volume_per_hour = float(road_info[roadName].get("TotalVol", 0))
         if observed_volume_per_hour > 0:
             ET.SubElement(trip, 
