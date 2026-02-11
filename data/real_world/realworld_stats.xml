@@ -1,22 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<!-- generated on 2026-01-17 15:19:46 by Eclipse SUMO sumo Version 1.24.0
+<!-- generated on 2026-01-21 22:45:31 by Eclipse SUMO GUI Version 1.24.0
 <sumoConfiguration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/sumoConfiguration.xsd">
 
     <input>
-        <net-file value="data/real_world.net.xml"/>
-        <route-files value="data/output.rou.xml"/>
-        <additional-files value="data/real_world.poly.xml"/>
+        <net-file value="data/real_world/realworld_network.net.xml"/>
+        <route-files value="data/real_world/realworld_routes.rou.xml"/>
+        <additional-files value="data/real_world/realworld_tls.add.xml,data/real_world/realworld_poly.poly.xml"/>
     </input>
 
     <output>
-        <tripinfo-output value="data/tripinfos.xml"/>
-        <statistic-output value="data/stats.xml"/>
+        <output-prefix value="realworld_"/>
+        <tripinfo-output value="data/real_world/tripinfos.xml"/>
+        <statistic-output value="data/real_world/stats.xml"/>
     </output>
-
-    <time>
-        <end value="10"/>
-    </time>
 
     <processing>
         <ignore-route-errors value="true"/>
@@ -29,24 +26,29 @@
 
     <report>
         <verbose value="true"/>
-        <duration-log.disable value="true"/>
         <duration-log.statistics value="true"/>
         <no-step-log value="true"/>
     </report>
 
+    <traci_server>
+        <remote-port value="52866"/>
+    </traci_server>
+
+    <gui_only>
+        <start value="true"/>
+    </gui_only>
+
 </sumoConfiguration>
 -->
 
-<statistics xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/statist-->
-
 <statistics xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/statistic_file.xsd">
-    <performance clockBegin="7587.57" clockEnd="9143.54" clockDuration="1555.97" traciDuration="0.00" realTimeFactor="0.00" vehicleUpdatesPerSecond="0.00" personUpdatesPerSecond="0.00" begin="0.00" end="0.00" duration="0.00"/>
-    <vehicles loaded="258" inserted="0" running="0" waiting="0"/>
-    <teleports total="0" jam="0" yield="0" wrongLane="0"/>
+    <performance clockBegin="29293.22" clockEnd="29345.78" clockDuration="52.56" traciDuration="41.07" realTimeFactor="6.45" vehicleUpdatesPerSecond="14918.65" personUpdatesPerSecond="0.00" begin="0.00" end="339.00" duration="339.00"/>
+    <vehicles loaded="18991" inserted="6969" running="3236" waiting="12022"/>
+    <teleports total="8" jam="3" yield="2" wrongLane="3"/>
     <safety collisions="0" emergencyStops="0" emergencyBraking="0"/>
     <persons loaded="0" running="0" jammed="0"/>
     <personTeleports total="0" abortWait="0" wrongDest="0"/>
-    <vehicleTripStatistics count="0" routeLength="0.00" speed="0.00" duration="0.00" waitingTime="0.00" timeLoss="0.00" departDelay="0.00" departDelayWaiting="-1.00" totalTravelTime="0.00" totalDepartDelay="0.00"/>
+    <vehicleTripStatistics count="3733" routeLength="251.12" speed="5.38" duration="52.78" waitingTime="19.84" timeLoss="32.19" departDelay="26.20" departDelayWaiting="-1.00" totalTravelTime="197020.00" totalDepartDelay="97812.06"/>
     <pedestrianStatistics number="0" routeLength="0.00" duration="0.00" timeLoss="0.00"/>
     <rideStatistics number="0"/>
     <transportStatistics number="0"/>

@@ -190,6 +190,45 @@ def fix_cluster_tls(network_name: str):
                     p.set('state', "".join(state))
                     updates += 1
 
+
+
+    # [NEW] Stop Pedestrians in Phase 9 (Exclusive Turn)
+    # Cars won't move if pedestrians have Green.
+    ped_indices = []
+    for c in root.findall('connection'):
+        if c.get('tl') == target_tls:
+             idx = c.get('linkIndex')
+             if idx:
+                 # Check allow
+                 allow = "all"
+                 from_edge = c.get('from')
+                 from_lane = c.get('fromLane')
+                 for e in root.findall('edge'):
+                     if e.get('id') == from_edge:
+                         for l in e.findall('lane'):
+                             if l.get('index') == from_lane:
+                                 allow = l.get('allow')
+                                 break
+                 if allow and 'pedestrian' in allow and 'passenger' not in allow:
+                     ped_indices.append(int(idx))
+    
+    if ped_indices:
+        print(f"  [Fix] Setting Pedestrians to Red in Phase {target_phase_idx} (indices: {ped_indices})")
+        for tl in root.findall('tlLogic'):
+            if tl.get('id') == target_tls:
+                phases = tl.findall('phase')
+                if len(phases) > target_phase_idx:
+                    p = phases[target_phase_idx]
+                    state = list(p.get('state'))
+                    changed_ped = False
+                    for p_idx in ped_indices:
+                        if p_idx < len(state):
+                            state[p_idx] = 'r'
+                            changed_ped = True
+                    if changed_ped:
+                        p.set('state', "".join(state))
+                        updates += 1
+
     # [NEW] Explicit Cleanup
     # Remove unwanted connection from -1334905223#2 Lane 0 (User says it's a sidewalk)
     # netconvert -x might not have cleared it if it came from -s
