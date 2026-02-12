@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Standalone script for collecting traffic data from Taipei City Open Data API,
-processing it into SUMO routes, and saving results to data/DDATA.
+processing it into SUMO routes, and saving results to data/VehicleData.
 """
 import requests
 import xml.etree.ElementTree as ET
@@ -117,11 +117,10 @@ def download_and_parse_data():
 
 def ensure_network_file():
     """
-    Ensures that 'data/ntut-the way.net.xml' exists, as legacy tools depend on it.
+    Ensures that 'data/ntut_network_split.net copy.xml' exists for tools.
     If missing, tries to copy from 'data/ntut_network_split.net.xml'.
-    Also ensures 'data/ntut_network_split.net.xml' is available for the new pipeline.
     """
-    legacy_target = "./data/ntut-the way.net.xml"
+    legacy_target = "./data/ntut_network_split.net copy.xml"
     source_file = "./data/ntut_network_split.net.xml"
     
     # Create data directory if it doesn't exist
@@ -210,9 +209,7 @@ def run_main_process(road_data):
         # But we can try using the 'net_file' variable if 'convertToRou' supports it.
         # Check convertToRou.run_duarouter signature: def run_duarouter(net_file, ...)
         
-        # We start with the file we ensured exists (likely ntut-the way.net.xml or split)
-        # To be safe for fixRoadData (which hardcodes the name), we use "ntut-the way.net.xml"
-        legacy_net_path = "./data/ntut-the way.net.xml"
+        legacy_net_path = "./data/ntut_network_split.net copy.xml"
         
         CTR.run_duarouter(
             legacy_net_path, 
@@ -224,7 +221,7 @@ def run_main_process(road_data):
         print("Refining road data (imputation)...")
         # fixRoadData calls methods that use ST.select(), which is patched above
         # It also reads ./data/output.rou.xml which we just generated
-        # AND it hardcodes reading "./data/ntut-the way.net.xml" inside getMapData()
+        # fixRoadData reads "./data/ntut_network_split.net copy.xml" inside getMapData()
         edges_volume = FRD.fixtheRoadData()
         
         print("Generating final trips based on imputed volume...")
@@ -256,7 +253,7 @@ def run_main_process(road_data):
         return None
 
 
-def save_final_output(source_file, target_dir="data/DDATA"):
+def save_final_output(source_file, target_dir="data/VehicleData"):
     """Save the generated route file to the target directory."""
     if not source_file or not os.path.exists(source_file):
         print(f"Source file not found: {source_file}")
@@ -296,7 +293,7 @@ def main():
     output_rou_file = run_main_process(road_info)
     
     if output_rou_file:
-        # 3. Save to DDATA
+        # 3. Save to VehicleData
         filepath = save_final_output(output_rou_file)
         
         if filepath:

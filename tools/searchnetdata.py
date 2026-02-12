@@ -1,7 +1,7 @@
 import xml.etree.ElementTree as ET
 import math
 def getRoot():
-    path = "./data/ntut-the way.net.xml"
+    path = "./data/ntut_network_split.net copy.xml"
     tree = ET.parse(path)
     root = tree.getroot()
     return root

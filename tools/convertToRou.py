@@ -66,4 +66,4 @@ def generate_trip(road_info):
     print("已生成")
 if __name__ == "__main__":
     generate_trip(ST.select())
-    run_duarouter("./data/ntut-the way.net.xml", "./data/trips.xml", "./data/output.rou.alt.xml","./data/output.rou.xml")
+    run_duarouter("./data/ntut_network_split.net copy.xml", "./data/trips.xml", "./data/output.rou.alt.xml","./data/output.rou.xml")

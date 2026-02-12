@@ -3,7 +3,7 @@ from math import floor
 import sumolib as SLB
 import selectRoad as ST
 def getMapData():
-    path = "./data/ntut-the way.net.xml"
+    path = "./data/ntut_network_split.net copy.xml"
     tree = ET.parse(path)
     root = tree.getroot()
     temp = {}
@@ -95,7 +95,7 @@ def completeTheVol(trips,edgesVolume):
     return trips
 
 def fixtheRoadData():
-    net_path = "./data/ntut-the way.net.xml"
+    net_path = "./data/ntut_network_split.net copy.xml"
     mapData = getMapData()
     edgesVolume = getEdgesVolume()
     net = SLB.net.readNet(net_path)

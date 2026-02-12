@@ -24,7 +24,7 @@ pip install -r requirements.txt
 python scripts/collect_traffic_data.py
 ```
 - **原始數據輸出**：`data/trafficData/` (JSON 格式)
-- **SUMO 路由輸出**：`data/DDATA/` (SUMO .rou.xml 格式)
+- **SUMO 路由輸出**：`data/VehicleData/` (SUMO .rou.xml 格式)
 
 #### **步驟 2：啟動 SUMO 模擬**
 在 SUMO-GUI 中開啟主要的模擬設定檔。
@@ -43,7 +43,7 @@ sumo-gui -c data/ntut_config.sumocfg
 1.  從開放資料 API 下載即時交通數據 (XML)。
 2.  將原始數據儲存至 `data/trafficData/` (例如：`traffic_data_YYYYMMDD_HHMMSS.json`)。
 3.  呼叫多個工具 (詳見下表) 進行篩選、處理，並生成 SUMO 路由檔案。
-4.  將最終的路由檔案儲存至 `data/DDATA/` (例如：`traffic_data_YYYYMMDD_HHMMSS.rou.xml`)。
+4.  將最終的路由檔案儲存至 `data/VehicleData/` (例如：`traffic_data_YYYYMMDD_HHMMSS.rou.xml`)。
 
 ### 工具列表 (`/tools`)
 
@@ -62,7 +62,7 @@ sumo-gui -c data/ntut_config.sumocfg
 - **`ntut_config.sumocfg`**: 主要的 SUMO 模擬設定檔。
 - **`ntut_network_split.net.xml`**: 用於模擬的主要路網檔案。
 - **`trafficData/`**: 儲存從 API 下載的原始交通數據 (JSON)。
-- **`DDATA/`**: 儲存處理後的 SUMO 路由檔案 (`.rou.xml`)。
+- **`VehicleData/`**: 儲存處理後的 SUMO 路由檔案 (`.rou.xml`)。
 - **`source/`**: 存放原始來源數據 (如原始 OSM 地圖)。
 - **`legacy/`**: 舊版路網檔案的備份。
 
@@ -70,5 +70,5 @@ sumo-gui -c data/ntut_config.sumocfg
 
 ## 🛠️ 設定 (Configuration)
 
-- **地圖邊界 (Map Boundary)**：在 `ntut-the way.net.xml` (或 `ntut_network_split.net.xml`) 中動態定義，並由 `searchnetdata.py` 讀取。
+- **地圖邊界 (Map Boundary)**：在 `ntut_network_split.net copy.xml` 中動態定義，並由 `searchnetdata.py` 讀取。
 - **API URL**：配置於 `scripts/collect_traffic_data.py` 中。

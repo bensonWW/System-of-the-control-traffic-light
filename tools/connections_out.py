@@ -437,7 +437,7 @@ def save_connections_to_csv(connections, output_file):
 # 使用範例
 if __name__ == "__main__":
     # 讀取您的 XML 檔案
-    xml_file = "./data/ntut-the way.net.xml"
+    xml_file = "./data/ntut_network_split.net copy.xml"
     try:
         tree = ET.parse(xml_file)
         print("=== SUMO 網路分析（包含紅綠燈）===")
@@ -487,7 +487,7 @@ if __name__ == "__main__":
 
     except FileNotFoundError:
         print(f"錯誤: 找不到檔案 {xml_file}")
-        print("請確保 ntut-the way.net.xml 檔案在同一目錄下")
+        print("請確保 ntut_network_split.net copy.xml 檔案在同一目錄下")
     except ET.ParseError as e:
         print(f"XML 解析錯誤: {e}")
     except Exception as e:
