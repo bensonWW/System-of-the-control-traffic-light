@@ -2,6 +2,7 @@ import xml.etree.ElementTree as ET
 from math import floor
 import sumolib as SLB
 import selectRoad as ST
+import searchnetdata as SD
 def getMapData():
     path = "./data/ntut_network_split.net copy.xml"
     tree = ET.parse(path)
@@ -12,11 +13,18 @@ def getMapData():
             if("function" not in child.attrib):
                 temp[child.attrib["id"]] = [child.attrib["from"], child.attrib["to"]]
     return temp
-def getEdgesVolume():
+def getEdgesVolume(road_info=None):
     finalInfo = {}
     path = "./data/output.rou.xml"
     tripRoot = ET.parse(path).getroot()
-    roadInfo = ST.select() #'八德路    松江路-忠孝東路': {'SectionId': 'ZJTJ960', 'AvgSpd': '45.435482', 'AvgOcc': '1.6', 'TotalVol': '62.0', 'MOELevel': '0', 'StartWgsX': 392.3516351377892, 'StartWgsY': 366.40778006647395, 'EndWgsX': 105.22111980907044, 'EndWgsY': 285.28874187925237, 'from': 'cluster_2528018119_655375236', 'to': '655375228'}
+    if road_info is None:
+        roadInfo = ST.select()
+        # Remap stale junction IDs to current .net.xml cluster names
+        for name in roadInfo:
+            roadInfo[name]["from"] = SD.remap_junction(roadInfo[name]["from"])
+            roadInfo[name]["to"] = SD.remap_junction(roadInfo[name]["to"])
+    else:
+        roadInfo = road_info
     for info in tripRoot:
         if(info.tag == "vehicle"):
                 fromNode = info.attrib["fromTaz"]
@@ -39,7 +47,7 @@ def getEdgesVolume():
     return finalInfo
 #利用遞迴補足缺失edge的車流資訊
 def generateEmptyEdgesVolume(net,edgesVolume,roadId,visited):
-    ALPHA = 0.35
+    ALPHA = 0.25
     inComingedges = net.getEdge(roadId).getFromNode().getIncoming()
     vol = 0
     for inEdge in inComingedges:
@@ -55,7 +63,7 @@ def generateEmptyEdgesVolume(net,edgesVolume,roadId,visited):
     return vol
 #深層搜尋
 def deepSearch(id,net,trips,edgesVolume,Edges,remainingEdges):
-    LIMITPASSEDGE = 10
+    LIMITPASSEDGE = 12
     if len(Edges) == 0:
         trips["trip:" + id]["to"] = net.getEdge(trips["trip:" + id]["pass"][-1]).getToNode().getID()
         return trips
@@ -91,13 +99,13 @@ def completeTheVol(trips,edgesVolume):
         vol = 0
         for passEdge in trips[trip]["pass"]:
             vol += edgesVolume[passEdge]
-        trips[trip]["TotalVol"] = vol
+        trips[trip]["TotalVol"] = max(edgesVolume[e] for e in trips[trip]["pass"])
     return trips
 
-def fixtheRoadData():
+def fixtheRoadData(road_info=None):
     net_path = "./data/ntut_network_split.net copy.xml"
     mapData = getMapData()
-    edgesVolume = getEdgesVolume()
+    edgesVolume = getEdgesVolume(road_info)
     net = SLB.net.readNet(net_path)
     for edgeId in mapData:
         if edgeId not in edgesVolume:

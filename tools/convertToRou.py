@@ -24,8 +24,9 @@ def run_duarouter(net_file, initial_trip_file, final_output_alt, final_output_ro
             "--ignore-errors"
         ]
         p = subprocess.run(cmd, text=True, capture_output=True)
+        if p.stderr:
+            print("STDERR:\n", p.stderr[:2000])
         if p.returncode != 0:
-            print("STDERR:\n", p.stderr)
             raise subprocess.CalledProcessError(p.returncode, cmd, output=p.stdout, stderr=p.stderr)
         else:
             print("Iteration success.")
