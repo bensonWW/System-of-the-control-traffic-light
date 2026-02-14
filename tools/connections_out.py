@@ -1,6 +1,6 @@
 import xml.etree.ElementTree as ET
 import csv
-import datetime
+
 from collections import defaultdict
 
 def extract_traffic_lights(xml_file_path, tree):
@@ -88,43 +88,7 @@ def decode_traffic_light_state(state_string):
     
     return ' | '.join(decoded)
 
-def get_current_traffic_light_state(traffic_light, current_time):
-    """
-    根據當前時間計算紅綠燈的狀態
-    """
-    if not traffic_light['phases']:
-        return None
-    
-    # 計算在週期中的位置
-    cycle_time = traffic_light['total_cycle_time']
-    offset = traffic_light['offset']
-    
-    # 考慮偏移量
-    time_in_cycle = (current_time + offset) % cycle_time
-    
-    # 找到當前相位
-    elapsed_time = 0
-    current_phase = None
-    remaining_time = 0
-    
-    for i, phase in enumerate(traffic_light['phases']):
-        if elapsed_time <= time_in_cycle < elapsed_time + phase['duration']:
-            current_phase = i
-            remaining_time = elapsed_time + phase['duration'] - time_in_cycle
-            break
-        elapsed_time += phase['duration']
-    
-    if current_phase is None:
-        current_phase = 0
-        remaining_time = traffic_light['phases'][0]['duration']
-    
-    return {
-        'current_phase': current_phase,
-        'phase_info': traffic_light['phases'][current_phase],
-        'remaining_time': remaining_time,
-        'time_in_cycle': time_in_cycle,
-        'cycle_time': cycle_time
-    }
+
 
 def extract_connections(tree, exclude_internal=False):
     """
@@ -294,98 +258,7 @@ def save_individual_traffic_light_phases_to_csv(traffic_light, output_file):
     
     print(f"紅綠燈 {traffic_light['id']} 相位詳細資訊已儲存至 {output_file}")
 
-def generate_traffic_light_timeline(traffic_lights, duration_seconds=300):
-    """
-    生成紅綠燈時間軸（預設5分鐘）
-    """
-    timeline = []
-    current_time = datetime.datetime.now()
-    
-    for second in range(duration_seconds):
-        timestamp = current_time + datetime.timedelta(seconds=second)
-        time_snapshot = {
-            'timestamp': timestamp.strftime('%Y-%m-%d %H:%M:%S'),
-            'simulation_time': second,
-            'traffic_lights': []
-        }
-        
-        for tl in traffic_lights:
-            tl_state = get_current_traffic_light_state(tl, second)
-            if tl_state:
-                tl_info = {
-                    'id': tl['id'],
-                    'current_phase': tl_state['current_phase'],
-                    'phase_state': tl_state['phase_info']['state'],
-                    'phase_description': tl_state['phase_info']['description'],
-                    'remaining_time': round(tl_state['remaining_time'], 1),
-                    'time_in_cycle': round(tl_state['time_in_cycle'], 1)
-                }
-                time_snapshot['traffic_lights'].append(tl_info)
-        
-        timeline.append(time_snapshot)
-    
-    return timeline
 
-def save_timeline_to_csv(timeline, output_file):
-    """
-    將時間軸儲存為 CSV 檔案
-    """
-    with open(output_file, 'w', newline='', encoding='utf-8-sig') as csvfile:
-        fieldnames = ['timestamp', 'simulation_time', 'tl_id', 'current_phase', 'phase_state', 'phase_description', 'remaining_time', 'time_in_cycle']
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        
-        writer.writeheader()
-        for snapshot in timeline:
-            for tl in snapshot['traffic_lights']:
-                row = {
-                    'timestamp': snapshot['timestamp'],
-                    'simulation_time': snapshot['simulation_time'],
-                    'tl_id': tl['id'],
-                    'current_phase': tl['current_phase'],
-                    'phase_state': tl['phase_state'],
-                    'phase_description': tl['phase_description'],
-                    'remaining_time': tl['remaining_time'],
-                    'time_in_cycle': tl['time_in_cycle']
-                }
-                writer.writerow(row)
-    
-    print(f"紅綠燈時間軸已儲存至 {output_file}")
-
-def save_individual_traffic_light_timeline_to_csv(traffic_light, duration_seconds, output_file):
-    """
-    為單個紅綠燈生成並儲存時間軸
-    """
-    timeline = []
-    current_time = datetime.datetime.now()
-    
-    for second in range(duration_seconds):
-        timestamp = current_time + datetime.timedelta(seconds=second)
-        tl_state = get_current_traffic_light_state(traffic_light, second)
-        
-        if tl_state:
-            row = {
-                'timestamp': timestamp.strftime('%Y-%m-%d %H:%M:%S'),
-                'simulation_time': second,
-                'tl_id': traffic_light['id'],
-                'current_phase': tl_state['current_phase'],
-                'phase_state': tl_state['phase_info']['state'],
-                'phase_description': tl_state['phase_info']['description'],
-                'remaining_time': round(tl_state['remaining_time'], 1),
-                'time_in_cycle': round(tl_state['time_in_cycle'], 1),
-                'cycle_time': tl_state['cycle_time']
-            }
-            timeline.append(row)
-    
-    # 儲存到 CSV
-    with open(output_file, 'w', newline='', encoding='utf-8-sig') as csvfile:
-        fieldnames = ['timestamp', 'simulation_time', 'tl_id', 'current_phase', 'phase_state', 'phase_description', 'remaining_time', 'time_in_cycle', 'cycle_time']
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        
-        writer.writeheader()
-        for row in timeline:
-            writer.writerow(row)
-    
-    print(f"紅綠燈 {traffic_light['id']} 時間軸已儲存至 {output_file}")
 
 def save_individual_traffic_light_connections_to_csv(traffic_light_id, connections, output_file):
     """
@@ -452,12 +325,9 @@ if __name__ == "__main__":
         controlled_connections = [conn for conn in road_connections if conn['controlled_by_tl']]
         print(f"受紅綠燈控制的連接: {len(controlled_connections)} 個")
 
-        timeline = generate_traffic_light_timeline(traffic_lights, 300)
-
         save_connections_to_csv(road_connections, "road_connections.csv")
         #save_connections_to_csv(all_connections, "all_connections.csv")
         save_traffic_lights_to_csv(traffic_lights, "traffic_lights.csv")
-        save_timeline_to_csv(timeline, "traffic_light_timeline.csv")
 
         import os
         if not os.path.exists("紅綠燈個別檔案"):
@@ -473,8 +343,7 @@ if __name__ == "__main__":
                 save_individual_traffic_light_to_csv(tl, basic_info_file)
                 phases_file = os.path.join(individual_output_dir, f"tl_{safe_tl_id}_phases.csv")
                 save_individual_traffic_light_phases_to_csv(tl, phases_file)
-                timeline_file = os.path.join(individual_output_dir, f"tl_{safe_tl_id}_timeline.csv")
-                save_individual_traffic_light_timeline_to_csv(tl, 300, timeline_file)
+
                 connections_file = os.path.join(individual_output_dir, f"tl_{safe_tl_id}_connections.csv")
                 save_individual_traffic_light_connections_to_csv(tl_id, road_connections, connections_file)
                 print("test")
@@ -482,7 +351,7 @@ if __name__ == "__main__":
                 print(f"儲存紅綠燈 {tl_id} 的個別檔案時發生錯誤: {e}")
         
         print("=== 檔案已生成 ===")
-        print("- road_connections.csv, traffic_lights.csv, traffic_light_timeline.csv")
+        print("- road_connections.csv, traffic_lights.csv")
         print("- 個別紅綠燈檔案已儲存至各自的目錄中")
 
     except FileNotFoundError:
