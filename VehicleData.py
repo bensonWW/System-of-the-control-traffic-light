@@ -161,14 +161,14 @@ def main():
 
     # Process files
     files = sorted(glob.glob(os.path.join(VEHICLE_DATA_DIR, "*.rou.xml")))
-    print(f"Found {len(files)} files. Starting pool of 3 processes...")
+    print(f"Found {len(files)} files. Starting pool of 16 processes...")
 
     # Prepare arguments for each task
     tasks = [(f, valid_edges) for f in files]
     
     # Run pool
     start_time = time.time()
-    with multiprocessing.Pool(processes=8) as pool:
+    with multiprocessing.Pool(processes=16) as pool:
         for i, result in enumerate(pool.imap_unordered(process_file_wrapper, tasks), 1):
             elapsed = time.time() - start_time
             print(f"[{i}/{len(files)}] {result} (Time: {elapsed:.2f}s)")
