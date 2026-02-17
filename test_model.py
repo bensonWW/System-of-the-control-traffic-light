@@ -12,9 +12,10 @@ import joblib
 class GRUTraffic(nn.Module):
     def __init__(self, num_edges, hidden_dim, num_layers, dropout=0.2):
         super().__init__()
-        # Input dim = num_edges (車流量) + 1 (時間特徵)
+        # Input dim = num_edges (車流量)
+        # 注意：train_model.py 已移除時間特徵輸入，這裡也要同步
         self.gru = nn.GRU(
-            input_size=num_edges + 1,
+            input_size=num_edges,
             hidden_size=hidden_dim,
             num_layers=num_layers,
             batch_first=True,
@@ -34,25 +35,31 @@ class GRUTraffic(nn.Module):
 # =================================================
 def load_model(model_path, device):
     print(f"Loading model from {model_path}...")
-    # 由於我們儲存了 sklearn 的 scaler，需要設定 weights_only=False
-    # 注意：這需要確保載入的檔案是可信來源
     checkpoint = torch.load(model_path, map_location=device, weights_only=False)
     
     print(f"Checkpoint keys: {checkpoint.keys()}") # Debug output
     
     config = checkpoint.get("config", {})
     # 修正 num_edges 取得方式：優先從 config 拿，沒有則從 edge_ids 長度推算
-    num_edges = config.get("num_edges", len(checkpoint["edge_ids"]))
-    input_len = config.get("input_len", 6)
+    if "edge_ids" in checkpoint:
+        edge_ids = checkpoint["edge_ids"]
+    else:
+        edge_ids = checkpoint.get("edge_ids_list", [])
+
+    num_edges = len(edge_ids)
     
+    input_len = config.get("input_len", 6)
+    pred_horizon = config.get("pred_horizon", 15) # Default to 15
     hidden_dim = config.get("hidden_dim", 256)
     num_layers = config.get("num_layers", 2)
+    
+    print(f"Model Config: input_len={input_len}, horizon={pred_horizon}, num_edges={num_edges}")
     
     model = GRUTraffic(num_edges, hidden_dim, num_layers).to(device)
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
     
-    return model, checkpoint["scaler"], checkpoint["edge_ids"], input_len
+    return model, checkpoint["scaler"], edge_ids, input_len, pred_horizon
 
 # 資料前處理 (複製自 train_model.py)
 def extract_datetime(filename):
@@ -75,23 +82,24 @@ def get_time_feature(filename):
         return total_seconds / 86400.0 # 正規化到 0~1
     return 0.0
 
-def load_sample_data(data_dir, edge_ids, input_len, target_file=None):
+def load_sample_data(data_dir, edge_ids, input_len, target_file=None, num_files=50):
     """
     讀取資料來做測試
     target_file: 指定要讀取的單一檔案名稱 (例如: "traffic_data_20260126_121420.csv")
-                 若為 None，則預設讀取最後 5 個檔案
+                 若為 None，則預設讀取最後 num_files 個檔案
     """
     if target_file:
         print(f"Loading specific file: {target_file}...")
         files = [target_file]
     else:
-        print("Loading recent data for testing (Default: Last 5 files)...")
+        print(f"Loading recent data for testing (Default: Last {num_files} files)...")
         files = [
             f for f in os.listdir(data_dir)
             if f.startswith("traffic_data_") and f.endswith(".csv")
         ]
         files = sorted(files, key=lambda x: extract_datetime(x))
-        files = files[-5:] 
+        if num_files > 0:
+            files = files[-num_files:] 
 
     series_list = []
     time_features = []
@@ -112,7 +120,7 @@ def load_sample_data(data_dir, edge_ids, input_len, target_file=None):
             # 計算時間特徵
             t_feat = get_time_feature(fname)
             t_feat_array = np.full((len(pivot), 1), t_feat, dtype=np.float32)
-            time_features.append(t_feat_array)
+            time_features.append(t_feat_array) 
             
         except Exception as e:
             print(f"Error reading {fname}: {e}")
@@ -142,7 +150,8 @@ if __name__ == "__main__":
 
     # 指定要測試的檔案 (您可以修改這裡!)
     # TEST_FILE = "traffic_data_20260126_121420.csv" 
-    TEST_FILE = None # None = 自動抓最新 5 個檔案
+    TEST_FILE = None # None = 自動抓最新 N 個檔案
+    NUM_TEST_FILES = 50 # 測試最近 50 個檔案
 
     # 1. 載入模型
     if not os.path.exists(MODEL_PATH):
@@ -151,7 +160,7 @@ if __name__ == "__main__":
         exit(1)
 
     try:
-        model, scaler, edge_ids, input_len = load_model(MODEL_PATH, DEVICE)
+        model, scaler, edge_ids, input_len, pred_horizon = load_model(MODEL_PATH, DEVICE)
         print("Model loaded successfully.")
     except Exception as e:
         print(f"Failed to load model: {e}")
@@ -159,54 +168,99 @@ if __name__ == "__main__":
 
     # 2. 準備測試資料
     try:
-        raw_traffic, raw_time, loaded_files = load_sample_data(DATA_DIR, edge_ids, input_len, target_file=TEST_FILE)
+        raw_traffic, raw_time, loaded_files = load_sample_data(DATA_DIR, edge_ids, input_len, target_file=TEST_FILE, num_files=NUM_TEST_FILES)
         print(f"Loaded {len(loaded_files)} file(s). Total timesteps: {len(raw_traffic)}")
     except Exception as e:
         print(f"Error loading data: {e}")
         exit(1)
 
-    # 3. 進行預測
+    # 正規化
+    scaled_traffic = scaler.transform(raw_traffic).astype(np.float32)
+
     print("\nStarting Prediction Test...")
+    print(f"Predicting T+{pred_horizon} (Horizon = {pred_horizon})")
     print(f"{'Time Step':<10} | {'Edge ID':<15} | {'Real':<5} | {'Pred':<5} | {'Diff':<5}")
     print("-" * 60)
 
-    # 正規化
-    scaled_traffic = scaler.transform(raw_traffic)
-    
-    # 開始預測
-    # 我們從 input_len 開始，用前 input_len 筆資料預測第 i 筆
-    count = 0
-    for i in range(len(scaled_traffic) - input_len):
-        # 準備輸入：取 [i : i+input_len]
-        input_traffic = scaled_traffic[i : i+input_len] 
-        input_time = raw_time[i : i+input_len]
-        
-        # 合併特徵 -> (input_len, num_edges + 1)
-        input_combined = np.hstack([input_traffic, input_time])
-        
-        input_tensor = torch.tensor(input_combined, dtype=torch.float32).unsqueeze(0).to(DEVICE)
-        
-        with torch.no_grad():
-            pred_scaled = model(input_tensor).cpu().numpy()[0]
-        
-        # 反正規化
-        pred_real = scaler.inverse_transform(pred_scaled.reshape(1, -1))[0]
-        actual_real_seq = raw_traffic[i+input_len]
-        
-        # 顯示車流最多的前 1 個路段 (避免洗版)
-        top_idx = np.argmax(actual_real_seq)
-        
-        edge_name = edge_ids[top_idx]
-        real_val = actual_real_seq[top_idx]
-        pred_val = pred_real[top_idx]
-        diff = pred_val - real_val
-        
-        print(f"T+{i:<8} | {edge_name:<15} | {real_val:<5.0f} | {pred_val:<5.1f} | {diff:<5.1f}")
-        
-        count += 1
-        if count >= 20: # 只顯示前 20 筆預測，避免太長
-            print("... (Truncated) ...")
-            break
+    # 收集結果用於計算準確率
+    all_real = []
+    all_pred = []
 
+    # 3. 進行預測
+    # 最後一筆輸入 index 是 len - input_len - pred_horizon
+    max_idx = len(scaled_traffic) - input_len - pred_horizon
+
+    # 為了顯示方便，只 print 前 20 筆，但計算用全部
+    display_limit = 20
+    
+    with torch.no_grad():
+        for i in range(max_idx + 1):
+            # 取出一段輸入 (包含 input_len 個時間步)
+            input_traffic = scaled_traffic[i : i+input_len]
+            
+            # 轉為 Tensor
+            input_tensor = torch.tensor(input_traffic, dtype=torch.float32).unsqueeze(0).to(DEVICE)
+            
+            # 預測
+            pred = model(input_tensor) # (1, num_edges)
+            
+            # 反正規化
+            pred_real = scaler.inverse_transform(pred.cpu().numpy())[0] # (num_edges,)
+            
+            # 取得真實值 (t + input_len + pred_horizon - 1)
+            # 假設 horizon=1，target 就是下一個點 (i+input_len)
+            # 假設 horizon=15，target 就是 (i+input_len+14)
+            target_idx = i + input_len + pred_horizon - 1
+            real_val = raw_traffic[target_idx] # (num_edges,)
+            
+            # 儲存結果
+            all_real.append(real_val)
+            all_pred.append(pred_real)
+
+            # 只顯示前幾筆
+            if i < display_limit:
+                # 每個時間步只顯示幾個路段
+                for edge_idx in range(min(1, len(edge_ids))):
+                     edge_name = edge_ids[edge_idx]
+                     r = real_val[edge_idx]
+                     p = pred_real[edge_idx]
+                     d = p - r
+                     print(f"T+{i:<9} | {edge_name:<15} | {r:<5.0f} | {p:<5.1f} | {d:<5.1f}")
+    
+    print("... (Truncated) ...")
     print("-" * 60)
+    
+    # ==========================================
+    # 4. 計算並顯示準確率報告
+    # ==========================================
+    if len(all_real) > 0:
+        all_real = np.array(all_real) # (N_samples, num_edges)
+        all_pred = np.array(all_pred) # (N_samples, num_edges)
+        
+        # 1. MAE
+        diff = np.abs(all_pred - all_real)
+        mae = np.mean(diff)
+        
+        # 2. RMSE
+        mse = np.mean((all_pred - all_real) ** 2)
+        rmse = np.sqrt(mse)
+        
+        # 3. Accuracy (Error < 5 vehicles)
+        threshold = 5.0
+        correct_count = np.sum(diff < threshold)
+        total_count = diff.size 
+        accuracy = (correct_count / total_count) * 100
+        
+        print("\n" + "="*60)
+        print("       MODEL ACCURACY REPORT       ")
+        print("="*60)
+        print(f"Prediction Horizon      : {pred_horizon} steps (approx. {pred_horizon * 20 / 60:.1f} mins)")
+        print(f"Total Samples Tested    : {len(all_real)}")
+        print(f"Total Prediction Points : {total_count} (Samples * {len(edge_ids)} Edges)")
+        print("-" * 30)
+        print(f"Mean Absolute Error (MAE): {mae:.2f} vehicles")
+        print(f"Root Mean Squared Error  : {rmse:.2f} vehicles")
+        print(f"Accuracy (Error < {int(threshold)})  : {accuracy:.2f}%")
+        print("="*60)
+
     print("\nTest completed.")
