@@ -119,20 +119,46 @@ def load_sample_data_generator(data_dir, edge_ids, input_len, num_files=50):
 # =================================================
 if __name__ == "__main__":
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    DATA_DIR = os.path.join(BASE_DIR, "data", "simulation_data")
+    # DATA_DIR = os.path.join(BASE_DIR, "data", "simulation_data")
+    DATA_DIR = os.path.join(BASE_DIR, "data", "simulation_check_data") # Changed per user request
     MODEL_PATH = os.path.join(BASE_DIR, "gru_traffic_model.pth")
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    # ==========================================
+    # 測試設定 (Test Configuration)
+    # ==========================================
+    # 設定要測試「幾分鐘後」的預測準確度
+    # 例如: 3.0 代表測試 3 分鐘後的預測 (T+3min)
+    # 不可超過 PRED_HORIZON * 20秒 (目前 15*20 = 300s = 5min)
+    TEST_MINUTES = 3.0 
+    
     if not os.path.exists(MODEL_PATH):
         print("Model not found.")
         exit(1)
 
     model, scaler, edge_ids, input_len, pred_horizon = load_model(MODEL_PATH, DEVICE)
     
+    # Calculate target step index
+    # step 0 = +20s, step 1 = +40s, ..., step k = (k+1)*20s
+    # min = (k+1)*20 / 60 => k+1 = min*3 => k = min*3 - 1
+    target_step_idx = int(TEST_MINUTES * 60 / 20) - 1
+    
+    if target_step_idx < 0:
+        target_step_idx = 0 # Minimum +20s
+    if target_step_idx >= pred_horizon:
+        print(f"Warning: TEST_MINUTES {TEST_MINUTES} exceeds model horizon ({pred_horizon*20/60:.1f} min). Using max horizon.")
+        target_step_idx = pred_horizon - 1
+        
+    print(f"\nTarget Verification: +{TEST_MINUTES} min (Step {target_step_idx+1})")
+    
     print("\nStarting Test (Lazy Sequence Prediction)...")
     
     all_mae = []
     peak_mae_list = []
+    
+    # Check specific step metrics
+    step_mae = []
+    step_peak_mae = []
     
     # Process file by file to avoid memory issues
     data_gen = load_sample_data_generator(DATA_DIR, edge_ids, input_len, num_files=50)
@@ -162,13 +188,24 @@ if __name__ == "__main__":
                 # Target
                 target_seq_real = traffic_data[i+input_len : i+input_len+pred_horizon]
                 
-                # Metrics
+                # 1. Overall Sequence Metrics
                 abs_diff = np.abs(pred_seq_real - target_seq_real)
                 all_mae.append(np.mean(abs_diff))
                 
                 mask = target_seq_real > 10
                 if np.sum(mask) > 0:
                     peak_mae_list.append(np.mean(abs_diff[mask]))
+                    
+                # 2. Specific Step Metrics (Time Horizon Check)
+                pred_step = pred_seq_real[target_step_idx]
+                target_step = target_seq_real[target_step_idx]
+                
+                step_diff = np.abs(pred_step - target_step)
+                step_mae.append(np.mean(step_diff))
+                
+                mask_step = target_step > 10
+                if np.sum(mask_step) > 0:
+                    step_peak_mae.append(np.mean(step_diff[mask_step]))
 
     if not all_mae:
         print("No valid samples tested.")
@@ -177,11 +214,18 @@ if __name__ == "__main__":
     mean_mae = np.mean(all_mae)
     mean_peak_mae = np.mean(peak_mae_list) if peak_mae_list else 0.0
     
+    mean_step_mae = np.mean(step_mae)
+    mean_step_peak_mae = np.mean(step_peak_mae) if step_peak_mae else 0.0
+    
     print("\n" + "="*60)
     print("       SEQUENCE MODEL REPORT       ")
     print("="*60)
-    print(f"Sequence Horizon : {pred_horizon} steps")
-    print(f"Average MAE      : {mean_mae:.2f}")
-    print(f"Peak MAE (>10)   : {mean_peak_mae:.2f}  <-- KEY METRIC")
+    print(f"Sequence Horizon : {pred_horizon} steps (Total {pred_horizon*20} sec)")
+    print(f"overall Avg MAE  : {mean_mae:.2f}")
+    print(f"overall Peak MAE : {mean_peak_mae:.2f} (>10)")
+    print("-" * 60)
+    print(f"Specific Check   : +{TEST_MINUTES} Minutes (Step {target_step_idx+1})")
+    print(f"Step Avg MAE     : {mean_step_mae:.2f}")
+    print(f"Step Peak MAE    : {mean_step_peak_mae:.2f} (>10)")
     print("="*60)
     print("Test Complete.")
