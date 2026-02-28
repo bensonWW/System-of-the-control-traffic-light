@@ -86,8 +86,8 @@ def process_one(json_path, output_dir):
         final_rou = "./data/final_output.rou.xml"
         CTR.run_duarouter(net, "./data/trips.xml", final_alt, final_rou)
 
-        if os.path.exists(final_rou):
-            shutil.copy2(final_rou, out_path)
+        if os.path.exists(final_alt):
+            shutil.copy2(final_alt, out_path)
             return "ok"
         else:
             return "no_output"
