@@ -17,11 +17,17 @@ sys.path.append(os.path.join(PROJECT_ROOT, "tools"))
 import convertToRou as CTR
 import selectRoad as ST
 import fixRoadData as FRD
+import searchnetdata as SD
+
+def _is_preprocessed(road_data):
+    """Check if JSON data was already processed by select() (has 'from'/'to' junction IDs)."""
+    first_item = next(iter(road_data.values()), {})
+    return "from" in first_item and "to" in first_item
+
 
 def process_one(json_path, output_dir):
     """Process a single trafficData JSON file into a .rou.xml file."""
     basename = os.path.basename(json_path)
-    # e.g. traffic_data_20260211_021820.json -> traffic_data_20260211_021820.rou.xml
     out_name = basename.replace(".json", ".rou.xml")
     out_path = os.path.join(output_dir, out_name)
 
@@ -40,26 +46,55 @@ def process_one(json_path, output_dir):
     ST.gb.getData = lambda: road_data
 
     try:
-        selected = ST.select()
+        # Detect whether JSON contains pre-processed data (already has 'from'/'to')
+        # or raw API data (needs select() to filter & convert coordinates)
+        if _is_preprocessed(road_data):
+            # Data already has junction IDs — remap stale IDs then use directly
+            selected = road_data
+            remapped = 0
+            for rname in selected:
+                old_from = selected[rname]["from"]
+                old_to = selected[rname]["to"]
+                selected[rname]["from"] = SD.remap_junction(old_from)
+                selected[rname]["to"] = SD.remap_junction(old_to)
+                if selected[rname]["from"] != old_from or selected[rname]["to"] != old_to:
+                    remapped += 1
+            print(f"  [pre-processed] {len(selected)} roads, {remapped} junctions remapped")
+        else:
+            # Raw API data — run full select() pipeline
+            selected = ST.select()
+            print(f"  [raw data] selected {len(selected)} roads via select()")
+
+        if not selected:
+            return "empty_select"
+
         CTR.generate_trip(selected)
 
         net = "./data/ntut_network_split.net copy.xml"
+
+        # --- Round 1 ---
         CTR.run_duarouter(net, "./data/trips.xml", "./data/output.rou.alt.xml", "./data/output.rou.xml")
 
-        edges_volume = FRD.fixtheRoadData()
+        edges_volume = FRD.fixtheRoadData(selected)
+        if not edges_volume:
+            print("  [WARN] fixtheRoadData returned 0 trips")
+
         CTR.generate_trip(edges_volume)
 
+        # --- Round 2 (final) ---
         final_alt = "./data/final_output.rou.alt.xml"
         final_rou = "./data/final_output.rou.xml"
         CTR.run_duarouter(net, "./data/trips.xml", final_alt, final_rou)
 
-        if os.path.exists(final_rou):
-            shutil.copy2(final_rou, out_path)
+        if os.path.exists(final_alt):
+            shutil.copy2(final_alt, out_path)
             return "ok"
         else:
             return "no_output"
     except Exception as e:
+        import traceback
         print(f"  Error: {e}")
+        traceback.print_exc()
         return "error"
     finally:
         ST.gb.getData = original

@@ -79,5 +79,5 @@ if __name__ == "__main__":
     # Added --start to auto-start simulation
     # Added --delay 100 to slow down simulation (100ms per step) for visibility
     #traci.start([sumoBinary, "-c", "data/ntut-the way.sumocfg", "--tripinfo-output", "tripinfo.xml", "--start", "--delay", "100"])
-    traci.start([sumoBinary, "-c", "data/ntut-the way.sumocfg", "--tripinfo-output", "tripinfo.xml"])
+    traci.start([sumoBinary, "-c", "data/ntut_config.sumocfg", "--tripinfo-output", "tripinfo.xml"])
     run()
