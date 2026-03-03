@@ -6,6 +6,7 @@ import xml.etree.ElementTree as ET
 import urllib.parse
 from datetime import datetime
 import multiprocessing
+from tqdm import tqdm
 
 # Check for SUMO_HOME
 if 'SUMO_HOME' in os.environ:
@@ -17,7 +18,7 @@ import traci
 import sumolib
 
 # Configuration
-VEHICLE_DATA_DIR = "./data/temp"
+VEHICLE_DATA_DIR = "./data/VehicleData"
 OUTPUT_DIR = "./data/simulation_check_data"
 BASE_SUMOCFG = "./data/ntut-the way.sumocfg"
 
@@ -38,17 +39,36 @@ def create_temp_cfg(route_file, base_cfg, temp_cfg_path):
         return False
 
 def filter_routes(input_rou, output_rou, valid_edges):
-    """Filters out vehicles with invalid edges."""
+    """Filters out vehicles with invalid edges. Supports both <route> and <routeDistribution>."""
     try:
         tree = ET.parse(input_rou)
         root = tree.getroot()
         
-        # Identify valid vehicles
-        valid_vehicles = [
-            v for v in root.findall('vehicle')
-            if v.find('route') is not None and 
-            all(e in valid_edges for e in v.find('route').get('edges', '').split())
-        ]
+        valid_vehicles = []
+        for v in root.findall('vehicle'):
+            # Case 1: Direct route
+            route = v.find('route')
+            if route is not None:
+                edges = route.get('edges', '').split()
+                if edges and all(e in valid_edges for e in edges):
+                    valid_vehicles.append(v)
+                continue
+            
+            # Case 2: routeDistribution
+            rd = v.find('routeDistribution')
+            if rd is not None:
+                routes = rd.findall('route')
+                # If ANY route in the distribution is valid, we keep the vehicle 
+                # (or we could filter the distribution itself, but keeping it simpler for now)
+                all_routes_valid = True
+                for r in routes:
+                    edges = r.get('edges', '').split()
+                    if not edges or not all(e in valid_edges for e in edges):
+                        all_routes_valid = False
+                        break
+                
+                if routes and all_routes_valid:
+                    valid_vehicles.append(v)
         
         # Identify other elements to keep (vTypes, etc.)
         children_to_keep = []
@@ -79,22 +99,27 @@ def run_simulation(config_file, output_csv):
     # Using a unique label can help if we needed to access specific instances, 
     # but separate processes usually isolate default instance fine.
     # To be safe against port conflicts/race conditions, let traci pick ports.
-    cmd = [sumoBinary, "-c", config_file, "--start", "--quit-on-end"]
+    cmd = [sumoBinary, "-c", config_file, "--start", "--quit-on-end", "--no-warnings"]
     
     try:
         traci.start(cmd)
+        end_time = traci.simulation.getEndTime()
         with open(output_csv, "w", encoding="utf-8") as f:
             f.write("time,edge_id,vehicle_count\n")
             
             while traci.simulation.getMinExpectedNumber() > 0:
                 traci.simulationStep()
-                if traci.simulation.getTime() % 20 == 0:
-                    lines = []
-                    for edge in traci.edge.getIDList():
-                        count = traci.edge.getLastStepVehicleNumber(edge)
-                        if count > 0:
-                            lines.append(f"{traci.simulation.getTime()},{edge},{count}\n")
-                    f.writelines(lines)
+                current_time = traci.simulation.getTime()
+                
+                # Skip first 50s and last 100s
+                if 50 <= current_time <= (end_time - 100):
+                    if current_time % 20 == 0:
+                        lines = []
+                        for edge in traci.edge.getIDList():
+                            count = traci.edge.getLastStepVehicleNumber(edge)
+                            if count > 0:
+                                lines.append(f"{current_time},{edge},{count}\n")
+                        f.writelines(lines)
         return True
     except Exception as e:
         print(f"Sim error {config_file}: {e}")
@@ -169,9 +194,9 @@ def main():
     # Run pool
     start_time = time.time()
     with multiprocessing.Pool(processes=16) as pool:
-        for i, result in enumerate(pool.imap_unordered(process_file_wrapper, tasks), 1):
-            elapsed = time.time() - start_time
-            print(f"[{i}/{len(files)}] {result} (Time: {elapsed:.2f}s)")
+        # Wrap the imap with tqdm for a progress bar
+        for i, result in enumerate(tqdm(pool.imap_unordered(process_file_wrapper, tasks), total=len(files), desc="Processing"), 1):
+            pass  # The progress bar handles the display
 
 if __name__ == "__main__":
     multiprocessing.freeze_support() # For Windows
