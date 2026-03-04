@@ -6,7 +6,6 @@ import xml.etree.ElementTree as ET
 import urllib.parse
 from datetime import datetime
 import multiprocessing
-from tqdm import tqdm
 
 # Check for SUMO_HOME
 if 'SUMO_HOME' in os.environ:
@@ -18,7 +17,7 @@ import traci
 import sumolib
 
 # Configuration
-VEHICLE_DATA_DIR = "./data/VehicleData"
+VEHICLE_DATA_DIR = "./data/temp"
 OUTPUT_DIR = "./data/simulation_check_data"
 BASE_SUMOCFG = "./data/ntut-the way.sumocfg"
 
@@ -39,7 +38,7 @@ def create_temp_cfg(route_file, base_cfg, temp_cfg_path):
         return False
 
 def filter_routes(input_rou, output_rou, valid_edges):
-    """Filters out vehicles with invalid edges. Supports both <route> and <routeDistribution>."""
+    """Filters out vehicles with invalid edges."""
     try:
         tree = ET.parse(input_rou)
         root = tree.getroot()
@@ -58,8 +57,7 @@ def filter_routes(input_rou, output_rou, valid_edges):
             rd = v.find('routeDistribution')
             if rd is not None:
                 routes = rd.findall('route')
-                # If ANY route in the distribution is valid, we keep the vehicle 
-                # (or we could filter the distribution itself, but keeping it simpler for now)
+                # If ANY route in the distribution is valid, we keep the vehicle
                 all_routes_valid = True
                 for r in routes:
                     edges = r.get('edges', '').split()
@@ -99,27 +97,38 @@ def run_simulation(config_file, output_csv):
     # Using a unique label can help if we needed to access specific instances, 
     # but separate processes usually isolate default instance fine.
     # To be safe against port conflicts/race conditions, let traci pick ports.
-    cmd = [sumoBinary, "-c", config_file, "--start", "--quit-on-end", "--no-warnings"]
+    cmd = [sumoBinary, "-c", config_file, "--start", "--quit-on-end"]
     
     try:
         traci.start(cmd)
-        end_time = traci.simulation.getEndTime()
+        data_buffer = []  # Buffer to store data for filtering later
+        
+        while traci.simulation.getMinExpectedNumber() > 0:
+            traci.simulationStep()
+            current_time = traci.simulation.getTime()
+            
+            # Record data every 20 seconds
+            if current_time % 20 == 0:
+                for edge in traci.edge.getIDList():
+                    count = traci.edge.getLastStepVehicleNumber(edge)
+                    if count > 0:
+                        data_buffer.append((current_time, edge, count))
+        
+        if not data_buffer:
+            return True # No data, but simulation finished
+            
+        actual_end_time = data_buffer[-1][0]
+        
+        # Write filtered data to CSV
         with open(output_csv, "w", encoding="utf-8") as f:
             f.write("time,edge_id,vehicle_count\n")
+            lines = []
+            # Skip first 60s and last 100s
+            for t, edge, count in data_buffer:
+                if 60 <= t <= (actual_end_time - 100):
+                    lines.append(f"{t},{edge},{count}\n")
+            f.writelines(lines)
             
-            while traci.simulation.getMinExpectedNumber() > 0:
-                traci.simulationStep()
-                current_time = traci.simulation.getTime()
-                
-                # Skip first 50s and last 100s
-                if 50 <= current_time <= (end_time - 100):
-                    if current_time % 20 == 0:
-                        lines = []
-                        for edge in traci.edge.getIDList():
-                            count = traci.edge.getLastStepVehicleNumber(edge)
-                            if count > 0:
-                                lines.append(f"{current_time},{edge},{count}\n")
-                        f.writelines(lines)
         return True
     except Exception as e:
         print(f"Sim error {config_file}: {e}")
@@ -175,8 +184,17 @@ def main():
     print("Loading network validation...")
     try:
         tree = ET.parse(BASE_SUMOCFG)
-        net_rel = urllib.parse.unquote(tree.getroot().find("input/net-file").get("value"))
+        input_net = tree.getroot().find("input/net-file")
+        if input_net is None:
+            print("Error: Could not find 'input/net-file' in sumocfg.")
+            return
+
+        net_rel = urllib.parse.unquote(input_net.get("value"))
         net_path = os.path.normpath(os.path.join(os.path.dirname(BASE_SUMOCFG), net_rel))
+        
+        if not os.path.exists(net_path):
+            print(f"Error: Network file not found at {net_path}")
+            return
         
         valid_edges = {e.getID() for e in sumolib.net.readNet(net_path).getEdges()}
         print(f"Loaded {len(valid_edges)} valid edges.")
@@ -194,9 +212,9 @@ def main():
     # Run pool
     start_time = time.time()
     with multiprocessing.Pool(processes=16) as pool:
-        # Wrap the imap with tqdm for a progress bar
-        for i, result in enumerate(tqdm(pool.imap_unordered(process_file_wrapper, tasks), total=len(files), desc="Processing"), 1):
-            pass  # The progress bar handles the display
+        for i, result in enumerate(pool.imap_unordered(process_file_wrapper, tasks), 1):
+            elapsed = time.time() - start_time
+            print(f"[{i}/{len(files)}] {result} (Time: {elapsed:.2f}s)")
 
 if __name__ == "__main__":
     multiprocessing.freeze_support() # For Windows
