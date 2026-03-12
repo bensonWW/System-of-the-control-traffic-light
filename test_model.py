@@ -1,4 +1,5 @@
 import os
+import sys
 import torch
 import torch.nn as nn
 import numpy as np
@@ -49,8 +50,20 @@ def extract_datetime(filename):
         return m.group(1) + m.group(2)
     return None
 
+
+def register_legacy_checkpoint_classes():
+    main_module = sys.modules.get("__main__")
+    if main_module is None:
+        return
+
+    if not hasattr(main_module, "Log1pScaler"):
+        setattr(main_module, "Log1pScaler", Log1pScaler)
+    if not hasattr(main_module, "GRUSequence"):
+        setattr(main_module, "GRUSequence", GRUSequence)
+
 def load_model(model_path, device):
     print(f"Loading model from {model_path}...")
+    register_legacy_checkpoint_classes()
     checkpoint = torch.load(model_path, map_location=device, weights_only=False)
     
     config = checkpoint.get("config", {})
@@ -190,7 +203,10 @@ if __name__ == "__main__":
                 
                 # 1. Overall Sequence Metrics
                 abs_diff = np.abs(pred_seq_real - target_seq_real)
-                all_mae.append(np.mean(abs_diff))
+
+                mask = target_seq_real > 3
+                if np.sum(mask) > 0:
+                    all_mae.append(np.mean(abs_diff[mask]))
                 
                 mask = target_seq_real > 10
                 if np.sum(mask) > 0:
@@ -200,12 +216,17 @@ if __name__ == "__main__":
                 pred_step = pred_seq_real[target_step_idx]
                 target_step = target_seq_real[target_step_idx]
                 
+                # 先定義 step_diff（你現在缺的就是這行）
                 step_diff = np.abs(pred_step - target_step)
-                step_mae.append(np.mean(step_diff))
-                
-                mask_step = target_step > 10
-                if np.sum(mask_step) > 0:
-                    step_peak_mae.append(np.mean(step_diff[mask_step]))
+
+                # 只看「有車」的 edge，避免 193 edges 被 0 稀釋
+                mask_step_all = target_step > 3
+                if np.sum(mask_step_all) > 0:
+                    step_mae.append(np.mean(step_diff[mask_step_all]))
+
+                mask_step_peak = target_step > 10
+                if np.sum(mask_step_peak) > 0:
+                    step_peak_mae.append(np.mean(step_diff[mask_step_peak]))
 
     if not all_mae:
         print("No valid samples tested.")
