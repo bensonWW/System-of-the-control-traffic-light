@@ -7,6 +7,7 @@ import torch.nn as nn
 from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset, DataLoader, Subset
 import sys
+from tqdm import tqdm
 
 # =================================================
 # 0. 設定 (Hyperparameters)
@@ -20,9 +21,9 @@ PRED_HORIZON = 15       # Predict Sequence (15 steps)
 HIDDEN_DIM = 256
 NUM_LAYERS = 2
 BATCH_SIZE = 64
-EPOCHS = 50
+EPOCHS = 80
 PATIENCE = 10
-LR = 1e-3
+LR = 3e-4
 DROPOUT = 0.2
 
 # Optimization: Limit files if needed. None = Load All.
@@ -255,7 +256,7 @@ for epoch in range(EPOCHS):
     model.train()
     tr_loss = 0.0
     
-    for i, (bx, by) in enumerate(train_loader):
+    for i, (bx, by) in enumerate(tqdm(train_loader, desc=f"Epoch {epoch+1} Training")):
         bx, by = bx.to(DEVICE), by.to(DEVICE)
         optimizer.zero_grad()
         pred = model(bx)
