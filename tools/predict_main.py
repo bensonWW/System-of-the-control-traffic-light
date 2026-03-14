@@ -1,5 +1,6 @@
 import os
 
+from export_handoff import export_handoff_outputs
 from predict_to_csv import export_prediction_csv
 from traffic_light_optimizer import run_prediction_driven_strategy
 
@@ -32,7 +33,7 @@ def find_demo_input_csv():
     return csv_files[0]
 
 
-def run_full_pipeline(input_csv=None, model_path=MODEL_PATH, work_dir=None):
+def run_full_pipeline(input_csv=None, model_path=MODEL_PATH, work_dir=None, handoff_dir=None):
     input_csv = os.path.abspath(input_csv or find_demo_input_csv())
     output_root = os.path.dirname(input_csv)
 
@@ -42,17 +43,25 @@ def run_full_pipeline(input_csv=None, model_path=MODEL_PATH, work_dir=None):
         output_root=output_root,
     )
 
-    automation_result = run_prediction_driven_strategy(
+    strategy_result = run_prediction_driven_strategy(
         prediction_csv=prediction_result["prediction_csv"],
         work_dir=work_dir or prediction_result["work_dir"],
     )
 
+    handoff_result = export_handoff_outputs(
+        prediction_result=prediction_result,
+        strategy_result=strategy_result,
+        handoff_dir=handoff_dir,
+    )
+
     return {
         "prediction": prediction_result,
-        "signal_control": automation_result["best_result"],
-        "automation": automation_result,
+        "signal_control": strategy_result["best_result"],
+        "strategy_selection": strategy_result,
+        "handoff": handoff_result,
     }
 
 
 if __name__ == "__main__":
-    run_full_pipeline()
+    result = run_full_pipeline()
+    print(f"交付檔案已輸出: {result['handoff']['handoff_dir']}")
