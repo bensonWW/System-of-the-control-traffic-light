@@ -52,6 +52,7 @@ TRAFFIC_LIGHT_DEMO_DIR = os.path.join(ROOT_DIR, "data", "traffic_light_demo")
 DEFAULT_MODEL_PATH = os.path.join(ROOT_DIR, "gru_traffic_model.pth")
 PREDICTION_MIN_THRESHOLD = 0.02
 PREDICTION_TOP_K_PER_STEP = 40
+PREDICTION_FUSION_LAST_WINDOWS = 10
 
 def extract_datetime(filename):
     match = re.search(r"(\d{8})_(\d{6})", filename)
@@ -154,6 +155,40 @@ def build_time_features(file_name, num_steps):
     return np.stack([np.sin(theta), np.cos(theta)], axis=1).astype(np.float32)
 
 
+def _predict_sequence(model, device, input_traf, input_time, scaler):
+    input_comb = np.hstack([input_traf, input_time])
+    input_tensor = torch.tensor(input_comb, dtype=torch.float32).unsqueeze(0).to(device)
+    with torch.no_grad():
+        pred_seq_scaled = model(input_tensor).cpu().numpy()[0]
+    pred_seq_real = scaler.inverse_transform(pred_seq_scaled)
+    return np.clip(pred_seq_real, 0.0, None)
+
+
+def _select_edge_indices(step_values):
+    selected_indices = {
+        int(edge_index)
+        for edge_index, value in enumerate(step_values)
+        if float(value) >= PREDICTION_MIN_THRESHOLD
+    }
+
+    positive_ranked_indices = [
+        int(index)
+        for index in np.argsort(step_values)[::-1]
+        if float(step_values[index]) > 0
+    ]
+
+    for edge_index in positive_ranked_indices:
+        if len(selected_indices) >= PREDICTION_TOP_K_PER_STEP:
+            break
+        selected_indices.add(edge_index)
+
+    return sorted(
+        selected_indices,
+        key=lambda index: float(step_values[index]),
+        reverse=True,
+    )
+
+
 def export_prediction_csv(input_csv, model_path=DEFAULT_MODEL_PATH, output_root=None):
     input_csv = os.path.abspath(input_csv)
     model_path = os.path.abspath(model_path)
@@ -177,16 +212,27 @@ def export_prediction_csv(input_csv, model_path=DEFAULT_MODEL_PATH, output_root=
     time_data = build_time_features(os.path.basename(input_csv), len(pivot))
     scaled_traffic = scaler.transform(traffic_data)
 
-    input_traf = scaled_traffic[-input_len:]
-    input_time = time_data[-input_len:]
-    input_comb = np.hstack([input_traf, input_time])
-    input_tensor = torch.tensor(input_comb, dtype=torch.float32).unsqueeze(0).to(device)
+    time_index = pivot.index.to_numpy(dtype=np.float64)
+    aggregated_sum = {}
+    aggregated_count = {}
 
-    with torch.no_grad():
-        pred_seq_scaled = model(input_tensor).cpu().numpy()[0]
+    window_start = max(input_len, len(pivot) - PREDICTION_FUSION_LAST_WINDOWS + 1)
+    for window_end in range(window_start, len(pivot) + 1):
+        input_traf = scaled_traffic[window_end - input_len:window_end]
+        input_time = time_data[window_end - input_len:window_end]
+        pred_seq_real = _predict_sequence(model, device, input_traf, input_time, scaler)
 
-    pred_seq_real = scaler.inverse_transform(pred_seq_scaled)
-    pred_seq_real = np.clip(pred_seq_real, 0.0, None)
+        base_time = float(time_index[window_end - 1])
+        for step_index in range(pred_horizon):
+            current_time = float(base_time + 20 * (step_index + 1))
+            step_values = pred_seq_real[step_index]
+
+            if current_time not in aggregated_sum:
+                aggregated_sum[current_time] = np.zeros_like(step_values, dtype=np.float64)
+                aggregated_count[current_time] = np.zeros_like(step_values, dtype=np.float64)
+
+            aggregated_sum[current_time] += step_values
+            aggregated_count[current_time] += 1.0
 
     source_stem = os.path.splitext(os.path.basename(input_csv))[0]
     prediction_stem = f"{source_stem}_predict"
@@ -196,35 +242,19 @@ def export_prediction_csv(input_csv, model_path=DEFAULT_MODEL_PATH, output_root=
     prediction_csv = os.path.join(work_dir, f"{prediction_stem}.csv")
     shutil.copy2(input_csv, os.path.join(work_dir, os.path.basename(input_csv)))
 
-    last_time = float(pivot.index.max())
-    future_times = [last_time + 20 * (step + 1) for step in range(pred_horizon)]
-
     rows = []
-    for step_index, current_time in enumerate(future_times):
-        step_values = pred_seq_real[step_index]
-        selected_indices = {
-            int(edge_index)
-            for edge_index, value in enumerate(step_values)
-            if float(value) >= PREDICTION_MIN_THRESHOLD
-        }
+    for current_time in sorted(aggregated_sum.keys()):
+        sum_values = aggregated_sum[current_time]
+        count_values = aggregated_count[current_time]
+        step_values = np.divide(
+            sum_values,
+            np.maximum(count_values, 1e-9),
+            out=np.zeros_like(sum_values),
+            where=count_values > 0,
+        )
 
-        positive_ranked_indices = [
-            int(index)
-            for index in np.argsort(step_values)[::-1]
-            if float(step_values[index]) > 0
-        ]
-
-        for edge_index in positive_ranked_indices:
-            if len(selected_indices) >= PREDICTION_TOP_K_PER_STEP:
-                break
-            selected_indices.add(edge_index)
-
-        for edge_index in sorted(
-            selected_indices,
-            key=lambda index: float(step_values[index]),
-            reverse=True,
-        ):
-            vehicle_count = float(step_values[edge_index])
+        for edge_index in _select_edge_indices(step_values):
+            vehicle_count = float(step_values[int(edge_index)])
             if vehicle_count <= 0:
                 continue
 
