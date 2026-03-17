@@ -23,6 +23,7 @@ def export_handoff_outputs(prediction_result, strategy_result, handoff_dir=None)
 
     source_files = {
         "prediction_csv": prediction_result.get("prediction_csv"),
+        "prediction_full_csv": prediction_result.get("prediction_full_csv"),
         "best_strategy_csv": strategy_result.get("strategy_summary_csv"),
         "comparison_summary_csv": best_result.get("comparison_summary_csv"),
         "signal_plan_summary_csv": best_result.get("signal_plan_summary_csv"),
