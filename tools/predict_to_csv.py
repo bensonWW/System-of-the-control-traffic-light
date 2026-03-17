@@ -189,6 +189,44 @@ def _select_edge_indices(step_values):
     )
 
 
+def _aggregate_predictions(
+    model,
+    device,
+    scaler,
+    scaled_traffic,
+    time_data,
+    time_index,
+    input_len,
+    pred_horizon,
+    max_windows=None,
+):
+    aggregated_sum = {}
+    aggregated_count = {}
+
+    window_start = input_len
+    if max_windows is not None:
+        window_start = max(input_len, len(time_index) - int(max_windows) + 1)
+
+    for window_end in range(window_start, len(time_index) + 1):
+        input_traf = scaled_traffic[window_end - input_len:window_end]
+        input_time = time_data[window_end - input_len:window_end]
+        pred_seq_real = _predict_sequence(model, device, input_traf, input_time, scaler)
+
+        base_time = float(time_index[window_end - 1])
+        for step_index in range(pred_horizon):
+            current_time = float(base_time + 20 * (step_index + 1))
+            step_values = pred_seq_real[step_index]
+
+            if current_time not in aggregated_sum:
+                aggregated_sum[current_time] = np.zeros_like(step_values, dtype=np.float64)
+                aggregated_count[current_time] = np.zeros_like(step_values, dtype=np.float64)
+
+            aggregated_sum[current_time] += step_values
+            aggregated_count[current_time] += 1.0
+
+    return aggregated_sum, aggregated_count
+
+
 def export_prediction_csv(input_csv, model_path=DEFAULT_MODEL_PATH, output_root=None):
     input_csv = os.path.abspath(input_csv)
     model_path = os.path.abspath(model_path)
@@ -213,26 +251,30 @@ def export_prediction_csv(input_csv, model_path=DEFAULT_MODEL_PATH, output_root=
     scaled_traffic = scaler.transform(traffic_data)
 
     time_index = pivot.index.to_numpy(dtype=np.float64)
-    aggregated_sum = {}
-    aggregated_count = {}
 
-    window_start = max(input_len, len(pivot) - PREDICTION_FUSION_LAST_WINDOWS + 1)
-    for window_end in range(window_start, len(pivot) + 1):
-        input_traf = scaled_traffic[window_end - input_len:window_end]
-        input_time = time_data[window_end - input_len:window_end]
-        pred_seq_real = _predict_sequence(model, device, input_traf, input_time, scaler)
+    control_sum, control_count = _aggregate_predictions(
+        model=model,
+        device=device,
+        scaler=scaler,
+        scaled_traffic=scaled_traffic,
+        time_data=time_data,
+        time_index=time_index,
+        input_len=input_len,
+        pred_horizon=pred_horizon,
+        max_windows=PREDICTION_FUSION_LAST_WINDOWS,
+    )
 
-        base_time = float(time_index[window_end - 1])
-        for step_index in range(pred_horizon):
-            current_time = float(base_time + 20 * (step_index + 1))
-            step_values = pred_seq_real[step_index]
-
-            if current_time not in aggregated_sum:
-                aggregated_sum[current_time] = np.zeros_like(step_values, dtype=np.float64)
-                aggregated_count[current_time] = np.zeros_like(step_values, dtype=np.float64)
-
-            aggregated_sum[current_time] += step_values
-            aggregated_count[current_time] += 1.0
+    full_sum, full_count = _aggregate_predictions(
+        model=model,
+        device=device,
+        scaler=scaler,
+        scaled_traffic=scaled_traffic,
+        time_data=time_data,
+        time_index=time_index,
+        input_len=input_len,
+        pred_horizon=pred_horizon,
+        max_windows=None,
+    )
 
     source_stem = os.path.splitext(os.path.basename(input_csv))[0]
     prediction_stem = f"{source_stem}_predict"
@@ -240,12 +282,33 @@ def export_prediction_csv(input_csv, model_path=DEFAULT_MODEL_PATH, output_root=
     os.makedirs(work_dir, exist_ok=True)
 
     prediction_csv = os.path.join(work_dir, f"{prediction_stem}.csv")
+    prediction_full_csv = os.path.join(work_dir, f"{prediction_stem}_full.csv")
     shutil.copy2(input_csv, os.path.join(work_dir, os.path.basename(input_csv)))
 
     rows = []
-    for current_time in sorted(aggregated_sum.keys()):
-        sum_values = aggregated_sum[current_time]
-        count_values = aggregated_count[current_time]
+    full_rows = []
+    for current_time in sorted(full_sum.keys()):
+        sum_values = full_sum[current_time]
+        count_values = full_count[current_time]
+        step_values = np.divide(
+            sum_values,
+            np.maximum(count_values, 1e-9),
+            out=np.zeros_like(sum_values),
+            where=count_values > 0,
+        )
+
+        for edge_index, edge_id in enumerate(edge_ids):
+            full_rows.append(
+                {
+                    "time": float(current_time),
+                    "edge_id": edge_id,
+                    "vehicle_count": round(float(step_values[edge_index]), 4),
+                }
+            )
+
+    for current_time in sorted(control_sum.keys()):
+        sum_values = control_sum[current_time]
+        count_values = control_count[current_time]
         step_values = np.divide(
             sum_values,
             np.maximum(count_values, 1e-9),
@@ -269,9 +332,14 @@ def export_prediction_csv(input_csv, model_path=DEFAULT_MODEL_PATH, output_root=
     prediction_df = pd.DataFrame(rows, columns=["time", "edge_id", "vehicle_count"])
     prediction_df.to_csv(prediction_csv, index=False)
 
+    prediction_full_df = pd.DataFrame(full_rows, columns=["time", "edge_id", "vehicle_count"])
+    prediction_full_df.to_csv(prediction_full_csv, index=False)
+
     print(f"預測 CSV 已輸出: {prediction_csv}")
+    print(f"完整預測 CSV 已輸出: {prediction_full_csv}")
     return {
         "prediction_csv": prediction_csv,
+        "prediction_full_csv": prediction_full_csv,
         "work_dir": work_dir,
         "input_len": input_len,
         "pred_horizon": pred_horizon,
