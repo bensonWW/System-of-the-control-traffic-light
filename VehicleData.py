@@ -19,7 +19,7 @@ import sumolib
 # Configuration
 VEHICLE_DATA_DIR = "./data/temp"
 OUTPUT_DIR = "./data/simulation_check_data"
-BASE_SUMOCFG = "./data/ntut-the way.sumocfg"
+BASE_SUMOCFG = "./data/ntut_config.sumocfg"
 
 def get_timestamp(filename):
     """Extracts timestamp (YYYYMMDD_HHMMSS) from filename."""
