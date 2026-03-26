@@ -1,8 +1,9 @@
 import xml.etree.ElementTree as ET
+from math import floor
 import sumolib as SLB
 import selectRoad as ST
 def getMapData():
-    path = "./data/ntut-the way.net.xml"
+    path = "./data/ntut_network_split.net.xml"
     tree = ET.parse(path)
     root = tree.getroot()
     temp = {}
@@ -25,39 +26,89 @@ def getEdgesVolume():
             continue
         for name in roadInfo:
             if(roadInfo[name]["from"] == fromNode and roadInfo[name]["to"] == toNode):
+                passNum = 0
                 for edgeId in passRoads:
                     if edgeId not in finalInfo:
-                        finalInfo[edgeId] = [int(float(roadInfo[name]["TotalVol"])),1]
+                        finalInfo[edgeId] = [int(float(roadInfo[name]["TotalVol"])) * pow(0.75, passNum),1]
                     else:
-                        finalInfo[edgeId][0] += int(float(roadInfo[name]["TotalVol"]))
+                        finalInfo[edgeId][0] += int(float(roadInfo[name]["TotalVol"])) * pow(0.75, passNum)
                         finalInfo[edgeId][1] += 1
+                    passNum += 1
     for edgeId in finalInfo:
         finalInfo[edgeId] = finalInfo[edgeId][0] // finalInfo[edgeId][1]
     return finalInfo
-def fixtheRoadData():
+#利用遞迴補足缺失edge的車流資訊
+def generateEmptyEdgesVolume(net,edgesVolume,roadId,visited):
     ALPHA = 0.35
-    MAX_ITERS = 800
-    net_path = "./data/ntut-the way.net.xml"
+    inComingedges = net.getEdge(roadId).getFromNode().getIncoming()
+    vol = 0
+    for inEdge in inComingedges:
+        inEdgeId = inEdge.getID()
+        if inEdgeId in visited:
+            continue
+        else:
+            visited.add(inEdgeId)
+        if edgesVolume[inEdgeId] == 0:
+            vol += generateEmptyEdgesVolume(net,edgesVolume,inEdgeId,visited) * ALPHA
+        else:
+            vol += edgesVolume[inEdgeId] * ALPHA
+    return vol
+#深層搜尋
+def deepSearch(id,net,trips,edgesVolume,Edges,remainingEdges):
+    LIMITPASSEDGE = 10
+    if len(Edges) == 0:
+        trips["trip:" + id]["to"] = net.getEdge(trips["trip:" + id]["pass"][-1]).getToNode().getID()
+        return trips
+    for edge in Edges:
+        edgeId = edge.getID()
+        if edgeId in remainingEdges and len(trips["trip:" + id]["pass"]) < LIMITPASSEDGE:
+            Edges = net.getEdge(edgeId).getToNode().getOutgoing()
+            trips["trip:" + id]["pass"].append(edgeId)
+            remainingEdges.remove(edgeId)
+            trips = deepSearch(id,net,trips,edgesVolume,Edges,remainingEdges)
+            break
+        trips["trip:" + id]["to"] = net.getEdge(trips["trip:" + id]["pass"][-1]).getToNode().getID()
+    return trips
+#生成trips
+def findTrip(net,edgesVolume):
+    trips = {}
+    tripId = 1
+    remainingEdges = set(edgesVolume.keys())
+    while len(remainingEdges) > 0:
+        id = str(tripId)
+        trips["trip:" + id] = {"pass" : [] , "from": "", "to": "", "TotalVol" : 0}
+        startEdge = next(iter(remainingEdges))
+        trips["trip:" + id]["pass"].append(startEdge)
+        trips["trip:" + id]["from"] = net.getEdge(startEdge).getFromNode().getID()
+        remainingEdges.remove(startEdge)
+        outComingEdges = net.getEdge(startEdge).getToNode().getOutgoing()
+        trips = deepSearch(id,net,trips,edgesVolume,outComingEdges,remainingEdges)
+        tripId += 1
+    return trips
+#完成每個trip的車流
+def completeTheVol(trips,edgesVolume):
+    for trip in trips:
+        vol = 0
+        for passEdge in trips[trip]["pass"]:
+            vol += edgesVolume[passEdge]
+        trips[trip]["TotalVol"] = vol
+    return trips
+
+def fixtheRoadData():
+    net_path = "./data/ntut_network_split.net.xml"
     mapData = getMapData()
     edgesVolume = getEdgesVolume()
     net = SLB.net.readNet(net_path)
     for edgeId in mapData:
         if edgeId not in edgesVolume:
             edgesVolume[edgeId] = 0
-    for iter in range(MAX_ITERS):
-        for edgeId in edgesVolume:
-            edge = net.getEdge(edgeId)
-            outgoingEdgesId = edge.getToNode().getOutgoing()
-            for outEdge in outgoingEdgesId:
-                if edgesVolume[outEdge.getID()] == 0:
-                    edgesVolume[outEdge.getID()] += int(edgesVolume[edgeId] * ALPHA)
-    temp = getEdgesVolume()
-    for edgeId in temp:
-        del edgesVolume[edgeId]
-    return edgesVolume
-if __name__ == "__main__":
-    edgesVolume = fixtheRoadData()
-    print(edgesVolume)
     for edgeId in edgesVolume:
         if edgesVolume[edgeId] == 0:
-            print(edgeId)
+            edgesVolume[edgeId] += round(generateEmptyEdgesVolume(net,edgesVolume,edgeId,set()))
+    trips = findTrip(net,edgesVolume)
+    tripsAndVol = completeTheVol(trips,edgesVolume)
+    tripsAndVol = {tripId : info for tripId,info in tripsAndVol.items() if info["TotalVol"] > 0}
+    return tripsAndVol
+if __name__ == "__main__":
+    trips_and_vol = fixtheRoadData()
+    print(trips_and_vol)

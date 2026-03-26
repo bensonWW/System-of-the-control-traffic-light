@@ -49,8 +49,7 @@ def generate_trip(road_info):
         ET.SubElement(trip,
                       "vType",id = f"Car{index}",
                       vClass = "passenger",color = "0,1,0",
-                      length = "5",
-                      maxSpeed = str((float(road_info[roadName]["AvgSpd"]) / percentage) /3.6))
+                      length = "5")
         observed_volume_per_hour = float(road_info[roadName].get("TotalVol", 0))
         if observed_volume_per_hour > 0:
             ET.SubElement(trip, 
@@ -67,4 +66,4 @@ def generate_trip(road_info):
     print("已生成")
 if __name__ == "__main__":
     generate_trip(ST.select())
-    run_duarouter("./data/ntut-the way.net.xml", "./data/trips.xml", "./data/output.rou.alt.xml","./data/output.rou.xml")
+    run_duarouter("./data/ntut_network_split.net.xml", "./data/trips.xml", "./data/output.rou.alt.xml","./data/output.rou.xml")

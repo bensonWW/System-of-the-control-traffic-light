@@ -21,8 +21,8 @@ from traffic_optimizer_signal import (
 )
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-BASE_SUMOCFG = os.path.join(ROOT_DIR, "data", "ntut-the way.sumocfg")
-NET_FILE = os.path.join(ROOT_DIR, "data", "ntut-the way.net.xml")
+BASE_SUMOCFG = os.path.join(ROOT_DIR, "data", "ntut_config.sumocfg")
+NET_FILE = os.path.join(ROOT_DIR, "data", "ntut_network_split.net.xml")
 TEMP_ROUTE_DIR = os.path.join(ROOT_DIR, "data", "temp")
 DEFAULT_OUTPUT_ROOT = os.path.join(ROOT_DIR, "data", "prediction_runs")
 
