@@ -27,3 +27,7 @@ def search(position_x, position_y):
             roadInfo[child.attrib["id"]] = [x, y, dist]
     minid = min(roadInfo, key=lambda k: roadInfo[k][2])
     return minid
+
+def remap_junction(junction_id):
+    """Remap junction ID if needed (for now, just return as is)."""
+    return junction_id
