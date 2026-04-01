@@ -31,7 +31,7 @@ def process_one(json_path, output_dir):
     out_name = basename.replace(".json", ".rou.xml")
     out_path = os.path.join(output_dir, out_name)
 
-    if os.path.exists(out_path):
+    if os.path.exists(out_path) and os.path.getsize(out_path) > 10000:
         return "skip"
 
     # Load raw data
@@ -72,12 +72,45 @@ def process_one(json_path, output_dir):
 
         net = "./data/ntut_network_split.net copy.xml"
 
+        # Clean stale outputs so we can detect fresh failures
+        import time
+        for stale in ["./data/output.rou.xml", "./data/output.rou.alt.xml",
+                      "./data/final_output.rou.alt.xml", "./data/final_output.rou.xml"]:
+            for attempt in range(5):
+                try:
+                    if os.path.exists(stale):
+                        os.remove(stale)
+                    break
+                except PermissionError:
+                    if attempt < 4:
+                        time.sleep(0.5)
+                    else:
+                        raise
+
         # --- Round 1 ---
         CTR.run_duarouter(net, "./data/trips.xml", "./data/output.rou.alt.xml", "./data/output.rou.xml")
 
-        # Use first round output directly as final output
-        if os.path.exists("./data/output.rou.alt.xml"):
-            shutil.copy2("./data/output.rou.alt.xml", out_path)
+        if not os.path.exists("./data/output.rou.xml"):
+            return "no_output_r1"
+
+        # --- Round 2: fixRoadData + re-generate trips ---
+        # Patch ST.select so getEdgesVolume() uses our already-processed data
+        # (pre-processed JSONs have pixel-space coords that fail inrange() in select())
+        original_select = ST.select
+        ST.select = lambda: selected
+        try:
+            edgesVolume = FRD.fixtheRoadData()
+        finally:
+            ST.select = original_select
+
+        if not edgesVolume:
+            return "empty_edges"
+
+        CTR.generate_trip(edgesVolume)
+        CTR.run_duarouter(net, "./data/trips.xml", "./data/final_output.rou.alt.xml", "./data/final_output.rou.xml")
+
+        if os.path.exists("./data/final_output.rou.alt.xml"):
+            shutil.copy2("./data/final_output.rou.alt.xml", out_path)
             return "ok"
         else:
             return "no_output"

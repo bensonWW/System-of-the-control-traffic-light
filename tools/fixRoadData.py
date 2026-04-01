@@ -2,14 +2,13 @@ import xml.etree.ElementTree as ET
 from math import floor
 import sumolib as SLB
 import selectRoad as ST
-def getMapData():
-    path = "./data/ntut_network_split.net copy.xml"
+def getMapData(path="./data/ntut_network_split.net copy.xml"):
     tree = ET.parse(path)
     root = tree.getroot()
     temp = {}
     for child in root:
-        if(child.tag == "edge"):
-            if("function" not in child.attrib):
+        if child.tag == "edge":
+            if "function" not in child.attrib:
                 temp[child.attrib["id"]] = [child.attrib["from"], child.attrib["to"]]
     return temp
 def getEdgesVolume():
@@ -96,7 +95,7 @@ def completeTheVol(trips,edgesVolume):
 
 def fixtheRoadData():
     net_path = "./data/ntut_network_split.net copy.xml"
-    mapData = getMapData()
+    mapData = getMapData(net_path)
     edgesVolume = getEdgesVolume()
     net = SLB.net.readNet(net_path)
     for edgeId in mapData:
