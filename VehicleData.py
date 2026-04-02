@@ -17,8 +17,8 @@ import traci
 import sumolib
 
 # Configuration
-VEHICLE_DATA_DIR = "./data/VehicleData"
-OUTPUT_DIR = "./data/simulation_data"
+VEHICLE_DATA_DIR = "./data/VehicleData_check"
+OUTPUT_DIR = "./data/simulation_data_check"
 BASE_SUMOCFG = "./data/ntut_config.sumocfg"
 
 def get_timestamp(filename):
@@ -211,7 +211,7 @@ def main():
     
     # Run pool
     start_time = time.time()
-    with multiprocessing.Pool(processes=1) as pool:
+    with multiprocessing.Pool(processes=16) as pool:
         for i, result in enumerate(pool.imap_unordered(process_file_wrapper, tasks), 1):
             elapsed = time.time() - start_time
             print(f"[{i}/{len(files)}] {result} (Time: {elapsed:.2f}s)")
