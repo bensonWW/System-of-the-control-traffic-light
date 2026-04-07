@@ -1,0 +1,906 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- generated on 2026-04-07 01:22:24 by Eclipse SUMO duarouter Version 1.24.0
+<duarouterConfiguration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/duarouterConfiguration.xsd">
+
+    <input>
+        <net-file value="./data/ntut_network_split.net copy.xml"/>
+        <route-files value="./data/final_output.rou.alt.xml"/>
+        <junction-taz value="true"/>
+    </input>
+
+    <output>
+        <output-file value="./data/final_output.rou.xml"/>
+        <alternatives-output value="./data/final_output.rou.alt.xml.tmp"/>
+    </output>
+
+    <processing>
+        <max-alternatives value="3"/>
+        <weights.random-factor value="12"/>
+    </processing>
+
+    <report>
+        <ignore-errors value="true"/>
+    </report>
+
+</duarouterConfiguration>
+-->
+
+<routes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/routes_file.xsd">
+    <vType id="Car1" length="5.00" vClass="passenger" color="green"/>
+    <vehicle id="Flow1.0" type="Car1" depart="0.00" fromTaz="cluster_2528018119_655375236" toTaz="3196998953">
+        <routeDistribution last="1">
+            <route cost="193.57" probability="0.56916766" edges="182334378#0 -594658757#2 303647015#0"/>
+            <route cost="405.37" probability="0.43083234" edges="182334378#0 1334904386#0 303647015#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vType id="Car10" length="5.00" vClass="passenger" color="green"/>
+    <vehicle id="Flow10.0" type="Car10" depart="0.00" fromTaz="1973482489" toTaz="cluster_5372642442_631668976_631668981_631669076">
+        <routeDistribution last="0">
+            <route cost="26.31" probability="1.00000000" edges="506322846#2"/>
+        </routeDistribution>
+    </vehicle>
+    <vType id="Car11" length="5.00" vClass="passenger" color="green"/>
+    <vehicle id="Flow11.0" type="Car11" depart="0.00" fromTaz="3086736518" toTaz="cluster_2528018119_655375236">
+        <routeDistribution last="0">
+            <route cost="124.49" probability="1.00000000" edges="593847705 593847703#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vType id="Car12" length="5.00" vClass="passenger" color="green"/>
+    <vehicle id="Flow12.0" type="Car12" depart="0.00" fromTaz="3431431576" toTaz="3086736518">
+        <routeDistribution last="2">
+            <route cost="453.60" probability="0.30528221" edges="593849711#2 1068440006#0 232003903#0 593844216#0 593842812#0 593842812#2 593844221#0 -E0"/>
+            <route cost="364.02" probability="0.41507146" edges="593849711#2 -51362429#1 49073226#2 288878926#0 -593847704#2"/>
+            <route cost="407.76" probability="0.27964634" edges="593849711#2 1068440006#0 232003903#0 1239087512 1239087514 51362430 484988951#0 51362429#0 593847701"/>
+        </routeDistribution>
+    </vehicle>
+    <vType id="Car13" length="5.00" vClass="passenger" color="green"/>
+    <vehicle id="Flow13.0" type="Car13" depart="0.00" fromTaz="656132499" toTaz="656132498">
+        <routeDistribution last="0">
+            <route cost="59.73" probability="1.00000000" edges="51392936#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vType id="Car14" length="5.00" vClass="passenger" color="green"/>
+    <vehicle id="Flow14.0" type="Car14" depart="0.00" fromTaz="cluster3086736522_655375108_655375247_655375401_#1more" toTaz="655375241">
+        <routeDistribution last="0">
+            <route cost="148.21" probability="1.00000000" edges="594658762#0 1334905223#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vType id="Car15" length="5.00" vClass="passenger" color="green"/>
+    <vehicle id="Flow15.0" type="Car15" depart="0.00" fromTaz="cluster655375228_655375240" toTaz="cluster_9383263990_9383263991_9383263992_9383263993">
+        <routeDistribution last="0">
+            <route cost="14.46" probability="1.00000000" edges="263217603#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vType id="Car3" length="5.00" vClass="passenger" color="green"/>
+    <vehicle id="Flow3.0" type="Car3" depart="0.00" fromTaz="cluster_9383263990_9383263991_9383263992_9383263993" toTaz="3431431576">
+        <routeDistribution last="0">
+            <route cost="407.18" probability="0.56959926" edges="506322844#0 -300077497#8 -300077497#5 -593847703#3 -593847705 -593847701 -51362429#1 49073226#2 288878926#0 593849711#0"/>
+            <route cost="470.38" probability="0.43040074" edges="506322844#0 -300077497#8 -300077497#5 182334378#0 232003903#0 1239087512 1239087514 51362430 484988951#0 49073226#2 288878926#0 593849711#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vType id="Car4" length="5.00" vClass="passenger" color="green"/>
+    <vehicle id="Flow4.0" type="Car4" depart="0.00" fromTaz="655375245" toTaz="2664674489">
+        <routeDistribution last="0">
+            <route cost="82.73" probability="1.00000000" edges="244450512#1 260881642#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vType id="Car5" length="5.00" vClass="passenger" color="green"/>
+    <vehicle id="Flow5.0" type="Car5" depart="0.00" fromTaz="2760755470" toTaz="3086736518">
+        <routeDistribution last="1">
+            <route cost="379.60" probability="0.50874695" edges="30620492#0 30620492#1 506322844#0 -300077497#8 -300077497#5 -593847703#3 -593847705"/>
+            <route cost="473.47" probability="0.49125305" edges="30620492#0 30620492#1 506322844#0 263217604#0 594658760#0 -E0"/>
+        </routeDistribution>
+    </vehicle>
+    <vType id="Car6" length="5.00" vClass="passenger" color="green"/>
+    <vehicle id="Flow6.0" type="Car6" depart="0.00" fromTaz="cluster655375336_end_0_655375336_end_1_655375336_end_10_655375336_end_11_#8more" toTaz="6252193077">
+        <routeDistribution last="1">
+            <route cost="230.85" probability="0.50005907" edges="-E0 593847704#0 593849718#0"/>
+            <route cost="277.23" probability="0.49994093" edges="1068440004#1 593847702#0 593849718#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vType id="Car7" length="5.00" vClass="passenger" color="green"/>
+    <vehicle id="Flow7.0" type="Car7" depart="0.00" fromTaz="655375244" toTaz="2013717680">
+        <routeDistribution last="0">
+            <route cost="467.13" probability="0.51551091" edges="484988951#0 51362429#0 593847701 593847705 593847703#0 300077497#0 35274074#0 506322846#0 186602412#0"/>
+            <route cost="597.28" probability="0.48448909" edges="-51362430 1068440001 1239087513 593844221#0 49695736#0 300077497#0 35274074#0 506322846#0 186602412#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vType id="Car8" length="5.00" vClass="passenger" color="green"/>
+    <vehicle id="Flow8.0" type="Car8" depart="0.00" fromTaz="3208478128" toTaz="3208478132">
+        <routeDistribution last="0">
+            <route cost="3.12" probability="1.00000000" edges="314800955"/>
+        </routeDistribution>
+    </vehicle>
+    <vType id="Car9" length="5.00" vClass="passenger" color="green"/>
+    <vehicle id="Flow9.0" type="Car9" depart="0.00" fromTaz="631668923" toTaz="cluster655375228_655375240">
+        <routeDistribution last="2">
+            <route cost="264.87" probability="0.35525644" edges="1068234498#0 238526531#0 -35274074#2 300077497#6 E1"/>
+            <route cost="275.35" probability="0.30083118" edges="1068234498#0 288135626#0 1068234499#0 300077497#0 300077497#6 E1"/>
+            <route cost="237.82" probability="0.34391238" edges="1068234498#0 238526531#0 506322848#0 506322840#0 -1334905223#2"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow3.1" type="Car3" depart="11.11" fromTaz="cluster_9383263990_9383263991_9383263992_9383263993" toTaz="3431431576">
+        <routeDistribution last="0">
+            <route cost="379.29" probability="0.35978413" edges="506322844#0 -300077497#8 -300077497#5 -593847703#3 -593847705 -593847701 -51362429#1 49073226#2 288878926#0 593849711#0"/>
+            <route cost="539.67" probability="0.32374990" edges="506322844#0 263217604#0 360843888 244450512#4 244450512#5 1239087512 1239087514 51362430 484988951#0 49073226#2 288878926#0 593849711#0"/>
+            <route cost="465.57" probability="0.31646598" edges="506322840#0 -1334905223#2 -E1 -300077497#8 -300077497#5 -593847703#3 -593847705 -593847701 -51362429#1 49073226#2 288878926#0 593849711#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow9.1" type="Car9" depart="11.11" fromTaz="631668923" toTaz="cluster655375228_655375240">
+        <routeDistribution last="0">
+            <route cost="218.65" probability="0.37962305" edges="1068234498#0 238526531#0 -35274074#2 300077497#6 E1"/>
+            <route cost="334.41" probability="0.30071879" edges="1068234498#0 238526531#0 506322848#0 506322840#0 -1334905223#2"/>
+            <route cost="314.30" probability="0.31965816" edges="1068234498#0 288135626#0 1068234499#0 300077497#0 300077497#6 E1"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow4.1" type="Car4" depart="13.04" fromTaz="655375245" toTaz="2664674489">
+        <routeDistribution last="0">
+            <route cost="41.54" probability="1.00000000" edges="244450512#1 260881642#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow5.1" type="Car5" depart="16.67" fromTaz="2760755470" toTaz="3086736518">
+        <routeDistribution last="1">
+            <route cost="406.04" probability="0.47085160" edges="30620492#0 30620492#1 506322844#0 263217604#0 594658757#0 -E0"/>
+            <route cost="342.60" probability="0.52914840" edges="30620492#0 30620492#1 506322844#0 -300077497#8 -300077497#5 -593847703#3 -593847705"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow7.1" type="Car7" depart="20.00" fromTaz="655375244" toTaz="2013717680">
+        <routeDistribution last="0">
+            <route cost="638.44" probability="0.47842353" edges="-51362430 1068440001 1239087513 593844221#0 49695736#0 300077497#0 35274074#0 506322846#0 186602412#0"/>
+            <route cost="578.79" probability="0.52157647" edges="484988951#0 51362429#0 593847701 593847705 593847703#0 300077497#0 35274074#0 506322846#0 186602412#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow6.1" type="Car6" depart="21.43" fromTaz="cluster655375336_end_0_655375336_end_1_655375336_end_10_655375336_end_11_#8more" toTaz="6252193077">
+        <routeDistribution last="1">
+            <route cost="148.16" probability="0.53364075" edges="1068440004#1 593847702#0 593849718#0"/>
+            <route cost="219.84" probability="0.46635925" edges="-E0 593847704#0 593849718#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow3.2" type="Car3" depart="22.22" fromTaz="cluster_9383263990_9383263991_9383263992_9383263993" toTaz="3431431576">
+        <routeDistribution last="1">
+            <route cost="596.07" probability="0.24582330" edges="506322844#0 263217604#0 594658760#0 -E0 593847704#0 49073264#0 -49073264#1 593849711#0"/>
+            <route cost="371.94" probability="0.43057651" edges="506322844#0 -300077497#8 -300077497#5 -593847703#3 -593847705 -593847701 -51362429#1 49073226#2 288878926#0 593849711#0"/>
+            <route cost="472.08" probability="0.32360019" edges="506322844#0 -300077497#8 -300077497#5 182334378#0 232003903#0 1239087512 1239087514 51362430 484988951#0 49073226#2 288878926#0 593849711#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow9.2" type="Car9" depart="22.22" fromTaz="631668923" toTaz="cluster655375228_655375240">
+        <routeDistribution last="1">
+            <route cost="298.23" probability="0.49309505" edges="1068234498#0 238526531#0 -35274074#2 300077497#6 E1"/>
+            <route cost="267.09" probability="0.50690495" edges="1068234498#0 288135626#0 1068234499#0 300077497#0 300077497#6 E1"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow4.2" type="Car4" depart="26.09" fromTaz="655375245" toTaz="2664674489">
+        <routeDistribution last="0">
+            <route cost="44.26" probability="1.00000000" edges="244450512#1 260881642#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow5.2" type="Car5" depart="33.33" fromTaz="2760755470" toTaz="3086736518">
+        <routeDistribution last="1">
+            <route cost="394.68" probability="0.45435122" edges="30620492#0 30620492#1 506322842#0 -35274074#2 -300077497#5 -593847703#3 -593847705"/>
+            <route cost="363.43" probability="0.54564878" edges="30620492#0 30620492#1 506322844#0 -300077497#8 -300077497#5 -593847703#3 -593847705"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow3.3" type="Car3" depart="33.33" fromTaz="cluster_9383263990_9383263991_9383263992_9383263993" toTaz="3431431576">
+        <routeDistribution last="0">
+            <route cost="335.30" probability="1.00000000" edges="506322844#0 -300077497#8 -300077497#5 -593847703#3 -593847705 -593847701 -51362429#1 49073226#2 288878926#0 593849711#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow9.3" type="Car9" depart="33.33" fromTaz="631668923" toTaz="cluster655375228_655375240">
+        <routeDistribution last="0">
+            <route cost="216.12" probability="0.56316570" edges="1068234498#0 238526531#0 -35274074#2 300077497#6 E1"/>
+            <route cost="394.52" probability="0.43683430" edges="1068234498#0 238526531#0 506322848#0 506322840#0 -1334905223#2"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow4.3" type="Car4" depart="39.13" fromTaz="655375245" toTaz="2664674489">
+        <routeDistribution last="0">
+            <route cost="100.64" probability="1.00000000" edges="244450512#1 260881642#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow7.2" type="Car7" depart="40.00" fromTaz="655375244" toTaz="2013717680">
+        <routeDistribution last="0">
+            <route cost="627.78" probability="0.47905521" edges="484988951#0 51362429#0 593847701 593847705 593847703#0 300077497#0 35274074#0 506322846#0 186602412#0"/>
+            <route cost="445.19" probability="0.52094479" edges="-51362430 1068440001 1239087513 593844221#0 49695736#0 300077497#0 35274074#0 506322846#0 186602412#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow6.2" type="Car6" depart="42.86" fromTaz="cluster655375336_end_0_655375336_end_1_655375336_end_10_655375336_end_11_#8more" toTaz="6252193077">
+        <routeDistribution last="2">
+            <route cost="304.28" probability="0.37993526" edges="-E0 593847704#0 593849718#0"/>
+            <route cost="369.06" probability="0.26351231" edges="49695736#0 -593847703#3 -593847705 593847704#0 593849718#0"/>
+            <route cost="318.31" probability="0.35655244" edges="1068440004#1 593847702#0 593849718#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow3.4" type="Car3" depart="44.44" fromTaz="cluster_9383263990_9383263991_9383263992_9383263993" toTaz="3431431576">
+        <routeDistribution last="2">
+            <route cost="597.32" probability="0.27261349" edges="506322844#0 -300077497#8 -300077497#5 -593847703#3 593847702#0 593852345#0 196961215#2 288878926#0 593849711#0"/>
+            <route cost="517.35" probability="0.39212660" edges="506322844#0 -300077497#8 -300077497#5 -593847703#3 -593847705 -593847701 -51362429#1 49073226#2 288878926#0 593849711#0"/>
+            <route cost="493.16" probability="0.33525991" edges="506322844#0 -300077497#8 -300077497#5 182334378#0 232003903#0 1239087512 1239087514 51362430 484988951#0 49073226#2 288878926#0 593849711#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow9.4" type="Car9" depart="44.44" fromTaz="631668923" toTaz="cluster655375228_655375240">
+        <routeDistribution last="1">
+            <route cost="278.76" probability="0.48794346" edges="1068234498#0 238526531#0 506322848#0 506322840#0 -1334905223#2"/>
+            <route cost="289.32" probability="0.51205654" edges="1068234498#0 238526531#0 -35274074#2 300077497#6 E1"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow5.3" type="Car5" depart="50.00" fromTaz="2760755470" toTaz="3086736518">
+        <routeDistribution last="0">
+            <route cost="393.22" probability="1.00000000" edges="30620492#0 30620492#1 506322844#0 -300077497#8 -300077497#5 -593847703#3 -593847705"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow4.4" type="Car4" depart="52.17" fromTaz="655375245" toTaz="2664674489">
+        <routeDistribution last="0">
+            <route cost="87.05" probability="1.00000000" edges="244450512#1 260881642#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow3.5" type="Car3" depart="55.56" fromTaz="cluster_9383263990_9383263991_9383263992_9383263993" toTaz="3431431576">
+        <routeDistribution last="2">
+            <route cost="428.05" probability="0.35896027" edges="506322844#0 -300077497#8 -300077497#5 -593847703#3 -593847705 -593847701 -51362429#1 49073226#2 288878926#0 593849711#0"/>
+            <route cost="533.75" probability="0.31681008" edges="506322844#0 -300077497#8 -300077497#5 -593847703#3 -593847705 593847704#0 49073264#0 -49073264#1 593849711#0"/>
+            <route cost="434.61" probability="0.32422965" edges="506322844#0 263217604#0 360843888 244450512#4 244450512#5 1239087512 1239087514 51362430 484988951#0 49073226#2 288878926#0 593849711#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow9.5" type="Car9" depart="55.56" fromTaz="631668923" toTaz="cluster655375228_655375240">
+        <routeDistribution last="1">
+            <route cost="212.26" probability="0.59178877" edges="1068234498#0 238526531#0 -35274074#2 300077497#6 E1"/>
+            <route cost="217.92" probability="0.40821123" edges="1068234498#0 288135626#0 1068234499#0 300077497#0 300077497#6 E1"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow7.3" type="Car7" depart="60.00" fromTaz="655375244" toTaz="2013717680">
+        <routeDistribution last="0">
+            <route cost="679.97" probability="1.00000000" edges="484988951#0 51362429#0 593847701 593847705 593847703#0 300077497#0 35274074#0 506322846#0 186602412#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow6.3" type="Car6" depart="64.28" fromTaz="cluster655375336_end_0_655375336_end_1_655375336_end_10_655375336_end_11_#8more" toTaz="6252193077">
+        <routeDistribution last="1">
+            <route cost="308.10" probability="0.49855258" edges="1068440004#1 593847702#0 593849718#0"/>
+            <route cost="187.70" probability="0.50144742" edges="-E0 593847704#0 593849718#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow4.5" type="Car4" depart="65.22" fromTaz="655375245" toTaz="2664674489">
+        <routeDistribution last="0">
+            <route cost="97.56" probability="1.00000000" edges="244450512#1 260881642#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow5.4" type="Car5" depart="66.66" fromTaz="2760755470" toTaz="3086736518">
+        <routeDistribution last="0">
+            <route cost="348.75" probability="0.56490517" edges="30620492#0 30620492#1 506322844#0 -300077497#8 -300077497#5 -593847703#3 -593847705"/>
+            <route cost="522.67" probability="0.43509483" edges="30620492#0 30620492#1 506322844#0 263217604#0 594658760#0 -E0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow3.6" type="Car3" depart="66.67" fromTaz="cluster_9383263990_9383263991_9383263992_9383263993" toTaz="3431431576">
+        <routeDistribution last="0">
+            <route cost="492.01" probability="0.31860871" edges="506322842#0 506322846#0 506322846#2 288135626#0 1068234499#0 -593847703#3 -593847705 -593847701 -51362429#1 49073226#2 288878926#0 593849711#0"/>
+            <route cost="509.89" probability="0.33998601" edges="506322844#0 -300077497#8 -300077497#5 -593847703#3 -593847705 -593847701 -51362429#1 49073226#2 288878926#0 593849711#0"/>
+            <route cost="454.96" probability="0.34140528" edges="506322844#0 263217604#0 594658760#0 1068440004#1 593847702#0 49073272#1 49073272#3 360018417 196961377#3 593849711#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow9.6" type="Car9" depart="66.67" fromTaz="631668923" toTaz="cluster655375228_655375240">
+        <routeDistribution last="0">
+            <route cost="333.61" probability="0.29159642" edges="1068234498#0 238526531#0 -35274074#2 300077497#6 E1"/>
+            <route cost="266.18" probability="0.39506198" edges="1068234498#0 288135626#0 1068234499#0 300077497#0 300077497#6 E1"/>
+            <route cost="289.29" probability="0.31334160" edges="1068234498#0 238526531#0 506322848#0 506322840#0 -1334905223#2"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow15.1" type="Car15" depart="75.00" fromTaz="cluster655375228_655375240" toTaz="cluster_9383263990_9383263991_9383263992_9383263993">
+        <routeDistribution last="0">
+            <route cost="15.06" probability="1.00000000" edges="263217603#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow8.1" type="Car8" depart="75.00" fromTaz="3208478128" toTaz="3208478132">
+        <routeDistribution last="0">
+            <route cost="8.29" probability="1.00000000" edges="314800955"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow3.7" type="Car3" depart="77.78" fromTaz="cluster_9383263990_9383263991_9383263992_9383263993" toTaz="3431431576">
+        <routeDistribution last="2">
+            <route cost="429.69" probability="0.38922009" edges="506322844#0 -300077497#8 -300077497#5 -593847703#3 -593847705 -593847701 -51362429#1 49073226#2 288878926#0 593849711#0"/>
+            <route cost="580.98" probability="0.29910938" edges="506322844#0 263217604#0 594658760#0 -E0 593847704#0 593852345#0 196961215#2 288878926#0 593849711#0"/>
+            <route cost="519.48" probability="0.31167053" edges="506322844#0 -300077497#8 -300077497#5 182334378#0 232003903#0 1239087512 1239087514 51362430 484988951#0 49073226#2 288878926#0 593849711#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow9.7" type="Car9" depart="77.78" fromTaz="631668923" toTaz="cluster655375228_655375240">
+        <routeDistribution last="0">
+            <route cost="319.77" probability="0.47927310" edges="1068234498#0 238526531#0 -35274074#2 300077497#6 E1"/>
+            <route cost="267.09" probability="0.52072690" edges="1068234498#0 288135626#0 1068234499#0 300077497#0 300077497#6 E1"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow4.6" type="Car4" depart="78.26" fromTaz="655375245" toTaz="2664674489">
+        <routeDistribution last="0">
+            <route cost="58.69" probability="1.00000000" edges="244450512#1 260881642#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow7.4" type="Car7" depart="80.00" fromTaz="655375244" toTaz="2013717680">
+        <routeDistribution last="1">
+            <route cost="608.32" probability="0.49489941" edges="484988951#0 51362429#0 593847701 593847705 593847703#0 300077497#0 35274074#0 506322846#0 186602412#0"/>
+            <route cost="578.95" probability="0.50510059" edges="-51362430 1068440001 1239087513 593844221#0 49695736#0 300077497#0 35274074#0 506322846#0 186602412#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow5.5" type="Car5" depart="83.33" fromTaz="2760755470" toTaz="3086736518">
+        <routeDistribution last="1">
+            <route cost="543.26" probability="0.43788460" edges="30620492#0 30620492#1 506322844#0 263217604#0 594658757#0 -E0"/>
+            <route cost="424.77" probability="0.56211540" edges="30620492#0 30620492#1 506322844#0 -300077497#8 -300077497#5 -593847703#3 -593847705"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow6.4" type="Car6" depart="85.71" fromTaz="cluster655375336_end_0_655375336_end_1_655375336_end_10_655375336_end_11_#8more" toTaz="6252193077">
+        <routeDistribution last="0">
+            <route cost="221.82" probability="0.58156079" edges="1068440004#1 593847702#0 593849718#0"/>
+            <route cost="300.04" probability="0.41843921" edges="-E0 593847704#0 593849718#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow3.8" type="Car3" depart="88.89" fromTaz="cluster_9383263990_9383263991_9383263992_9383263993" toTaz="3431431576">
+        <routeDistribution last="0">
+            <route cost="518.47" probability="0.51612995" edges="506322844#0 -300077497#8 -300077497#5 -593847703#3 -593847705 -593847701 -51362429#1 49073226#2 288878926#0 593849711#0"/>
+            <route cost="607.95" probability="0.48387005" edges="506322844#0 -300077497#8 -300077497#5 182334378#0 232003903#0 1239087512 1239087514 51362430 484988951#0 49073226#2 288878926#0 593849711#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow9.8" type="Car9" depart="88.89" fromTaz="631668923" toTaz="cluster655375228_655375240">
+        <routeDistribution last="0">
+            <route cost="395.56" probability="0.25039869" edges="1068234498#0 288135626#0 1068234499#0 300077497#0 300077497#6 E1"/>
+            <route cost="242.35" probability="0.38958773" edges="1068234498#0 238526531#0 -35274074#2 300077497#6 E1"/>
+            <route cost="314.49" probability="0.36001358" edges="1068234498#0 238526531#0 506322848#0 506322840#0 -1334905223#2"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow4.7" type="Car4" depart="91.30" fromTaz="655375245" toTaz="2664674489">
+        <routeDistribution last="0">
+            <route cost="93.83" probability="1.00000000" edges="244450512#1 260881642#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow5.6" type="Car5" depart="100.00" fromTaz="2760755470" toTaz="3086736518">
+        <routeDistribution last="0">
+            <route cost="288.71" probability="0.59824686" edges="30620492#0 30620492#1 506322844#0 -300077497#8 -300077497#5 -593847703#3 -593847705"/>
+            <route cost="535.69" probability="0.40175314" edges="30620492#0 30620492#1 506322844#0 263217604#0 594658760#0 -E0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow3.9" type="Car3" depart="100.00" fromTaz="cluster_9383263990_9383263991_9383263992_9383263993" toTaz="3431431576">
+        <routeDistribution last="1">
+            <route cost="530.76" probability="0.37598996" edges="506322844#0 -300077497#8 -300077497#5 -593847703#3 -593847705 -593847701 -51362429#1 49073226#2 288878926#0 593849711#0"/>
+            <route cost="529.14" probability="0.32752207" edges="506322842#0 506322846#0 506322846#2 506322851#0 506322851#2 506322853#0 668037874 196961377#0 196961377#3 593849711#0"/>
+            <route cost="589.60" probability="0.29648797" edges="506322844#0 263217604#0 594658760#0 -E0 593847704#0 49073272#1 49073272#3 360018417 196961377#3 593849711#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow9.9" type="Car9" depart="100.00" fromTaz="631668923" toTaz="cluster655375228_655375240">
+        <routeDistribution last="2">
+            <route cost="324.74" probability="0.31159478" edges="1068234498#0 238526531#0 -35274074#2 300077497#6 E1"/>
+            <route cost="308.85" probability="0.32596404" edges="1068234498#0 238526531#0 506322848#0 506322840#0 -1334905223#2"/>
+            <route cost="321.37" probability="0.36244117" edges="1068234498#0 288135626#0 1068234499#0 300077497#0 300077497#6 E1"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow11.1" type="Car11" depart="100.00" fromTaz="3086736518" toTaz="cluster_2528018119_655375236">
+        <routeDistribution last="0">
+            <route cost="37.86" probability="1.00000000" edges="593847705 593847703#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow12.1" type="Car12" depart="100.00" fromTaz="3431431576" toTaz="3086736518">
+        <routeDistribution last="0">
+            <route cost="292.69" probability="1.00000000" edges="593849711#2 -51362429#1 49073226#2 288878926#0 -593847704#2"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow7.5" type="Car7" depart="100.00" fromTaz="655375244" toTaz="2013717680">
+        <routeDistribution last="1">
+            <route cost="603.00" probability="0.50941029" edges="-51362430 1068440001 1239087513 593844221#0 49695736#0 300077497#0 35274074#0 506322846#0 186602412#0"/>
+            <route cost="493.50" probability="0.49058971" edges="484988951#0 51362429#0 593847701 593847705 593847703#0 300077497#0 35274074#0 506322846#0 186602412#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow4.8" type="Car4" depart="104.34" fromTaz="655375245" toTaz="2664674489">
+        <routeDistribution last="0">
+            <route cost="45.46" probability="1.00000000" edges="244450512#1 260881642#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow6.5" type="Car6" depart="107.14" fromTaz="cluster655375336_end_0_655375336_end_1_655375336_end_10_655375336_end_11_#8more" toTaz="6252193077">
+        <routeDistribution last="1">
+            <route cost="259.43" probability="0.51653785" edges="-E0 593847704#0 593849718#0"/>
+            <route cost="337.03" probability="0.48346215" edges="232003903#0 1239087512 1239087514 51362430 484988951#0 49073226#2 288878926#0 593849718#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow3.10" type="Car3" depart="111.11" fromTaz="cluster_9383263990_9383263991_9383263992_9383263993" toTaz="3431431576">
+        <routeDistribution last="0">
+            <route cost="271.19" probability="0.42724985" edges="506322844#0 -300077497#8 -300077497#5 -593847703#3 -593847705 -593847701 -51362429#1 49073226#2 288878926#0 593849711#0"/>
+            <route cost="542.86" probability="0.28374440" edges="506322844#0 263217604#0 360843888 244450512#4 244450512#5 1239087512 1239087514 51362430 484988951#0 49073226#2 288878926#0 593849711#0"/>
+            <route cost="611.55" probability="0.28900575" edges="506322844#0 263217604#0 594658757#0 -E0 593847704#0 593852345#0 196961215#2 288878926#0 593849711#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow9.10" type="Car9" depart="111.11" fromTaz="631668923" toTaz="cluster655375228_655375240">
+        <routeDistribution last="1">
+            <route cost="393.72" probability="0.44537636" edges="1068234498#0 238526531#0 506322848#0 506322840#0 -1334905223#2"/>
+            <route cost="439.15" probability="0.55462364" edges="1068234498#0 288135626#0 1068234499#0 300077497#0 300077497#6 E1"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow5.7" type="Car5" depart="116.66" fromTaz="2760755470" toTaz="3086736518">
+        <routeDistribution last="1">
+            <route cost="344.94" probability="0.43080179" edges="30620492#0 30620492#1 506322844#0 -300077497#8 -300077497#5 -593847703#3 -593847705"/>
+            <route cost="385.60" probability="0.29305172" edges="30620492#0 30620492#1 506322844#0 263217604#0 594658757#0 -E0"/>
+            <route cost="490.53" probability="0.27614649" edges="30620492#0 30620492#1 506322844#0 263217604#0 594658760#0 -E0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow4.9" type="Car4" depart="117.39" fromTaz="655375245" toTaz="2664674489">
+        <routeDistribution last="0">
+            <route cost="71.49" probability="1.00000000" edges="244450512#1 260881642#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow7.6" type="Car7" depart="120.00" fromTaz="655375244" toTaz="2013717680">
+        <routeDistribution last="0">
+            <route cost="428.87" probability="1.00000000" edges="484988951#0 51362429#0 593847701 593847705 593847703#0 300077497#0 35274074#0 506322846#0 186602412#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow3.11" type="Car3" depart="122.22" fromTaz="cluster_9383263990_9383263991_9383263992_9383263993" toTaz="3431431576">
+        <routeDistribution last="0">
+            <route cost="606.60" probability="0.35093163" edges="506322844#0 -300077497#8 -300077497#5 182334378#0 232003903#0 1239087512 1239087514 51362430 484988951#0 49073226#2 288878926#0 593849711#0"/>
+            <route cost="420.35" probability="0.35444617" edges="506322844#0 -300077497#8 -300077497#5 -593847703#3 -593847705 -593847701 -51362429#1 49073226#2 288878926#0 593849711#0"/>
+            <route cost="514.90" probability="0.29462220" edges="506322844#0 263217604#0 360843888 244450512#4 244450512#5 1239087512 1239087514 51362430 484988951#0 49073226#2 288878926#0 593849711#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow9.11" type="Car9" depart="122.22" fromTaz="631668923" toTaz="cluster655375228_655375240">
+        <routeDistribution last="1">
+            <route cost="198.34" probability="0.57679888" edges="1068234498#0 238526531#0 -35274074#2 300077497#6 E1"/>
+            <route cost="408.95" probability="0.42320112" edges="1068234498#0 288135626#0 1068234499#0 300077497#0 300077497#6 E1"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow6.6" type="Car6" depart="128.57" fromTaz="cluster655375336_end_0_655375336_end_1_655375336_end_10_655375336_end_11_#8more" toTaz="6252193077">
+        <routeDistribution last="1">
+            <route cost="360.80" probability="0.24917508" edges="232003903#0 1239087512 1239087514 51362430 484988951#0 49073226#2 288878926#0 593849718#0"/>
+            <route cost="247.38" probability="0.37588910" edges="-E0 593847704#0 593849718#0"/>
+            <route cost="183.20" probability="0.37493582" edges="1068440004#1 593847702#0 593849718#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow4.10" type="Car4" depart="130.43" fromTaz="655375245" toTaz="2664674489">
+        <routeDistribution last="0">
+            <route cost="105.26" probability="1.00000000" edges="244450512#1 260881642#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow5.8" type="Car5" depart="133.33" fromTaz="2760755470" toTaz="3086736518">
+        <routeDistribution last="0">
+            <route cost="225.23" probability="1.00000000" edges="30620492#0 30620492#1 506322844#0 -300077497#8 -300077497#5 -593847703#3 -593847705"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow3.12" type="Car3" depart="133.33" fromTaz="cluster_9383263990_9383263991_9383263992_9383263993" toTaz="3431431576">
+        <routeDistribution last="2">
+            <route cost="384.91" probability="0.37214287" edges="506322842#0 -35274074#2 -300077497#5 -593847703#3 -593847705 -593847701 -51362429#1 49073226#2 288878926#0 593849711#0"/>
+            <route cost="417.45" probability="0.33189223" edges="506322844#0 -300077497#8 -300077497#5 -593847703#3 -593847705 -593847701 -51362429#1 49073226#2 288878926#0 593849711#0"/>
+            <route cost="463.07" probability="0.29596489" edges="506322844#0 -300077497#8 -300077497#5 -593847703#3 593847702#0 49073272#1 49073272#3 360018417 196961377#3 593849711#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow9.12" type="Car9" depart="133.33" fromTaz="631668923" toTaz="cluster655375228_655375240">
+        <routeDistribution last="1">
+            <route cost="182.17" probability="0.55357774" edges="1068234498#0 238526531#0 -35274074#2 300077497#6 E1"/>
+            <route cost="324.33" probability="0.44642226" edges="1068234498#0 238526531#0 506322848#0 506322840#0 -1334905223#2"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow7.7" type="Car7" depart="140.00" fromTaz="655375244" toTaz="2013717680">
+        <routeDistribution last="0">
+            <route cost="497.65" probability="1.00000000" edges="484988951#0 51362429#0 593847701 593847705 593847703#0 300077497#0 35274074#0 506322846#0 186602412#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow4.11" type="Car4" depart="143.47" fromTaz="655375245" toTaz="2664674489">
+        <routeDistribution last="0">
+            <route cost="90.38" probability="1.00000000" edges="244450512#1 260881642#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow3.13" type="Car3" depart="144.44" fromTaz="cluster_9383263990_9383263991_9383263992_9383263993" toTaz="3431431576">
+        <routeDistribution last="2">
+            <route cost="511.00" probability="0.31580384" edges="506322844#0 -300077497#8 -300077497#5 -593847703#3 593847702#0 49073272#1 49073272#3 360018417 196961377#3 593849711#0"/>
+            <route cost="546.28" probability="0.27688079" edges="506322842#0 506322846#0 506322846#2 288135626#0 1068234499#0 -593847703#3 -593847705 -593847701 -51362429#1 49073226#2 288878926#0 593849711#0"/>
+            <route cost="441.84" probability="0.40731537" edges="506322844#0 -300077497#8 -300077497#5 -593847703#3 -593847705 -593847701 -51362429#1 49073226#2 288878926#0 593849711#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow9.13" type="Car9" depart="144.44" fromTaz="631668923" toTaz="cluster655375228_655375240">
+        <routeDistribution last="2">
+            <route cost="293.96" probability="0.35277700" edges="1068234498#0 288135626#0 1068234499#0 300077497#0 300077497#6 E1"/>
+            <route cost="247.83" probability="0.32602981" edges="1068234498#0 238526531#0 506322848#0 506322840#0 -1334905223#2"/>
+            <route cost="312.74" probability="0.32119319" edges="1068234498#0 238526531#0 -35274074#2 300077497#6 E1"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow5.9" type="Car5" depart="149.99" fromTaz="2760755470" toTaz="3086736518">
+        <routeDistribution last="0">
+            <route cost="347.61" probability="1.00000000" edges="30620492#0 30620492#1 506322844#0 -300077497#8 -300077497#5 -593847703#3 -593847705"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow6.7" type="Car6" depart="150.00" fromTaz="cluster655375336_end_0_655375336_end_1_655375336_end_10_655375336_end_11_#8more" toTaz="6252193077">
+        <routeDistribution last="1">
+            <route cost="252.17" probability="0.50779672" edges="1068440004#1 593847702#0 593849718#0"/>
+            <route cost="290.21" probability="0.49220328" edges="-E0 593847704#0 593849718#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow1.1" type="Car1" depart="150.00" fromTaz="cluster_2528018119_655375236" toTaz="3196998953">
+        <routeDistribution last="0">
+            <route cost="215.93" probability="0.49106211" edges="182334378#0 -594658757#2 303647015#0"/>
+            <route cost="284.61" probability="0.50893789" edges="182334378#0 1334904386#0 303647015#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow14.1" type="Car14" depart="150.00" fromTaz="cluster3086736522_655375108_655375247_655375401_#1more" toTaz="655375241">
+        <routeDistribution last="1">
+            <route cost="115.53" probability="0.56829240" edges="594658762#0 1334905223#0"/>
+            <route cost="298.73" probability="0.43170760" edges="594658760#0 49695736#0 300077497#0 300077497#6 E1 1334905223#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow15.2" type="Car15" depart="150.00" fromTaz="cluster655375228_655375240" toTaz="cluster_9383263990_9383263991_9383263992_9383263993">
+        <routeDistribution last="0">
+            <route cost="3.16" probability="1.00000000" edges="263217603#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow8.2" type="Car8" depart="150.00" fromTaz="3208478128" toTaz="3208478132">
+        <routeDistribution last="0">
+            <route cost="11.95" probability="1.00000000" edges="314800955"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow3.14" type="Car3" depart="155.55" fromTaz="cluster_9383263990_9383263991_9383263992_9383263993" toTaz="3431431576">
+        <routeDistribution last="2">
+            <route cost="508.97" probability="0.36426585" edges="506322844#0 -300077497#8 -300077497#5 -593847703#3 -593847705 -593847701 -51362429#1 49073226#2 288878926#0 593849711#0"/>
+            <route cost="442.88" probability="0.34688582" edges="506322844#0 -300077497#8 -300077497#5 182334378#0 232003903#0 1239087512 1239087514 51362430 484988951#0 49073226#2 288878926#0 593849711#0"/>
+            <route cost="536.97" probability="0.28884832" edges="506322844#0 263217604#0 594658760#0 1068440004#1 593847702#0 49073272#1 49073272#3 360018417 196961377#3 593849711#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow9.14" type="Car9" depart="155.55" fromTaz="631668923" toTaz="cluster655375228_655375240">
+        <routeDistribution last="0">
+            <route cost="255.55" probability="0.36967922" edges="1068234498#0 238526531#0 506322848#0 506322840#0 -1334905223#2"/>
+            <route cost="346.18" probability="0.31735796" edges="1068234498#0 238526531#0 -35274074#2 300077497#6 E1"/>
+            <route cost="376.84" probability="0.31296282" edges="1068234498#0 288135626#0 1068234499#0 300077497#0 300077497#6 E1"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow4.12" type="Car4" depart="156.52" fromTaz="655375245" toTaz="2664674489">
+        <routeDistribution last="0">
+            <route cost="33.55" probability="1.00000000" edges="244450512#1 260881642#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow7.8" type="Car7" depart="160.00" fromTaz="655375244" toTaz="2013717680">
+        <routeDistribution last="0">
+            <route cost="682.08" probability="0.46701563" edges="-51362430 1068440001 1239087513 593844221#0 49695736#0 300077497#0 35274074#0 506322846#0 186602412#0"/>
+            <route cost="428.30" probability="0.53298437" edges="484988951#0 51362429#0 593847701 593847705 593847703#0 300077497#0 35274074#0 506322846#0 186602412#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow5.10" type="Car5" depart="166.66" fromTaz="2760755470" toTaz="3086736518">
+        <routeDistribution last="2">
+            <route cost="352.51" probability="0.37766061" edges="30620492#0 30620492#1 506322844#0 -300077497#8 -300077497#5 182334378#0 -E0"/>
+            <route cost="447.53" probability="0.24798119" edges="30620492#0 30620492#1 506322842#0 506322846#0 506322846#2 288135626#0 1068234499#0 -593847703#3 -593847705"/>
+            <route cost="357.28" probability="0.37435820" edges="30620492#0 30620492#1 506322844#0 -300077497#8 -300077497#5 -593847703#3 -593847705"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow3.15" type="Car3" depart="166.67" fromTaz="cluster_9383263990_9383263991_9383263992_9383263993" toTaz="3431431576">
+        <routeDistribution last="0">
+            <route cost="590.75" probability="0.45249659" edges="506322844#0 -300077497#8 -300077497#5 -593847703#3 -593847705 593847704#0 49073264#0 -49073264#1 593849711#0"/>
+            <route cost="409.28" probability="0.54750341" edges="506322844#0 -300077497#8 -300077497#5 -593847703#3 -593847705 -593847701 -51362429#1 49073226#2 288878926#0 593849711#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow9.15" type="Car9" depart="166.67" fromTaz="631668923" toTaz="cluster655375228_655375240">
+        <routeDistribution last="1">
+            <route cost="217.17" probability="0.50415530" edges="1068234498#0 238526531#0 506322848#0 506322840#0 -1334905223#2"/>
+            <route cost="257.03" probability="0.49584470" edges="1068234498#0 288135626#0 1068234499#0 300077497#0 300077497#6 E1"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow4.13" type="Car4" depart="169.56" fromTaz="655375245" toTaz="2664674489">
+        <routeDistribution last="0">
+            <route cost="95.80" probability="1.00000000" edges="244450512#1 260881642#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow6.8" type="Car6" depart="171.42" fromTaz="cluster655375336_end_0_655375336_end_1_655375336_end_10_655375336_end_11_#8more" toTaz="6252193077">
+        <routeDistribution last="0">
+            <route cost="140.32" probability="0.56078576" edges="1068440004#1 593847702#0 593849718#0"/>
+            <route cost="159.77" probability="0.43921424" edges="-E0 593847704#0 593849718#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow3.16" type="Car3" depart="177.78" fromTaz="cluster_9383263990_9383263991_9383263992_9383263993" toTaz="3431431576">
+        <routeDistribution last="0">
+            <route cost="456.50" probability="0.35997414" edges="506322844#0 -300077497#8 -300077497#5 -593847703#3 -593847705 -593847701 -51362429#1 49073226#2 288878926#0 593849711#0"/>
+            <route cost="436.58" probability="0.31606602" edges="506322844#0 263217604#0 594658757#0 1068440004#1 593847702#0 49073272#1 49073272#3 360018417 196961377#3 593849711#0"/>
+            <route cost="500.07" probability="0.32395984" edges="506322844#0 -300077497#8 -300077497#5 -593847703#3 -593847705 593847704#0 49073272#1 49073272#3 360018417 196961377#3 593849711#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow9.16" type="Car9" depart="177.78" fromTaz="631668923" toTaz="cluster655375228_655375240">
+        <routeDistribution last="1">
+            <route cost="321.12" probability="0.30828932" edges="1068234498#0 288135626#0 1068234499#0 300077497#0 300077497#6 E1"/>
+            <route cost="288.76" probability="0.38099369" edges="1068234498#0 238526531#0 -35274074#2 300077497#6 E1"/>
+            <route cost="315.83" probability="0.31071699" edges="1068234498#0 238526531#0 506322848#0 506322840#0 -1334905223#2"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow7.9" type="Car7" depart="180.00" fromTaz="655375244" toTaz="2013717680">
+        <routeDistribution last="1">
+            <route cost="497.08" probability="0.51718879" edges="484988951#0 51362429#0 593847701 593847705 593847703#0 300077497#0 35274074#0 506322846#0 186602412#0"/>
+            <route cost="736.79" probability="0.48281121" edges="-51362430 1068440001 1239087513 593844221#0 49695736#0 300077497#0 35274074#0 506322846#0 186602412#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow4.14" type="Car4" depart="182.60" fromTaz="655375245" toTaz="2664674489">
+        <routeDistribution last="0">
+            <route cost="57.94" probability="1.00000000" edges="244450512#1 260881642#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow5.11" type="Car5" depart="183.33" fromTaz="2760755470" toTaz="3086736518">
+        <routeDistribution last="2">
+            <route cost="321.31" probability="0.35272185" edges="30620492#0 30620492#1 506322844#0 -300077497#8 -300077497#5 -593847703#3 -593847705"/>
+            <route cost="364.05" probability="0.30337411" edges="30620492#0 30620492#1 506322844#0 -300077497#8 -300077497#5 182334378#0 -E0"/>
+            <route cost="300.86" probability="0.34390404" edges="30620492#0 30620492#1 506322844#0 263217604#0 594658760#0 -E0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow3.17" type="Car3" depart="188.89" fromTaz="cluster_9383263990_9383263991_9383263992_9383263993" toTaz="3431431576">
+        <routeDistribution last="1">
+            <route cost="401.92" probability="0.53390195" edges="506322844#0 -300077497#8 -300077497#5 -593847703#3 -593847705 -593847701 -51362429#1 49073226#2 288878926#0 593849711#0"/>
+            <route cost="558.49" probability="0.46609805" edges="506322844#0 -300077497#8 -300077497#5 -593847703#3 593847702#0 49073264#0 -49073264#1 593849711#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow9.17" type="Car9" depart="188.89" fromTaz="631668923" toTaz="cluster655375228_655375240">
+        <routeDistribution last="1">
+            <route cost="385.32" probability="0.49999306" edges="1068234498#0 238526531#0 -35274074#2 300077497#6 E1"/>
+            <route cost="262.89" probability="0.50000694" edges="1068234498#0 238526531#0 506322848#0 506322840#0 -1334905223#2"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow6.9" type="Car6" depart="192.85" fromTaz="cluster655375336_end_0_655375336_end_1_655375336_end_10_655375336_end_11_#8more" toTaz="6252193077">
+        <routeDistribution last="0">
+            <route cost="277.31" probability="1.00000000" edges="1068440004#1 593847702#0 593849718#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow4.15" type="Car4" depart="195.65" fromTaz="655375245" toTaz="2664674489">
+        <routeDistribution last="0">
+            <route cost="69.81" probability="1.00000000" edges="244450512#1 260881642#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow5.12" type="Car5" depart="199.99" fromTaz="2760755470" toTaz="3086736518">
+        <routeDistribution last="0">
+            <route cost="350.00" probability="0.38737917" edges="30620492#0 30620492#1 506322844#0 -300077497#8 -300077497#5 -593847703#3 -593847705"/>
+            <route cost="374.40" probability="0.34406280" edges="30620492#0 30620492#1 506322844#0 263217604#0 594658760#0 -E0"/>
+            <route cost="560.92" probability="0.26855803" edges="30620492#0 30620492#1 506322842#0 506322846#0 506322846#2 288135626#0 1068234499#0 -593847703#3 -593847705"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow3.18" type="Car3" depart="200.00" fromTaz="cluster_9383263990_9383263991_9383263992_9383263993" toTaz="3431431576">
+        <routeDistribution last="0">
+            <route cost="491.88" probability="0.32753220" edges="506322844#0 263217604#0 360843888 244450512#4 244450512#5 1239087512 1239087514 51362430 484988951#0 49073226#2 288878926#0 593849711#0"/>
+            <route cost="424.59" probability="0.35393309" edges="506322844#0 -300077497#8 -300077497#5 -593847703#3 -593847705 -593847701 -51362429#1 49073226#2 288878926#0 593849711#0"/>
+            <route cost="518.72" probability="0.31853471" edges="506322844#0 -300077497#8 -300077497#5 182334378#0 232003903#0 1239087512 1239087514 51362430 484988951#0 49073226#2 288878926#0 593849711#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow9.18" type="Car9" depart="200.00" fromTaz="631668923" toTaz="cluster655375228_655375240">
+        <routeDistribution last="1">
+            <route cost="343.52" probability="0.49423420" edges="1068234498#0 288135626#0 1068234499#0 300077497#0 300077497#6 E1"/>
+            <route cost="309.09" probability="0.50576580" edges="1068234498#0 238526531#0 -35274074#2 300077497#6 E1"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow11.2" type="Car11" depart="200.00" fromTaz="3086736518" toTaz="cluster_2528018119_655375236">
+        <routeDistribution last="0">
+            <route cost="86.74" probability="1.00000000" edges="593847705 593847703#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow12.2" type="Car12" depart="200.00" fromTaz="3431431576" toTaz="3086736518">
+        <routeDistribution last="1">
+            <route cost="280.16" probability="0.53027571" edges="593849711#2 -51362429#1 49073226#2 288878926#0 -593847704#2"/>
+            <route cost="447.24" probability="0.46972429" edges="593849711#2 1068440006#0 232003903#0 1239087512 1239087514 51362430 484988951#0 51362429#0 593847701"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow7.10" type="Car7" depart="200.00" fromTaz="655375244" toTaz="2013717680">
+        <routeDistribution last="0">
+            <route cost="652.71" probability="0.50688918" edges="484988951#0 51362429#0 593847701 593847705 593847703#0 300077497#0 35274074#0 506322846#0 186602412#0"/>
+            <route cost="674.97" probability="0.49311082" edges="-51362430 1068440001 1239087513 593844221#0 49695736#0 300077497#0 35274074#0 506322846#0 186602412#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow4.16" type="Car4" depart="208.69" fromTaz="655375245" toTaz="2664674489">
+        <routeDistribution last="0">
+            <route cost="57.97" probability="1.00000000" edges="244450512#1 260881642#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow3.19" type="Car3" depart="211.11" fromTaz="cluster_9383263990_9383263991_9383263992_9383263993" toTaz="3431431576">
+        <routeDistribution last="0">
+            <route cost="453.14" probability="0.40946893" edges="506322844#0 -300077497#8 -300077497#5 -593847703#3 -593847705 -593847701 -51362429#1 49073226#2 288878926#0 593849711#0"/>
+            <route cost="518.51" probability="0.30130674" edges="506322842#0 506322846#0 506322846#2 288135626#0 1068234499#0 -593847703#3 -593847705 -593847701 -51362429#1 49073226#2 288878926#0 593849711#0"/>
+            <route cost="599.12" probability="0.28922432" edges="506322844#0 263217604#0 594658757#0 1068440004#1 593847702#0 49073272#1 49073272#3 360018417 196961377#3 593849711#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow9.19" type="Car9" depart="211.11" fromTaz="631668923" toTaz="cluster655375228_655375240">
+        <routeDistribution last="2">
+            <route cost="286.76" probability="0.28691569" edges="1068234498#0 238526531#0 506322848#0 506322840#0 -1334905223#2"/>
+            <route cost="246.98" probability="0.37695434" edges="1068234498#0 238526531#0 -35274074#2 300077497#6 E1"/>
+            <route cost="269.52" probability="0.33612997" edges="1068234498#0 288135626#0 1068234499#0 300077497#0 300077497#6 E1"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow6.10" type="Car6" depart="214.28" fromTaz="cluster655375336_end_0_655375336_end_1_655375336_end_10_655375336_end_11_#8more" toTaz="6252193077">
+        <routeDistribution last="0">
+            <route cost="201.62" probability="0.56257576" edges="1068440004#1 593847702#0 593849718#0"/>
+            <route cost="214.73" probability="0.43742424" edges="49695736#0 -593847703#3 -593847705 593847704#0 593849718#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow5.13" type="Car5" depart="216.66" fromTaz="2760755470" toTaz="3086736518">
+        <routeDistribution last="0">
+            <route cost="209.43" probability="0.43686740" edges="30620492#0 30620492#1 506322844#0 -300077497#8 -300077497#5 -593847703#3 -593847705"/>
+            <route cost="336.93" probability="0.24526396" edges="30620492#0 30620492#1 506322844#0 -300077497#8 -300077497#5 182334378#0 -E0"/>
+            <route cost="364.47" probability="0.31786864" edges="30620492#0 30620492#1 506322844#0 263217604#0 594658760#0 -E0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow7.11" type="Car7" depart="220.00" fromTaz="655375244" toTaz="2013717680">
+        <routeDistribution last="0">
+            <route cost="460.69" probability="0.51724848" edges="-51362430 1068440001 1239087513 593844221#0 49695736#0 300077497#0 35274074#0 506322846#0 186602412#0"/>
+            <route cost="601.89" probability="0.48275152" edges="484988951#0 51362429#0 593847701 593847705 593847703#0 300077497#0 35274074#0 506322846#0 186602412#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow4.17" type="Car4" depart="221.73" fromTaz="655375245" toTaz="2664674489">
+        <routeDistribution last="0">
+            <route cost="37.26" probability="1.00000000" edges="244450512#1 260881642#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow3.20" type="Car3" depart="222.22" fromTaz="cluster_9383263990_9383263991_9383263992_9383263993" toTaz="3431431576">
+        <routeDistribution last="1">
+            <route cost="460.29" probability="0.36464128" edges="506322844#0 -300077497#8 -300077497#5 -593847703#3 -593847705 -593847701 -51362429#1 49073226#2 288878926#0 593849711#0"/>
+            <route cost="431.49" probability="0.33749288" edges="506322844#0 -300077497#8 -300077497#5 182334378#0 1068440004#1 593847702#0 49073272#1 49073272#3 360018417 196961377#3 593849711#0"/>
+            <route cost="678.52" probability="0.29786584" edges="506322844#0 263217604#0 594658760#0 49695736#0 -593847703#3 -593847705 -593847701 -51362429#1 49073226#2 288878926#0 593849711#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow9.20" type="Car9" depart="222.22" fromTaz="631668923" toTaz="cluster655375228_655375240">
+        <routeDistribution last="2">
+            <route cost="298.64" probability="0.33714776" edges="1068234498#0 238526531#0 506322848#0 506322840#0 -1334905223#2"/>
+            <route cost="292.62" probability="0.33854210" edges="1068234498#0 238526531#0 -35274074#2 300077497#6 E1"/>
+            <route cost="334.36" probability="0.32431014" edges="1068234498#0 288135626#0 1068234499#0 300077497#0 300077497#6 E1"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow15.3" type="Car15" depart="225.00" fromTaz="cluster655375228_655375240" toTaz="cluster_9383263990_9383263991_9383263992_9383263993">
+        <routeDistribution last="0">
+            <route cost="7.25" probability="1.00000000" edges="263217603#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow8.3" type="Car8" depart="225.00" fromTaz="3208478128" toTaz="3208478132">
+        <routeDistribution last="0">
+            <route cost="4.59" probability="1.00000000" edges="314800955"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow5.14" type="Car5" depart="233.32" fromTaz="2760755470" toTaz="3086736518">
+        <routeDistribution last="0">
+            <route cost="310.79" probability="1.00000000" edges="30620492#0 30620492#1 506322844#0 -300077497#8 -300077497#5 -593847703#3 -593847705"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow3.21" type="Car3" depart="233.33" fromTaz="cluster_9383263990_9383263991_9383263992_9383263993" toTaz="3431431576">
+        <routeDistribution last="1">
+            <route cost="404.13" probability="0.52539141" edges="506322844#0 -300077497#8 -300077497#5 -593847703#3 -593847705 -593847701 -51362429#1 49073226#2 288878926#0 593849711#0"/>
+            <route cost="600.58" probability="0.47460859" edges="506322844#0 -300077497#8 -300077497#5 182334378#0 232003903#0 1239087512 1239087514 51362430 484988951#0 49073226#2 288878926#0 593849711#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow9.21" type="Car9" depart="233.33" fromTaz="631668923" toTaz="cluster655375228_655375240">
+        <routeDistribution last="1">
+            <route cost="325.93" probability="0.51436684" edges="1068234498#0 238526531#0 -35274074#2 300077497#6 E1"/>
+            <route cost="266.54" probability="0.48563316" edges="1068234498#0 238526531#0 506322848#0 506322840#0 -1334905223#2"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow4.18" type="Car4" depart="234.77" fromTaz="655375245" toTaz="2664674489">
+        <routeDistribution last="0">
+            <route cost="37.50" probability="1.00000000" edges="244450512#1 260881642#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow6.11" type="Car6" depart="235.71" fromTaz="cluster655375336_end_0_655375336_end_1_655375336_end_10_655375336_end_11_#8more" toTaz="6252193077">
+        <routeDistribution last="1">
+            <route cost="223.73" probability="0.32656510" edges="1068440004#1 593847702#0 593849718#0"/>
+            <route cost="315.91" probability="0.34361982" edges="-E0 593847704#0 593849718#0"/>
+            <route cost="186.58" probability="0.32981509" edges="49695736#0 -593847703#3 -593847705 593847704#0 593849718#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow7.12" type="Car7" depart="240.00" fromTaz="655375244" toTaz="2013717680">
+        <routeDistribution last="1">
+            <route cost="588.21" probability="0.47199886" edges="484988951#0 51362429#0 593847701 593847705 593847703#0 300077497#0 35274074#0 506322846#0 186602412#0"/>
+            <route cost="472.14" probability="0.52800114" edges="-51362430 1068440001 1239087513 593844221#0 49695736#0 300077497#0 35274074#0 506322846#0 186602412#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow3.22" type="Car3" depart="244.44" fromTaz="cluster_9383263990_9383263991_9383263992_9383263993" toTaz="3431431576">
+        <routeDistribution last="1">
+            <route cost="500.76" probability="0.51215438" edges="506322844#0 -300077497#8 -300077497#5 -593847703#3 -593847705 -593847701 -51362429#1 49073226#2 288878926#0 593849711#0"/>
+            <route cost="469.19" probability="0.48784562" edges="506322844#0 -300077497#8 -300077497#5 -593847703#3 593847702#0 49073272#1 49073272#3 360018417 196961377#3 593849711#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow9.22" type="Car9" depart="244.44" fromTaz="631668923" toTaz="cluster655375228_655375240">
+        <routeDistribution last="1">
+            <route cost="332.53" probability="0.33928241" edges="1068234498#0 238526531#0 506322848#0 506322840#0 -1334905223#2"/>
+            <route cost="410.37" probability="0.29065156" edges="1068234498#0 238526531#0 -35274074#2 300077497#6 E1"/>
+            <route cost="241.45" probability="0.37006603" edges="1068234498#0 288135626#0 1068234499#0 300077497#0 300077497#6 E1"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow4.19" type="Car4" depart="247.82" fromTaz="655375245" toTaz="2664674489">
+        <routeDistribution last="0">
+            <route cost="83.09" probability="1.00000000" edges="244450512#1 260881642#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow5.15" type="Car5" depart="249.99" fromTaz="2760755470" toTaz="3086736518">
+        <routeDistribution last="1">
+            <route cost="347.59" probability="0.53416875" edges="30620492#0 30620492#1 506322844#0 -300077497#8 -300077497#5 -593847703#3 -593847705"/>
+            <route cost="586.61" probability="0.46583125" edges="30620492#0 30620492#1 506322842#0 506322846#0 506322846#2 288135626#0 1068234499#0 -593847703#3 -593847705"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow3.23" type="Car3" depart="255.55" fromTaz="cluster_9383263990_9383263991_9383263992_9383263993" toTaz="3431431576">
+        <routeDistribution last="2">
+            <route cost="454.91" probability="0.39100963" edges="506322844#0 -300077497#8 -300077497#5 -593847703#3 -593847705 -593847701 -51362429#1 49073226#2 288878926#0 593849711#0"/>
+            <route cost="570.70" probability="0.30946933" edges="506322842#0 506322846#0 506322846#2 506322851#0 506322851#2 506322853#0 668037874 196961377#0 196961377#3 593849711#0"/>
+            <route cost="593.64" probability="0.29952104" edges="506322844#0 263217604#0 360843888 244450512#4 244450512#5 1239087512 1239087514 51362430 484988951#0 49073226#2 288878926#0 593849711#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow9.23" type="Car9" depart="255.55" fromTaz="631668923" toTaz="cluster655375228_655375240">
+        <routeDistribution last="0">
+            <route cost="256.57" probability="0.33096750" edges="1068234498#0 238526531#0 -35274074#2 300077497#6 E1"/>
+            <route cost="352.63" probability="0.35194105" edges="1068234498#0 238526531#0 506322848#0 506322840#0 -1334905223#2"/>
+            <route cost="350.00" probability="0.31709144" edges="1068234498#0 288135626#0 1068234499#0 300077497#0 300077497#6 E1"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow6.12" type="Car6" depart="257.14" fromTaz="cluster655375336_end_0_655375336_end_1_655375336_end_10_655375336_end_11_#8more" toTaz="6252193077">
+        <routeDistribution last="1">
+            <route cost="252.88" probability="0.47690636" edges="-E0 593847704#0 593849718#0"/>
+            <route cost="143.59" probability="0.52309364" edges="1068440004#1 593847702#0 593849718#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow7.13" type="Car7" depart="260.00" fromTaz="655375244" toTaz="2013717680">
+        <routeDistribution last="0">
+            <route cost="536.09" probability="0.50736252" edges="484988951#0 51362429#0 593847701 593847705 593847703#0 300077497#0 35274074#0 506322846#0 186602412#0"/>
+            <route cost="454.27" probability="0.49263748" edges="-51362430 1068440001 1239087513 593844221#0 49695736#0 300077497#0 35274074#0 506322846#0 186602412#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow4.20" type="Car4" depart="260.86" fromTaz="655375245" toTaz="2664674489">
+        <routeDistribution last="0">
+            <route cost="109.89" probability="1.00000000" edges="244450512#1 260881642#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow5.16" type="Car5" depart="266.66" fromTaz="2760755470" toTaz="3086736518">
+        <routeDistribution last="1">
+            <route cost="326.37" probability="0.47816284" edges="30620492#0 30620492#1 506322844#0 263217604#0 594658760#0 -E0"/>
+            <route cost="298.41" probability="0.52183716" edges="30620492#0 30620492#1 506322844#0 -300077497#8 -300077497#5 -593847703#3 -593847705"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow3.24" type="Car3" depart="266.66" fromTaz="cluster_9383263990_9383263991_9383263992_9383263993" toTaz="3431431576">
+        <routeDistribution last="1">
+            <route cost="474.14" probability="0.33801670" edges="506322844#0 -300077497#8 -300077497#5 -593847703#3 -593847705 -593847701 -51362429#1 49073226#2 288878926#0 593849711#0"/>
+            <route cost="332.96" probability="0.38048880" edges="506322844#0 -300077497#8 -300077497#5 -593847703#3 593847702#0 49073272#1 49073272#3 360018417 196961377#3 593849711#0"/>
+            <route cost="438.14" probability="0.28149450" edges="506322844#0 263217604#0 360843888 244450512#4 244450512#5 1239087512 1239087514 51362430 484988951#0 49073226#2 288878926#0 593849711#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow9.24" type="Car9" depart="266.66" fromTaz="631668923" toTaz="cluster655375228_655375240">
+        <routeDistribution last="2">
+            <route cost="389.03" probability="0.23483850" edges="1068234498#0 238526531#0 -35274074#2 300077497#6 E1"/>
+            <route cost="261.14" probability="0.43107009" edges="1068234498#0 288135626#0 1068234499#0 300077497#0 300077497#6 E1"/>
+            <route cost="325.75" probability="0.33409141" edges="1068234498#0 238526531#0 506322848#0 506322840#0 -1334905223#2"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow4.21" type="Car4" depart="273.90" fromTaz="655375245" toTaz="2664674489">
+        <routeDistribution last="0">
+            <route cost="78.62" probability="1.00000000" edges="244450512#1 260881642#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow3.25" type="Car3" depart="277.78" fromTaz="cluster_9383263990_9383263991_9383263992_9383263993" toTaz="3431431576">
+        <routeDistribution last="1">
+            <route cost="589.78" probability="0.29528504" edges="506322844#0 -300077497#8 -300077497#5 182334378#0 232003903#0 1239087512 1239087514 51362430 484988951#0 49073226#2 288878926#0 593849711#0"/>
+            <route cost="445.19" probability="0.37682353" edges="506322844#0 -300077497#8 -300077497#5 -593847703#3 -593847705 -593847701 -51362429#1 49073226#2 288878926#0 593849711#0"/>
+            <route cost="542.50" probability="0.32789142" edges="506322844#0 -300077497#8 -300077497#5 182334378#0 -E0 593847704#0 49073272#1 49073272#3 360018417 196961377#3 593849711#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow9.25" type="Car9" depart="277.78" fromTaz="631668923" toTaz="cluster655375228_655375240">
+        <routeDistribution last="2">
+            <route cost="308.54" probability="0.29509954" edges="1068234498#0 288135626#0 1068234499#0 300077497#0 300077497#6 E1"/>
+            <route cost="168.40" probability="0.40488704" edges="1068234498#0 238526531#0 506322848#0 506322840#0 -1334905223#2"/>
+            <route cost="337.95" probability="0.30001342" edges="1068234498#0 238526531#0 -35274074#2 300077497#6 E1"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow6.13" type="Car6" depart="278.56" fromTaz="cluster655375336_end_0_655375336_end_1_655375336_end_10_655375336_end_11_#8more" toTaz="6252193077">
+        <routeDistribution last="1">
+            <route cost="180.57" probability="0.35241112" edges="-E0 593847704#0 593849718#0"/>
+            <route cost="181.55" probability="0.35934301" edges="1068440004#1 593847702#0 593849718#0"/>
+            <route cost="306.89" probability="0.28824587" edges="232003903#0 1239087512 1239087514 51362430 484988951#0 49073226#2 288878926#0 593849718#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow7.14" type="Car7" depart="280.00" fromTaz="655375244" toTaz="2013717680">
+        <routeDistribution last="0">
+            <route cost="544.01" probability="0.46524089" edges="-51362430 1068440001 1239087513 593844221#0 49695736#0 300077497#0 35274074#0 506322846#0 186602412#0"/>
+            <route cost="430.19" probability="0.53475911" edges="484988951#0 51362429#0 593847701 593847705 593847703#0 300077497#0 35274074#0 506322846#0 186602412#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow5.17" type="Car5" depart="283.32" fromTaz="2760755470" toTaz="3086736518">
+        <routeDistribution last="1">
+            <route cost="409.59" probability="0.36220397" edges="30620492#0 30620492#1 506322844#0 -300077497#8 -300077497#5 -593847703#3 -593847705"/>
+            <route cost="552.02" probability="0.29983481" edges="30620492#0 30620492#1 506322844#0 263217604#0 594658757#0 -E0"/>
+            <route cost="447.27" probability="0.33796121" edges="30620492#0 30620492#1 506322844#0 -300077497#8 -300077497#5 182334378#0 -E0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow4.22" type="Car4" depart="286.95" fromTaz="655375245" toTaz="2664674489">
+        <routeDistribution last="0">
+            <route cost="61.03" probability="1.00000000" edges="244450512#1 260881642#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow3.26" type="Car3" depart="288.89" fromTaz="cluster_9383263990_9383263991_9383263992_9383263993" toTaz="3431431576">
+        <routeDistribution last="1">
+            <route cost="515.52" probability="0.36610549" edges="506322844#0 -300077497#8 -300077497#5 -593847703#3 -593847705 -593847701 -51362429#1 49073226#2 288878926#0 593849711#0"/>
+            <route cost="553.15" probability="0.29694234" edges="506322844#0 263217604#0 594658760#0 1068440004#1 593847702#0 49073272#1 49073272#3 360018417 196961377#3 593849711#0"/>
+            <route cost="510.37" probability="0.33695218" edges="506322844#0 263217604#0 360843888 244450512#4 244450512#5 1239087512 1239087514 51362430 484988951#0 49073226#2 288878926#0 593849711#0"/>
+        </routeDistribution>
+    </vehicle>
+    <vehicle id="Flow9.26" type="Car9" depart="288.89" fromTaz="631668923" toTaz="cluster655375228_655375240">
+        <routeDistribution last="1">
+            <route cost="390.54" probability="0.48677335" edges="1068234498#0 288135626#0 1068234499#0 300077497#0 300077497#6 E1"/>
+            <route cost="363.50" probability="0.51322665" edges="1068234498#0 238526531#0 -35274074#2 300077497#6 E1"/>
+        </routeDistribution>
+    </vehicle>
+</routes>
