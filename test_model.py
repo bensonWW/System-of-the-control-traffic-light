@@ -23,21 +23,28 @@ class GRUSequence(nn.Module):
         super().__init__()
         self.horizon = horizon
         self.num_edges = num_edges
-        
-        # Input: Edges + 2 Time Features
+
         self.gru = nn.GRU(
-            input_size=num_edges + 2, 
+            input_size=num_edges + 2,
             hidden_size=hidden_dim,
             num_layers=num_layers,
             batch_first=True,
             dropout=dropout if num_layers > 1 else 0
         )
-        self.fc = nn.Linear(hidden_dim, num_edges * horizon)
+        self.attn = nn.Linear(hidden_dim, 1)
+        mid = hidden_dim // 2
+        self.decoder = nn.Sequential(
+            nn.Linear(hidden_dim, mid),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(mid, num_edges * horizon),
+        )
 
     def forward(self, x):
-        out, _ = self.gru(x)
-        last = out[:, -1, :] 
-        pred_flat = self.fc(last)
+        out, _ = self.gru(x)                           # (B, T, H)
+        attn_w = torch.softmax(self.attn(out), dim=1)  # (B, T, 1)
+        context = (attn_w * out).sum(dim=1)            # (B, H)
+        pred_flat = self.decoder(context)
         pred_seq = pred_flat.view(-1, self.horizon, self.num_edges)
         return pred_seq
 

@@ -125,6 +125,7 @@ def process_prediction_csv(prediction_csv, work_dir=None, run_simulations=True, 
         signal_change_detail_df = build_signal_change_detail_df([])
         override_program_map = {}
     else:
+        to_edge_weight = TO_EDGE_WEIGHT if strategy.get("use_downstream_penalty", True) else 0.0
         time_signal_plans, signal_plan_summary_df, tls_road_hint_map = get_signal_plan_from_prediction(
             prediction_df,
             strategy.get("top_n_tls", DEFAULT_TOP_N_TLS),
@@ -133,7 +134,7 @@ def process_prediction_csv(prediction_csv, work_dir=None, run_simulations=True, 
             DEFAULT_TOP_EDGE_COUNT,
             MIN_EDGE_SCORE,
             FROM_EDGE_WEIGHT,
-            TO_EDGE_WEIGHT,
+            to_edge_weight,
             UNSAFE_TLS_IDS,
             TOP_PHASES_TO_ADJUST,
             PRIMARY_PHASE_EXTRA_SECONDS,
@@ -214,9 +215,6 @@ def evaluate_strategy_worker(args):
     prediction_csv, base_work_dir, run_simulations, strategy, baseline_summary = args
     strat_work_dir = os.path.join(base_work_dir, strategy["strategy"])
 
-    global TO_EDGE_WEIGHT
-    TO_EDGE_WEIGHT = 0.8 if strategy.get("use_downstream_penalty", False) else 0.0
-
     result = process_prediction_csv(
         prediction_csv,
         work_dir=strat_work_dir,
@@ -260,10 +258,13 @@ def run_prediction_driven_strategy(prediction_csv, work_dir=None, run_simulation
     if no_control_strategy is None:
         raise RuntimeError("策略清單缺少 no_control，無法建立 baseline。")
 
-    strategy_rows, best_result, best_strategy, best_waiting_time = [], None, None, float("inf")
+    strategy_rows, best_result, best_strategy = [], None, None
 
     baseline_strategy, baseline_result = evaluate_strategy_worker((prediction_csv, base_work_dir, run_simulations, no_control_strategy, None))
     strategy_rows.append(baseline_strategy)
+
+    # 以 no_control 作為門檻：控制策略必須優於不控制才算「最佳」
+    best_waiting_time = baseline_strategy.get("actual_waiting_time", float("inf"))
 
     baseline_df = baseline_result.get("comparison_df")
     baseline_summary = {str(row.metric): row.after for row in baseline_df.itertuples(index=False)} if baseline_df is not None and not baseline_df.empty else {}

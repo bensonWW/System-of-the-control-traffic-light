@@ -4,7 +4,6 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
-from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset, DataLoader, Subset
 import sys
 from tqdm import tqdm
@@ -194,8 +193,11 @@ if len(dataset) == 0:
     print("Error: Dataset empty.")
     exit(1)
 
-# Split indices for Train/Val (Shuffle indices, not data)
-train_indices, val_indices = train_test_split(np.arange(len(dataset)), test_size=0.1, shuffle=True, random_state=42)
+# 時序切割 (保留時間順序，避免資料洩漏)
+# index_map 已按 (file_idx, start) 建立，整體是時間順序排列
+split = int(len(dataset) * 0.9)
+train_indices = np.arange(split)
+val_indices = np.arange(split, len(dataset))
 
 # Use Subset with original Lazy dataset
 train_ds = Subset(dataset, train_indices)
@@ -213,20 +215,31 @@ class GRUSequence(nn.Module):
         super().__init__()
         self.horizon = horizon
         self.num_edges = num_edges
-        
+
         self.gru = nn.GRU(
-            input_size=num_edges + 2, 
+            input_size=num_edges + 2,
             hidden_size=hidden_dim,
             num_layers=num_layers,
             batch_first=True,
             dropout=dropout if num_layers > 1 else 0
         )
-        self.fc = nn.Linear(hidden_dim, num_edges * horizon)
+        # Attention: 對所有時步的 hidden state 做加權平均
+        self.attn = nn.Linear(hidden_dim, 1)
+
+        # 分層解碼: hidden_dim → hidden_dim//2 → edges*horizon
+        mid = hidden_dim // 2
+        self.decoder = nn.Sequential(
+            nn.Linear(hidden_dim, mid),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(mid, num_edges * horizon),
+        )
 
     def forward(self, x):
-        out, _ = self.gru(x)
-        last = out[:, -1, :] 
-        pred_flat = self.fc(last)
+        out, _ = self.gru(x)                          # (B, T, H)
+        attn_w = torch.softmax(self.attn(out), dim=1) # (B, T, 1)
+        context = (attn_w * out).sum(dim=1)           # (B, H)
+        pred_flat = self.decoder(context)
         pred_seq = pred_flat.view(-1, self.horizon, self.num_edges)
         return pred_seq
 
