@@ -1,6 +1,8 @@
 import os
 import shutil
 from concurrent.futures import ProcessPoolExecutor
+import math
+import xml.etree.ElementTree as ET
 
 import pandas as pd
 
@@ -22,9 +24,27 @@ from traffic_optimizer_signal import (
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BASE_SUMOCFG = os.path.join(ROOT_DIR, "data", "ntut_config.sumocfg")
-NET_FILE = os.path.join(ROOT_DIR, "data", "ntut_network_split.net.xml")
-TEMP_ROUTE_DIR = os.path.join(ROOT_DIR, "data", "temp")
+TEMP_ROUTE_DIR = os.path.join(ROOT_DIR, "data", "VehicleData_check")
 DEFAULT_OUTPUT_ROOT = os.path.join(ROOT_DIR, "data", "prediction_runs")
+
+
+def _resolve_net_file_from_sumocfg(base_sumocfg):
+    try:
+        root = ET.parse(base_sumocfg).getroot()
+        input_node = root.find("input")
+        net_node = input_node.find("net-file") if input_node is not None else None
+        net_value = net_node.get("value") if net_node is not None else None
+        if not net_value:
+            raise ValueError("Missing input/net-file in sumocfg")
+        if os.path.isabs(net_value):
+            return net_value
+        return os.path.normpath(os.path.join(os.path.dirname(base_sumocfg), net_value))
+    except Exception:
+        # Safe fallback for legacy setups.
+        return os.path.join(ROOT_DIR, "data", "ntut_network_split.net.xml")
+
+
+NET_FILE = _resolve_net_file_from_sumocfg(BASE_SUMOCFG)
 
 DEFAULT_TOP_N_TLS = 6
 DEFAULT_TOP_EDGE_COUNT = 20
@@ -62,6 +82,12 @@ METRICS = [
     "teleports_total",
     "teleports_wrong_lane",
 ]
+
+# Composite strategy score: lower is better.
+# score = w_wait * (waiting_time / baseline_waiting_time)
+#       + w_loss * (time_loss / baseline_time_loss)
+SCORE_WEIGHT_WAITING_TIME = 0.6
+SCORE_WEIGHT_TIME_LOSS = 0.4
 
 
 def resolve_strategy(strategy=None):
@@ -163,7 +189,13 @@ def process_prediction_csv(prediction_csv, work_dir=None, run_simulations=True, 
     after_stats_xml = os.path.join(work_dir, f"{source_stem}_after_stats.xml")
     comparison_summary_csv = os.path.join(work_dir, f"{source_stem}_comparison_summary.csv")
 
-    cfg_kwargs = {"output_overrides": {"statistic-output": after_stats_xml}}
+    cfg_kwargs = {
+        "output_overrides": {
+            # Disable inherited output-prefix so SUMO writes exactly the path we set.
+            "output-prefix": "",
+            "statistic-output": after_stats_xml,
+        }
+    }
     if not no_control:
         cfg_kwargs["additional_files"] = [override_xml]
 
@@ -224,25 +256,63 @@ def evaluate_strategy_worker(args):
     )
 
     waiting_time_after = end_time_after = waiting_time_before = end_time_before = float("inf")
+    time_loss_after = time_loss_before = float("inf")
     df_comp = result.get("comparison_df")
     if df_comp is None and os.path.exists(result["comparison_summary_csv"]):
         df_comp = pd.read_csv(result["comparison_summary_csv"])
 
     if df_comp is not None and not df_comp.empty:
         wait_row = df_comp[df_comp["metric"] == "avg_waiting_time"]
+        loss_row = df_comp[df_comp["metric"] == "avg_time_loss"]
         end_row = df_comp[df_comp["metric"] == "simulation_end_time"]
         if not wait_row.empty:
-            waiting_time_after = float(wait_row.iloc[0]["after"])
-            waiting_time_before = float(wait_row.iloc[0]["before"])
+            wait_after = pd.to_numeric(wait_row.iloc[0]["after"], errors="coerce")
+            wait_before = pd.to_numeric(wait_row.iloc[0]["before"], errors="coerce")
+            if not pd.isna(wait_after):
+                waiting_time_after = float(wait_after)
+            if not pd.isna(wait_before):
+                waiting_time_before = float(wait_before)
         if not end_row.empty:
-            end_time_after = float(end_row.iloc[0]["after"])
-            end_time_before = float(end_row.iloc[0]["before"])
+            end_after = pd.to_numeric(end_row.iloc[0]["after"], errors="coerce")
+            end_before = pd.to_numeric(end_row.iloc[0]["before"], errors="coerce")
+            if not pd.isna(end_after):
+                end_time_after = float(end_after)
+            if not pd.isna(end_before):
+                end_time_before = float(end_before)
+        if not loss_row.empty:
+            loss_after = pd.to_numeric(loss_row.iloc[0]["after"], errors="coerce")
+            loss_before = pd.to_numeric(loss_row.iloc[0]["before"], errors="coerce")
+            if not pd.isna(loss_after):
+                time_loss_after = float(loss_after)
+            if not pd.isna(loss_before):
+                time_loss_before = float(loss_before)
 
     strategy["actual_waiting_time"] = waiting_time_after
     strategy["actual_end_time"] = end_time_after
     strategy["baseline_waiting_time"] = waiting_time_before
     strategy["baseline_end_time"] = end_time_before
+    strategy["actual_time_loss"] = time_loss_after
+    strategy["baseline_time_loss"] = time_loss_before
     return strategy, result
+
+
+def compute_composite_score(strategy_row):
+    actual_wait = strategy_row.get("actual_waiting_time")
+    base_wait = strategy_row.get("baseline_waiting_time")
+    actual_loss = strategy_row.get("actual_time_loss")
+    base_loss = strategy_row.get("baseline_time_loss")
+
+    if (
+        actual_wait is None or base_wait in (None, 0) or
+        actual_loss is None or base_loss in (None, 0) or
+        math.isinf(actual_wait) or math.isinf(base_wait) or
+        math.isinf(actual_loss) or math.isinf(base_loss)
+    ):
+        return float("inf")
+
+    wait_ratio = float(actual_wait) / float(base_wait)
+    loss_ratio = float(actual_loss) / float(base_loss)
+    return SCORE_WEIGHT_WAITING_TIME * wait_ratio + SCORE_WEIGHT_TIME_LOSS * loss_ratio
 
 
 def run_prediction_driven_strategy(prediction_csv, work_dir=None, run_simulations=True):
@@ -263,8 +333,9 @@ def run_prediction_driven_strategy(prediction_csv, work_dir=None, run_simulation
     baseline_strategy, baseline_result = evaluate_strategy_worker((prediction_csv, base_work_dir, run_simulations, no_control_strategy, None))
     strategy_rows.append(baseline_strategy)
 
-    # 以 no_control 作為門檻：控制策略必須優於不控制才算「最佳」
-    best_waiting_time = baseline_strategy.get("actual_waiting_time", float("inf"))
+    # 以 no_control 作為基準，使用綜合指標分數選最佳（分數越小越好）。
+    best_score = compute_composite_score(baseline_strategy)
+    baseline_strategy["composite_score"] = best_score
 
     baseline_df = baseline_result.get("comparison_df")
     baseline_summary = {str(row.metric): row.after for row in baseline_df.itertuples(index=False)} if baseline_df is not None and not baseline_df.empty else {}
@@ -274,8 +345,10 @@ def run_prediction_driven_strategy(prediction_csv, work_dir=None, run_simulation
         with ProcessPoolExecutor(max_workers=len(args_list)) as executor:
             for strategy, result in executor.map(evaluate_strategy_worker, args_list):
                 strategy_rows.append(strategy)
-                if strategy["actual_waiting_time"] < best_waiting_time:
-                    best_waiting_time, best_result, best_strategy = strategy["actual_waiting_time"], result, strategy
+                strategy_score = compute_composite_score(strategy)
+                strategy["composite_score"] = strategy_score
+                if strategy_score < best_score:
+                    best_score, best_result, best_strategy = strategy_score, result, strategy
 
     if best_strategy is None:
         best_strategy, best_result = baseline_strategy, baseline_result
@@ -284,9 +357,13 @@ def run_prediction_driven_strategy(prediction_csv, work_dir=None, run_simulation
 
     baseline_waiting_time = baseline_strategy.get("actual_waiting_time")
     baseline_end_time = baseline_strategy.get("actual_end_time")
+    baseline_time_loss = baseline_strategy.get("actual_time_loss")
     for row in strategy_rows:
         row["baseline_waiting_time"] = baseline_waiting_time
         row["baseline_end_time"] = baseline_end_time
+        row["baseline_time_loss"] = baseline_time_loss
+        if "composite_score" not in row:
+            row["composite_score"] = compute_composite_score(row)
         if row["strategy"] != best_strategy["strategy"]:
             stale_dir = os.path.join(base_work_dir, row["strategy"])
             if os.path.isdir(stale_dir):
@@ -295,12 +372,30 @@ def run_prediction_driven_strategy(prediction_csv, work_dir=None, run_simulation
     best_strategy_csv = os.path.join(base_work_dir, f"{source_stem}_best_strategy.csv")
     pd.DataFrame([best_strategy]).to_csv(best_strategy_csv, index=False, encoding="utf-8-sig")
 
-    wait_diff = best_strategy.get("actual_waiting_time", 0) - best_strategy.get("baseline_waiting_time", 0)
-    end_diff = best_strategy.get("actual_end_time", 0) - best_strategy.get("baseline_end_time", 0)
+    actual_wait = best_strategy.get("actual_waiting_time")
+    base_wait = best_strategy.get("baseline_waiting_time")
+    actual_end = best_strategy.get("actual_end_time")
+    base_end = best_strategy.get("baseline_end_time")
+
+    wait_diff = (
+        actual_wait - base_wait
+        if actual_wait is not None and base_wait is not None and not math.isinf(actual_wait) and not math.isinf(base_wait)
+        else float("nan")
+    )
+    end_diff = (
+        actual_end - base_end
+        if actual_end is not None and base_end is not None and not math.isinf(actual_end) and not math.isinf(base_end)
+        else float("nan")
+    )
+
+    wait_diff_text = f"{wait_diff:+.2f}" if not math.isnan(wait_diff) else "N/A"
+    end_diff_text = f"{end_diff:+.2f}" if not math.isnan(end_diff) else "N/A"
     print(
         f"最佳策略: {best_strategy['strategy']} | "
-        f"結束時間 = {best_strategy.get('actual_end_time')} 秒 ({'+' if end_diff > 0 else ''}{end_diff:.2f}) | "
-        f"等待時間 = {best_strategy.get('actual_waiting_time')} 秒 ({'+' if wait_diff > 0 else ''}{wait_diff:.2f})"
+        f"綜合分數 = {best_strategy.get('composite_score', float('nan')):.4f} | "
+        f"結束時間 = {best_strategy.get('actual_end_time')} 秒 ({end_diff_text}) | "
+        f"等待時間 = {best_strategy.get('actual_waiting_time')} 秒 ({wait_diff_text}) | "
+        f"TimeLoss = {best_strategy.get('actual_time_loss')}"
     )
 
     return {

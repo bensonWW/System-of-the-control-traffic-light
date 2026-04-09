@@ -17,8 +17,10 @@ import traci
 import sumolib
 
 # Configuration
-VEHICLE_DATA_DIR = "./data/VehicleData_check"
-OUTPUT_DIR = "./data/simulation_data_check"
+VEHICLE_DATA_DIR = "./data/VehicleData"
+OUTPUT_DIR = "./data/simulation_data"
+# VEHICLE_DATA_DIR = "./data/VehicleData_check"
+# OUTPUT_DIR = "./data/simulation_data_check"
 BASE_SUMOCFG = "./data/ntut_config.sumocfg"
 
 def get_timestamp(filename):

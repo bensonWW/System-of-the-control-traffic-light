@@ -140,7 +140,7 @@ def load_sample_data_generator(data_dir, edge_ids, input_len, num_files=50):
 if __name__ == "__main__":
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     # DATA_DIR = os.path.join(BASE_DIR, "data", "simulation_data")
-    DATA_DIR = os.path.join(BASE_DIR, "data", "simulation_check_data") # Changed per user request
+    DATA_DIR = os.path.join(BASE_DIR, "data", "simulation_data_check") # Changed per user request
     MODEL_PATH = os.path.join(BASE_DIR, "gru_traffic_model.pth")
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -181,7 +181,7 @@ if __name__ == "__main__":
     step_peak_mae = []
     
     # Process file by file to avoid memory issues
-    data_gen = load_sample_data_generator(DATA_DIR, edge_ids, input_len, num_files=50)
+    data_gen = load_sample_data_generator(DATA_DIR, edge_ids, input_len, num_files=0)
     
     with torch.no_grad():
         for traffic_data, time_data in data_gen:

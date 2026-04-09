@@ -2,6 +2,7 @@ import os
 import sys
 import urllib.parse
 import xml.etree.ElementTree as ET
+import glob
 
 if "SUMO_HOME" in os.environ:
     sys.path.append(os.path.join(os.environ["SUMO_HOME"], "tools"))
@@ -59,7 +60,12 @@ def _apply_output_overrides(root, output_overrides=None):
         node = output_node.find(tag_name)
         if node is None:
             node = ET.SubElement(output_node, tag_name)
-        node.set("value", os.path.abspath(file_path))
+        # Path-like output tags must be absolute, but scalar tags (e.g. output-prefix)
+        # must keep raw values; otherwise SUMO builds invalid output paths.
+        if tag_name in PATH_TAGS:
+            node.set("value", os.path.abspath(file_path))
+        else:
+            node.set("value", str(file_path))
 
 
 def create_temp_sumo_cfg(route_file, base_cfg, temp_cfg_path, additional_files=None, output_overrides=None):
@@ -131,7 +137,13 @@ def filter_route_file(input_rou, output_rou, valid_edges):
 
 def summarize_stats_xml(stats_xml_path):
     if not os.path.exists(stats_xml_path):
-        return {}
+        base_dir = os.path.dirname(stats_xml_path)
+        base_name = os.path.basename(stats_xml_path)
+        candidates = sorted(glob.glob(os.path.join(base_dir, f"*{base_name}")))
+        if candidates:
+            stats_xml_path = candidates[-1]
+        else:
+            return {}
 
     root = ET.parse(stats_xml_path).getroot()
     performance = root.find("performance")
