@@ -131,7 +131,14 @@ def select_strategy_from_prediction(_prediction_csv):
     return ranked_rows, {}
 
 
-def process_prediction_csv(prediction_csv, work_dir=None, run_simulations=True, strategy=None, baseline_summary=None):
+def process_prediction_csv(
+    prediction_csv,
+    work_dir=None,
+    run_simulations=True,
+    strategy=None,
+    baseline_summary=None,
+    route_xml_dir=None,
+):
     prediction_csv = os.path.abspath(prediction_csv)
     source_stem = get_source_stem_from_prediction_csv(prediction_csv)
     strategy = resolve_strategy(strategy)
@@ -178,7 +185,10 @@ def process_prediction_csv(prediction_csv, work_dir=None, run_simulations=True, 
     override_xml = os.path.join(work_dir, f"{source_stem}_signal_override.xml")
     override_program_map = write_empty_override_xml(override_xml) if no_control else write_signal_override_xml(time_signal_plans, override_xml)
 
-    route_xml_src = find_route_xml_for_prediction(prediction_csv, TEMP_ROUTE_DIR)
+    route_xml_src = find_route_xml_for_prediction(
+        prediction_csv,
+        os.path.abspath(route_xml_dir or TEMP_ROUTE_DIR),
+    )
     route_xml_dst = os.path.join(work_dir, os.path.basename(route_xml_src))
     shutil.copy2(route_xml_src, route_xml_dst)
 
@@ -244,7 +254,7 @@ def process_prediction_csv(prediction_csv, work_dir=None, run_simulations=True, 
 
 
 def evaluate_strategy_worker(args):
-    prediction_csv, base_work_dir, run_simulations, strategy, baseline_summary = args
+    prediction_csv, base_work_dir, run_simulations, strategy, baseline_summary, route_xml_dir = args
     strat_work_dir = os.path.join(base_work_dir, strategy["strategy"])
 
     result = process_prediction_csv(
@@ -253,6 +263,7 @@ def evaluate_strategy_worker(args):
         run_simulations=run_simulations,
         strategy=strategy,
         baseline_summary=baseline_summary,
+        route_xml_dir=route_xml_dir,
     )
 
     waiting_time_after = end_time_after = waiting_time_before = end_time_before = float("inf")
@@ -315,7 +326,12 @@ def compute_composite_score(strategy_row):
     return SCORE_WEIGHT_WAITING_TIME * wait_ratio + SCORE_WEIGHT_TIME_LOSS * loss_ratio
 
 
-def run_prediction_driven_strategy(prediction_csv, work_dir=None, run_simulations=True):
+def run_prediction_driven_strategy(
+    prediction_csv,
+    work_dir=None,
+    run_simulations=True,
+    route_xml_dir=None,
+):
     ranked_rows, profile = select_strategy_from_prediction(prediction_csv)
     source_stem = get_source_stem_from_prediction_csv(prediction_csv)
     base_work_dir = os.path.abspath(work_dir or os.path.join(DEFAULT_OUTPUT_ROOT, f"{source_stem}_predict_dynamic"))
@@ -330,7 +346,9 @@ def run_prediction_driven_strategy(prediction_csv, work_dir=None, run_simulation
 
     strategy_rows, best_result, best_strategy = [], None, None
 
-    baseline_strategy, baseline_result = evaluate_strategy_worker((prediction_csv, base_work_dir, run_simulations, no_control_strategy, None))
+    baseline_strategy, baseline_result = evaluate_strategy_worker(
+        (prediction_csv, base_work_dir, run_simulations, no_control_strategy, None, route_xml_dir)
+    )
     strategy_rows.append(baseline_strategy)
 
     # 以 no_control 作為基準，使用綜合指標分數選最佳（分數越小越好）。
@@ -340,7 +358,10 @@ def run_prediction_driven_strategy(prediction_csv, work_dir=None, run_simulation
     baseline_df = baseline_result.get("comparison_df")
     baseline_summary = {str(row.metric): row.after for row in baseline_df.itertuples(index=False)} if baseline_df is not None and not baseline_df.empty else {}
 
-    args_list = [(prediction_csv, base_work_dir, run_simulations, strategy, baseline_summary) for strategy in remaining_strategies]
+    args_list = [
+        (prediction_csv, base_work_dir, run_simulations, strategy, baseline_summary, route_xml_dir)
+        for strategy in remaining_strategies
+    ]
     if args_list:
         with ProcessPoolExecutor(max_workers=len(args_list)) as executor:
             for strategy, result in executor.map(evaluate_strategy_worker, args_list):
@@ -364,10 +385,6 @@ def run_prediction_driven_strategy(prediction_csv, work_dir=None, run_simulation
         row["baseline_time_loss"] = baseline_time_loss
         if "composite_score" not in row:
             row["composite_score"] = compute_composite_score(row)
-        if row["strategy"] != best_strategy["strategy"]:
-            stale_dir = os.path.join(base_work_dir, row["strategy"])
-            if os.path.isdir(stale_dir):
-                shutil.rmtree(stale_dir, ignore_errors=True)
 
     best_strategy_csv = os.path.join(base_work_dir, f"{source_stem}_best_strategy.csv")
     pd.DataFrame([best_strategy]).to_csv(best_strategy_csv, index=False, encoding="utf-8-sig")

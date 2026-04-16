@@ -33,8 +33,15 @@ def find_demo_input_csv():
     return csv_files[0]
 
 
-def run_full_pipeline(input_csv=None, model_path=MODEL_PATH, work_dir=None, handoff_dir=None):
+def run_full_pipeline(
+    input_csv=None,
+    model_path=MODEL_PATH,
+    work_dir=None,
+    handoff_dir=None,
+    route_xml_dir=None,
+):
     input_csv = os.path.abspath(input_csv or find_demo_input_csv())
+    model_path = os.path.abspath(model_path or MODEL_PATH)
     output_root = os.path.dirname(input_csv)
 
     prediction_result = export_prediction_csv(
@@ -46,6 +53,7 @@ def run_full_pipeline(input_csv=None, model_path=MODEL_PATH, work_dir=None, hand
     strategy_result = run_prediction_driven_strategy(
         prediction_csv=prediction_result["prediction_csv"],
         work_dir=work_dir or prediction_result["work_dir"],
+        route_xml_dir=route_xml_dir,
     )
 
     handoff_result = export_handoff_outputs(
