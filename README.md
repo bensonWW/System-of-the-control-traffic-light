@@ -1,94 +1,126 @@
-# 交通號誌控制系統模擬 (Traffic Control System Simulation)
+# 1. grabapi.py - 車流數據抓取與解析
 
-本專案利用台北市開放資料 API (Taipei City Open Data API) 的即時數據，結合 **SUMO (Simulation of Urban MObility)**，模擬台北科技大學 (NTUT) 周邊區域的交通流量與號誌控制。
+## 處理項目：
+- **抓取車流數據**：透過 `requests` 模組從遠端 `URL` 抓取 `.xml.gz` 格式的車流資料檔案。
+- **解壓縮資料**：將 `.xml.gz` 壓縮檔解壓縮成 `.xml` 格式，便於後續解析。
+- **解析 XML 資料**：使用 `xml.etree.ElementTree` 解析解壓後的 XML 檔案，提取路段的車流資訊並儲存至 `Python` 字典中。
+- **清理檔案**：解壓縮及解析完後，會刪除壓縮檔和 XML 檔案。
 
----
+## 總整：
 
-## 🚀 快速開始 (Quick Start)
+這段程式的目的是從指定的 URL 下載車流數據，並解析該數據以便進行後續分析。它主要用來抓取和處理交通資訊，並將資料以字典格式返回，方便後續進行分析或視覺化。
 
-### 1. 先決條件 (Prerequisites)
-- 已安裝 **Python 3.x**。
-- 已安裝 **SUMO** 並將其加入系統環境變數 `PATH` 中。[下載 SUMO](https://sumo.dlr.de/docs/Downloads.php)
+# 2. searchnetdata.py - 路網結構與範圍搜尋
 
-### 2. 安裝依賴 (Installation)
-安裝所需的 Python 套件：
-```bash
-pip install -r requirements.txt
-```
+## 處理項目：
+- **解析路網結構資料**：使用 `xml.etree.ElementTree` 解析本地存儲的 `ntut-the way.net.xml` 檔案，並取得 XML 的根元素。
+- **獲取地圖範圍**：從 XML 中提取地圖邊界（最左、最下、最右、最上的經緯度）並返回地圖範圍。
+- **搜尋特定路段資訊**：搜尋 XML 中的 `<edge>` 標籤，根據路段名稱、ID 和起點/終點資料，將符合條件的路段詳細資訊儲存到字典中。
 
-### 3. 執行模擬 (Running the Simulation)
+## 總整：
 
-#### **步驟 1：收集與處理交通數據**
-執行主數據收集腳本，抓取即時數據、進行處理，並生成 SUMO 的路由檔案。
-```bash
-python scripts/collect_traffic_data.py
-```
-- **原始數據輸出**：`data/trafficData/` (JSON 格式)
-- **SUMO 路由輸出**：`data/VehicleData/` (SUMO `.rou.xml` 格式)
+這段程式主要是處理與路網結構相關的 XML 資料，並提供地圖範圍的提取功能。它還能夠搜尋特定路段的資訊，並將結果以字典形式儲存，便於後續使用。這有助於進行地理範圍內的路網分析。
 
-#### **步驟 2 (可選)：批次處理歷史數據**
-若需將 `data/trafficData/` 中已有的所有 JSON 檔案批次轉換為路由檔案，可執行：
-```bash
-python scripts/batch_process.py
-```
+# 3. select.py - 車流數據篩選與過濾
 
-#### **步驟 3：啟動 SUMO 模擬**
-在 SUMO-GUI 中開啟主要的模擬設定檔。
-```bash
-sumo-gui -c data/ntut_config.sumocfg
-```
+## 處理項目：
+- **篩選車流資料**：利用從 `grabapi.py` 獲取的車流數據（roadInfo），篩選出位於地圖範圍內的路段。
+- **範圍檢查**：使用 `inrange()` 函數檢查路段的起點和終點是否在 `searchnetdata.py` 提供的地圖範圍內。
+- **儲存篩選結果**：將符合範圍的路段資訊存儲至字典 `temp` 中，並最後輸出符合條件的路段資料。
 
-或執行整合式模擬腳本：
-```bash
-python run_simulation.py
-```
+## 總整：
+
+這段程式碼將車流數據和路網結構結合，根據地理範圍進行篩選，將符合條件的路段資料提取出來並顯示。這對於根據特定地理範圍進行交通數據分析非常有用。
 
 ---
 
-## 📂 專案結構與工具說明 (Project Structure & Tools)
+# connections_out.py 功能說明
 
-### 核心腳本 (`/scripts`)
+## 主要函式與用途
 
-| 腳本檔案 | 功能描述 |
-| :--- | :--- |
-| **`collect_traffic_data.py`** | **主要入口**：協調整個數據收集流程，從 API 下載數據、處理並生成 SUMO 路由檔案。 |
-| **`batch_process.py`** | **批次處理器**：將 `data/trafficData/` 中所有 JSON 歷史數據批次處理，轉換為 `.rou.xml` 路由檔案並輸出至 `data/VehicleData/`。 |
-| **`add_boundary_detectors.py`** | **偵測器設置**：解析路網檔，在路網邊界的入口/出口 edge 上自動放置車輛偵測器 (e1detectors)，用於流量測量。 |
-| **`fix_emitters.py`** | **排放器修復**：修復 SUMO emitters 設定檔中的格式或數據問題。 |
-| **`CollectData.py`** | **數據收集輔助**：提供數據收集相關的輔助功能。 |
+### 1. extract_traffic_lights(xml_file_path, tree)
+- 作用：解析 SUMO XML 網路檔案，提取所有紅綠燈（tlLogic）資訊，包括相位、週期、偏移等。
+- 回傳：紅綠燈資訊列表。
 
-### 工具列表 (`/tools`)
+### 2. extract_edge_names(tree)
+- 作用：提取所有道路（edge）的名稱，建立 edge_id 與 name 的對應。
+- 回傳：edge_id 對應名稱的字典。
 
-| 工具檔案 | 功能描述 |
-| :--- | :--- |
-| **`grabapi.py`** | **數據抓取器**：從台北市開放資料 API 下載 `GetVD.xml.gz`，解壓縮並解析 XML，提取交通流量與速度數據。 |
-| **`selectRoad.py`** | **數據篩選器**：根據地圖邊界篩選原始交通數據，使用 `searchnetdata.py` 取得座標範圍，僅保留落在範圍內的道路數據。 |
-| **`searchnetdata.py`** | **路網查詢**：解析 SUMO 路網檔 (`.net.xml`) 以決定地圖邊界 (經緯度)，並提供根據座標搜尋 Edge ID 的功能。 |
-| **`convertToRou.py`** | **路由生成器**：將處理後的交通數據轉換為 SUMO 路由檔 (`.rou.xml`)，利用 `duarouter` 計算有效路徑。 |
-| **`fixRoadData.py`** | **數據補全**：處理缺失或不完整的交通數據，根據歷史或鄰近道路數據補值，確保模擬順利運行。 |
-| **`apply_sumo_timings.py`** | **號誌控制**：根據定義的時制計畫，生成紅綠燈時序設定檔 (`traffic_light.add.xml`)。 |
-| **`connections_out.py`** | **路網分析**：從路網檔案中提取並分析連接數據 (Connections)，了解車道間的連接關係。 |
-| **`aggregate_traffic_lights.py`** | **號誌數據彙整**：搜尋並合併多個 CSV 模擬輸出檔案，統計分析號誌運作數據。 |
-| **`analyze_with_ollama.py`** | **AI 分析**：使用 Ollama 本地 LLM 對交通模擬數據進行分析與洞察。 |
-| **`main.py`** | **工具主程式**：tools 模組的主要執行入口。 |
+### 3. decode_traffic_light_state(state_string)
+- 作用：將紅綠燈相位的狀態字串（如 G, r, y）解碼為中文說明。
+- 回傳：解碼後的狀態描述字串。
 
-### 資料目錄 (`/data`)
+### 4. get_current_traffic_light_state(traffic_light, current_time)
+- 作用：根據模擬時間計算紅綠燈目前相位與剩餘時間。
+- 回傳：目前相位資訊。
 
-- **`ntut_config.sumocfg`**: 主要的 SUMO 模擬設定檔。
-- **`ntut_network_split.net.xml`**: 用於模擬的主要路網檔案。
-- **`ntut_network_split.net copy.xml`**: 路網副本，用於讀取地圖邊界座標。
-- **`trafficData/`**: 儲存從 API 下載的原始交通數據 (JSON)。
-- **`VehicleData/`**: 儲存處理後的 SUMO 路由檔案 (`.rou.xml`)。
-- **`config/`**: 存放模擬相關設定檔。
-- **`source/`**: 存放原始來源數據 (如原始 OSM 地圖)。
-- **`legacy/`**: 舊版路網檔案的備份。
-- **`timing_plan.json`** / **`timing_plan_table.json`**: 號誌時制計畫設定檔。
-- **`臺北市政府交通局路口時制號誌資料.csv`**: 台北市官方路口號誌時制資料。
+### 5. extract_connections(tree, exclude_internal=False)
+- 作用：提取所有道路連接（connection），可選擇排除交叉路口內部連接（以 : 開頭的 edge）。
+- 回傳：連接資訊列表。
+
+### 6. link_connections_to_traffic_lights(connections, traffic_lights, tree)
+- 作用：將連接與紅綠燈控制關聯，標記哪些 connection 受紅綠燈控制。
+- 回傳：更新後的連接資訊列表。
+
+### 7. save_traffic_lights_to_csv(traffic_lights, output_file)
+- 作用：將所有紅綠燈基本資訊儲存為 CSV。
+- 輸出：traffic_lights.csv
+- 內容：紅綠燈 id、型態、週期、相位數、各相位描述。
+
+### 8. save_individual_traffic_light_to_csv(traffic_light, output_file)
+- 作用：儲存單一紅綠燈的基本資訊。
+- 輸出：tl_<id>_info.csv（於個別紅綠燈目錄）
+- 內容：同上，但僅單一紅綠燈。
+
+### 9. save_individual_traffic_light_phases_to_csv(traffic_light, output_file)
+- 作用：儲存單一紅綠燈的所有相位詳細資訊。
+- 輸出：tl_<id>_phases.csv（於個別紅綠燈目錄）
+- 內容：每個相位的持續時間、狀態、描述。
+
+### 10. generate_traffic_light_timeline(traffic_lights, duration_seconds=300)
+- 作用：根據紅綠燈週期，生成模擬期間（預設 300 秒）每秒的紅綠燈狀態時間軸。
+- 回傳：時間軸資料。
+
+### 11. save_timeline_to_csv(timeline, output_file)
+- 作用：將所有紅綠燈的時間軸儲存為 CSV。
+- 輸出：traffic_light_timeline.csv
+- 內容：每秒各紅綠燈的相位、剩餘時間、週期位置。
+
+### 12. save_individual_traffic_light_timeline_to_csv(traffic_light, duration_seconds, output_file)
+- 作用：儲存單一紅綠燈的時間軸。
+- 輸出：tl_<id>_timeline.csv（於個別紅綠燈目錄）
+- 內容：同上，但僅單一紅綠燈。
+
+### 13. save_individual_traffic_light_connections_to_csv(traffic_light_id, connections, output_file)
+- 作用：儲存特定紅綠燈控制的所有連接資訊。
+- 輸出：tl_<id>_connections.csv（於個別紅綠燈目錄）
+- 內容：該紅綠燈控制的 connection 詳細資料。
+
+### 14. filter_connections(connections, from_edge=None, to_edge=None)
+- 作用：根據起點或終點過濾連接。
+- 回傳：過濾後的連接列表。
+
+### 15. save_connections_to_csv(connections, output_file)
+- 作用：儲存所有道路連接資訊。
+- 輸出：road_connections.csv
+- 內容：所有道路連接（不含交叉路口內部連接）。
 
 ---
 
-## 🛠️ 設定 (Configuration)
+## 主要輸出檔案說明
 
-- **地圖邊界 (Map Boundary)**：在 `data/ntut_network_split.net copy.xml` 中動態定義，並由 `searchnetdata.py` 讀取。
-- **API URL**：配置於 `scripts/collect_traffic_data.py` 中。
-- **號誌時制**：配置於 `data/timing_plan.json` 中。
+- **road_connections.csv**：所有道路連接（不含交叉路口內部連接），包含 from/to edge、車道、方向、是否受紅綠燈控制等。
+- **traffic_lights.csv**：所有紅綠燈的基本資訊與相位摘要。
+- **traffic_light_timeline.csv**：模擬期間每秒各紅綠燈的相位狀態、剩餘時間、週期位置。
+- **紅綠燈<id>檔案/**：每個紅綠燈的個別目錄，包含：
+    - tl_<id>_info.csv：該紅綠燈基本資訊
+    - tl_<id>_phases.csv：該紅綠燈所有相位詳細資訊
+    - tl_<id>_timeline.csv：該紅綠燈模擬期間的時間軸
+    - tl_<id>_connections.csv：該紅綠燈控制的所有連接
+
+---
+
+## 使用流程簡述
+1. 讀取 SUMO XML 網路檔案，解析紅綠燈與道路連接。
+2. 產生紅綠燈、連接、時間軸等 CSV 檔案。
+3. 每個紅綠燈自動建立獨立目錄，儲存詳細資訊。

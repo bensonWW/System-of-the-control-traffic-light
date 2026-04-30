@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body { background: var(--color-bg-base); padding: 20px; font-family: var(--font-body); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .token { display: flex; align-items: center; gap: 10px; background: var(--color-bg-card); border: 1px solid var(--color-border); border-radius: 6px; padding: 8px 12px; }
+  .swatch { width: 28px; height: 28px; border-radius: 4px; flex-shrink: 0; border: 1px solid rgba(255,255,255,0.07); }
+  .name { font-family: var(--font-mono); font-size: 11px; color: var(--color-text-secondary); }
+  .desc { font-family: var(--font-body); font-size: 11px; color: var(--color-text-muted); margin-top: 1px; }
+</style>
+</head>
+<body>
+<div class="grid">
+  <div class="token"><div class="swatch" style="background:var(--interactive-default);"></div><div><div class="name">--interactive-default</div><div class="desc">Primary action</div></div></div>
+  <div class="token"><div class="swatch" style="background:rgba(59,130,246,0.08); border:1px solid #3b82f6;"></div><div><div class="name">--interactive-subtle</div><div class="desc">Row hover</div></div></div>
+  <div class="token"><div class="swatch" style="background:var(--status-free);"></div><div><div class="name">--status-free</div><div class="desc">暢通 / MOE 0</div></div></div>
+  <div class="token"><div class="swatch" style="background:var(--status-moderate);"></div><div><div class="name">--status-moderate</div><div class="desc">普通 / MOE 1</div></div></div>
+  <div class="token"><div class="swatch" style="background:var(--status-congested);"></div><div><div class="name">--status-congested</div><div class="desc">壅塞 / MOE 2</div></div></div>
+  <div class="token"><div class="swatch" style="background:var(--color-border); border:1px solid #3b4c72;"></div><div><div class="name">--border</div><div class="desc">Standard border</div></div></div>
+  <div class="token"><div class="swatch" style="background:var(--fg);"></div><div><div class="name">--fg</div><div class="desc">Primary text</div></div></div>
+  <div class="token"><div class="swatch" style="background:var(--fg-2);"></div><div><div class="name">--fg-2</div><div class="desc">Secondary text</div></div></div>
+</div>
+</body>
+</html>

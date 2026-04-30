@@ -1,0 +1,862 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TrafficVision — NTUT 交通監控系統</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Noto+Sans+TC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet-src.js"></script>
+<!-- Ant Path: animated flowing polylines -->
+<script src="https://unpkg.com/leaflet-ant-path@1.3.0/dist/leaflet-ant-path.js"></script>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body, #root { height: 100%; width: 100%; }
+  body { background: #0a0e1a; color: #e2e8f0; font-family: 'Noto Sans TC', sans-serif; -webkit-font-smoothing: antialiased; overflow: hidden; }
+  ::-webkit-scrollbar { width: 5px; } ::-webkit-scrollbar-track { background: #111827; } ::-webkit-scrollbar-thumb { background: #2a3555; border-radius: 3px; }
+  button { cursor: pointer; font-family: inherit; } input { font-family: inherit; }
+
+  /* ── Leaflet overrides ── */
+  .leaflet-container { background: #060b14 !important; }
+  .leaflet-control-attribution { background: rgba(6,11,20,0.85) !important; color: #2a3555 !important; font-size: 9px !important; }
+  .leaflet-control-attribution a { color: #334155 !important; }
+  .leaflet-control-zoom a { background: #1a2236 !important; color: #94a3b8 !important; border-color: #2a3555 !important; }
+  .leaflet-control-zoom a:hover { background: #1f2a42 !important; color: #e2e8f0 !important; }
+  .leaflet-popup-content-wrapper { background: #1a2236 !important; border: 1px solid #2a3555 !important; border-radius: 10px !important; box-shadow: 0 6px 24px rgba(0,0,0,0.7) !important; color: #e2e8f0 !important; padding: 0 !important; }
+  .leaflet-popup-content { margin: 0 !important; }
+  .leaflet-popup-tip-container { display: none; }
+  .leaflet-popup-close-button { color: #475569 !important; top: 8px !important; right: 8px !important; font-size: 16px !important; }
+
+  /* ── Speed badge icons ── */
+  .spd-badge {
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 700;
+    font-size: 11px;
+    padding: 3px 7px;
+    border-radius: 5px;
+    white-space: nowrap;
+    pointer-events: none;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.6);
+    line-height: 1.2;
+    text-align: center;
+  }
+  /* ── Pulse animation for congested nodes ── */
+  @keyframes pulse-ring {
+    0%   { transform: scale(0.9); opacity: 0.8; }
+    70%  { transform: scale(1.6); opacity: 0; }
+    100% { transform: scale(0.9); opacity: 0; }
+  }
+  .pulse-dot { animation: pulse-ring 1.6s ease-out infinite; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+/* ─── DESIGN TOKENS ──────────────────────────── */
+const T = { ff:"'Space Grotesk',sans-serif", body:"'Noto Sans TC',sans-serif", mono:"'JetBrains Mono',monospace" };
+const C = { bg:'#0a0e1a', surf:'#111827', card:'#1a2236', elev:'#1f2a42', border:'#2a3555', fg:'#e2e8f0', fg2:'#94a3b8', fg3:'#475569' };
+
+/* ─── SPEED → COLOR (continuous gradient) ───── */
+// Breakpoints: 0→10→20→30→40→60 km/h  maps to  red→orange→amber→yellow-green→green
+function speedColor(spd) {
+  if (spd <=  0) return '#ef4444';
+  if (spd <= 10) return lerpColor('#ef4444','#f97316', spd/10);
+  if (spd <= 20) return lerpColor('#f97316','#f59e0b',(spd-10)/10);
+  if (spd <= 30) return lerpColor('#f59e0b','#84cc16',(spd-20)/10);
+  if (spd <= 40) return lerpColor('#84cc16','#22c55e',(spd-30)/10);
+  return '#22c55e';
+}
+function lerpColor(a, b, t) {
+  const ah=parseInt(a.slice(1),16), bh=parseInt(b.slice(1),16);
+  const ar=(ah>>16)&0xff, ag=(ah>>8)&0xff, ab=ah&0xff;
+  const br=(bh>>16)&0xff, bg=(bh>>8)&0xff, bb=bh&0xff;
+  const r=Math.round(ar+(br-ar)*t), g=Math.round(ag+(bg-ag)*t), bl2=Math.round(ab+(bb-ab)*t);
+  return `#${((r<<16)|(g<<8)|bl2).toString(16).padStart(6,'0')}`;
+}
+
+// GeoJSON [lng, lat] → Leaflet [lat, lng]
+function geoJsonToLeaflet(coords) {
+  return coords.map(([lng, lat]) => [lat, lng]);
+}
+
+// Geographic midpoint at 50% of polyline arc length
+function polylineMidpoint(pts) {
+  if (pts.length < 2) return pts[0] || [0, 0];
+  let total = 0;
+  const dists = pts.slice(0, -1).map((p, i) => {
+    const d = L.latLng(p).distanceTo(L.latLng(pts[i + 1]));
+    total += d;
+    return d;
+  });
+  let acc = 0;
+  const half = total / 2;
+  for (let i = 0; i < dists.length; i++) {
+    if (acc + dists[i] >= half) {
+      const t = dists[i] > 0 ? (half - acc) / dists[i] : 0;
+      return [
+        pts[i][0] + (pts[i + 1][0] - pts[i][0]) * t,
+        pts[i][1] + (pts[i + 1][1] - pts[i][1]) * t,
+      ];
+    }
+    acc += dists[i];
+  }
+  return pts[Math.floor(pts.length / 2)];
+}
+
+/* ─── ROAD DATA ──────────────────────────────── */
+// coords: Leaflet [lat, lng] 格式，多點貼合道路弧度。
+// 若從 GeoJSON LineString 匯入請用 geoJsonToLeaflet(feature.geometry.coordinates) 轉換。
+const ROADS = [
+  { name:'建國南路  忠孝–仁愛', id:'ZJHKR40',
+    coords:[[25.04183,121.53782],[25.04003,121.53779],[25.03803,121.53776],[25.03683,121.53774]],
+    cur:{spd:34.6,vol:61,occ:2.1,moe:1}, pred:{spd:28.2,vol:74,occ:5.8,moe:2}, opt:{spd:38.4,vol:71,occ:3.2,moe:1} },
+  { name:'建國北路  長安–忠孝', id:'ZK7KP40',
+    coords:[[25.04983,121.53782],[25.04683,121.53782],[25.04383,121.53781],[25.04183,121.53782]],
+    cur:{spd:9.8,vol:30,occ:47.7,moe:2}, pred:{spd:7.1,vol:28,occ:52.4,moe:2}, opt:{spd:18.6,vol:31,occ:28.3,moe:1} },
+  { name:'市民大道  建國–金山', id:'ZK9KC60',
+    coords:[[25.04483,121.53782],[25.04505,121.53320],[25.04528,121.52870],[25.04548,121.52483]],
+    cur:{spd:42.8,vol:123,occ:9.0,moe:0}, pred:{spd:40.1,vol:131,occ:10.2,moe:1}, opt:{spd:43.5,vol:129,occ:8.8,moe:0} },
+  { name:'八德路    建國–新生', id:'ZK5JW60',
+    coords:[[25.04783,121.53782],[25.04780,121.53390],[25.04776,121.52983]],
+    cur:{spd:30.5,vol:33,occ:3.1,moe:1}, pred:{spd:26.3,vol:39,occ:6.4,moe:1}, opt:{spd:33.2,vol:37,occ:4.1,moe:1} },
+  { name:'忠孝東路  復興–建國', id:'ZJHKR20',
+    coords:[[25.04183,121.54383],[25.04182,121.54083],[25.04181,121.53783]],
+    cur:{spd:47.5,vol:154,occ:4.3,moe:1}, pred:{spd:41.2,vol:172,occ:7.8,moe:1}, opt:{spd:48.9,vol:168,occ:5.1,moe:0} },
+  { name:'忠孝東路  金山–中山', id:'ZJSJD40',
+    coords:[[25.04183,121.52483],[25.04183,121.52130],[25.04182,121.51783]],
+    cur:{spd:20.5,vol:83,occ:12.6,moe:2}, pred:{spd:15.8,vol:91,occ:18.4,moe:2}, opt:{spd:28.1,vol:88,occ:9.2,moe:1} },
+  { name:'新生南路  長安–忠孝', id:'XS7NS40',
+    coords:[[25.04983,121.52950],[25.04683,121.52935],[25.04383,121.52922],[25.04183,121.52920]],
+    cur:{spd:41.2,vol:38,occ:2.1,moe:0}, pred:{spd:35.8,vol:44,occ:4.3,moe:1}, opt:{spd:43.5,vol:41,occ:1.9,moe:0} },
+  { name:'松江路    長安–忠孝', id:'SJ7LT40',
+    coords:[[25.04983,121.54300],[25.04683,121.54300],[25.04383,121.54300],[25.04183,121.54300]],
+    cur:{spd:35.6,vol:29,occ:2.8,moe:1}, pred:{spd:31.2,vol:33,occ:4.1,moe:1}, opt:{spd:38.9,vol:31,occ:2.4,moe:1} },
+];
+
+/* ─── SIGNAL PLANS ───────────────────────────── */
+const PLANS = [
+  { id:'no_control', strategy:'無控制基準', topN:'—', pool:'—', edges:'—', wait:48.2, loss:62.1, endT:3420, score:null, tag:'baseline' },
+  { id:'strat1', strategy:'基準策略一', topN:3, pool:'6s', edges:12, wait:41.6, loss:54.3, endT:3180, score:0.874, tag:'good' },
+  { id:'strat2', strategy:'基準策略二', topN:3, pool:'6s', edges:20, wait:38.9, loss:51.7, endT:3090, score:0.821, tag:'good' },
+  { id:'best', strategy:'最佳策略', topN:4, pool:'8s', edges:20, wait:35.1, loss:47.2, endT:2940, score:0.748, tag:'best' },
+];
+
+/* ─── TRAFFIC MAP ────────────────────────────── */
+function TrafficMap({ viewMode, roads: propRoads }) {
+  const containerRef   = useRef(null);
+  const mapRef         = useRef(null);
+  const layersRef      = useRef([]);
+  const labelLayersRef = useRef([]); // [{ marker, latlng }]
+  const labelHandlerRef = useRef(null); // stable fn ref so zoomend sees fresh labels
+
+  // Greedy label collision suppression.
+  // zoom ≥ 16 → show all; below that, iterate sorted by road importance and hide
+  // any label whose screen rect overlaps an already-shown one.
+  const applyLabelCollision = useCallback(() => {
+    const map = mapRef.current;
+    if (!map || !labelLayersRef.current.length) return;
+    const zoom = map.getZoom();
+
+    if (zoom >= 16) {
+      labelLayersRef.current.forEach(({ marker }) => {
+        const el = marker.getElement();
+        if (el) el.style.display = '';
+      });
+      return;
+    }
+
+    // Collect screen rects (with 6px padding between neighbours)
+    const items = labelLayersRef.current.map(({ marker, latlng }) => {
+      const pt = map.latLngToContainerPoint(latlng);
+      const el = marker.getElement();
+      const w  = (el && el.offsetWidth  > 0 ? el.offsetWidth  : 52) + 6;
+      const h  = (el && el.offsetHeight > 0 ? el.offsetHeight : 22) + 6;
+      return { el, pt, w, h };
+    });
+
+    const shown = [];
+    items.forEach(item => {
+      if (!item.el) return;
+      const r = {
+        left:   item.pt.x - item.w / 2,
+        right:  item.pt.x + item.w / 2,
+        top:    item.pt.y - item.h / 2,
+        bottom: item.pt.y + item.h / 2,
+      };
+      const blocked = shown.some(s =>
+        !(r.right < s.left || s.right < r.left || r.bottom < s.top || s.bottom < r.top)
+      );
+      item.el.style.display = blocked ? 'none' : '';
+      if (!blocked) shown.push(r);
+    });
+  }, []);
+
+  // ── Map init (once)
+  useEffect(() => {
+    if (mapRef.current) return;
+    const map = L.map(containerRef.current, { center:[25.0448,121.532], zoom:15, zoomControl:true });
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      attribution:'© <a href="https://www.openstreetmap.org">OSM</a> © <a href="https://carto.com">CARTO</a>',
+      subdomains:'abcd', maxZoom:19,
+    }).addTo(map);
+
+    L.marker([25.0422,121.5355], { icon: L.divIcon({
+      html:`<div style="background:#1e3a8a;color:#93c5fd;font-family:'Space Grotesk',sans-serif;font-size:10px;font-weight:700;padding:3px 8px;border-radius:5px;border:1px solid #3b82f6;white-space:nowrap;box-shadow:0 2px 10px rgba(0,0,0,0.6)">🏫 北科大</div>`,
+      className:'', iconAnchor:[32,12],
+    })}).addTo(map);
+
+    // Always call the latest version of the handler via ref
+    labelHandlerRef.current = applyLabelCollision;
+    map.on('zoomend', () => { if (labelHandlerRef.current) labelHandlerRef.current(); });
+
+    mapRef.current = map;
+    return () => { map.remove(); mapRef.current = null; };
+  }, []);
+
+  // ── Redraw road layers
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    layersRef.current.forEach(l => { try { map.removeLayer(l); } catch(e){} });
+    layersRef.current   = [];
+    labelLayersRef.current = [];
+
+    const dataKey = viewMode === 'cur' ? 'cur' : viewMode === 'pred' ? 'pred' : 'opt';
+    const activeRoads = propRoads || ROADS;
+
+    activeRoads.forEach(road => {
+      const d    = road[dataKey];
+      const col  = speedColor(d.spd);
+      // Line weight: 3–8 px, proportional to volume
+      const baseW = Math.max(3, Math.min(8, d.vol / 20));
+
+      // ── Three-layer glow stack (dark-mode halo effect)
+      // Layer 1 – outer bloom (widest, very transparent)
+      const glow1 = L.polyline(road.coords, {
+        color: col, weight: baseW + 14, opacity: 0.07,
+        lineCap: 'round', lineJoin: 'round',
+      }).addTo(map);
+
+      // Layer 2 – inner halo (medium width, semi-transparent)
+      const glow2 = L.polyline(road.coords, {
+        color: col, weight: baseW + 6,  opacity: 0.22,
+        lineCap: 'round', lineJoin: 'round',
+      }).addTo(map);
+
+      // Layer 3 – solid main line (full opacity)
+      const mainLine = L.polyline(road.coords, {
+        color: col, weight: baseW,      opacity: 0.93,
+        lineCap: 'round', lineJoin: 'round',
+      }).addTo(map);
+
+      // ── Speed label at arc midpoint
+      const mid = polylineMidpoint(road.coords);
+      // Label text colour follows speed tier (red < 20, amber < 35, green ≥ 35)
+      const labelTextCol = d.spd < 20 ? '#fca5a5' : d.spd < 35 ? '#fcd34d' : '#86efac';
+      const labelHtml = `<div style="
+        background:rgba(10,14,26,0.82);
+        border:1px solid ${col}55;
+        border-radius:5px;
+        padding:2px 7px;
+        font-family:'Space Grotesk',sans-serif;
+        font-size:11px;
+        font-weight:700;
+        color:${labelTextCol};
+        white-space:nowrap;
+        box-shadow:0 0 8px ${col}33,0 1px 4px rgba(0,0,0,0.6);
+        line-height:1.4;
+        pointer-events:none;
+        backdrop-filter:blur(3px);
+      ">${d.spd}<span style="font-size:8px;font-weight:400;opacity:0.72;margin-left:1px">km/h</span></div>`;
+
+      const labelMarker = L.marker(mid, {
+        icon: L.divIcon({ html: labelHtml, className: '', iconAnchor: [26, 11] }),
+        interactive: false, zIndexOffset: 50,
+      }).addTo(map);
+
+      // ── Popup (click main line or glow)
+      const statusText = d.spd < 10 ? '壅塞' : d.spd < 20 ? '緩慢' : d.spd < 35 ? '普通' : '暢通';
+      const popupHtml = `
+        <div style="padding:12px 14px;min-width:190px">
+          <div style="font-family:'Space Grotesk',sans-serif;font-size:13px;font-weight:700;color:#e2e8f0;margin-bottom:10px;line-height:1.3">${road.name}</div>
+          <div style="display:flex;align-items:center;gap:8px;background:${col}18;border:1px solid ${col}44;border-radius:7px;padding:8px 10px;margin-bottom:10px">
+            <div style="font-family:'Space Grotesk',sans-serif;font-size:28px;font-weight:700;color:${col};line-height:1">${d.spd}</div>
+            <div>
+              <div style="font-family:'Noto Sans TC',sans-serif;font-size:11px;color:#94a3b8">平均車速</div>
+              <div style="font-family:'Space Grotesk',sans-serif;font-size:12px;color:${col};font-weight:600">km/h</div>
+            </div>
+            <div style="margin-left:auto;font-family:'Noto Sans TC',sans-serif;font-size:11px;background:${col}22;color:${col};border-radius:4px;padding:2px 7px;font-weight:600">${statusText}</div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+            <div style="background:#111827;border-radius:6px;padding:7px 9px">
+              <div style="font-family:'Noto Sans TC',sans-serif;font-size:9px;color:#475569;margin-bottom:2px">車流量</div>
+              <div style="font-family:'Space Grotesk',sans-serif;font-size:16px;font-weight:700;color:#e2e8f0">${d.vol} <span style="font-size:10px;color:#94a3b8;font-weight:400">輛</span></div>
+            </div>
+            <div style="background:#111827;border-radius:6px;padding:7px 9px">
+              <div style="font-family:'Noto Sans TC',sans-serif;font-size:9px;color:#475569;margin-bottom:2px">路段佔有率</div>
+              <div style="font-family:'Space Grotesk',sans-serif;font-size:16px;font-weight:700;color:#e2e8f0">${d.occ} <span style="font-size:10px;color:#94a3b8;font-weight:400">%</span></div>
+            </div>
+          </div>
+          <div style="margin-top:8px">
+            <div style="display:flex;justify-content:space-between;margin-bottom:3px">
+              <span style="font-family:'Noto Sans TC',sans-serif;font-size:9px;color:#475569">壅塞程度</span>
+              <span style="font-family:'JetBrains Mono',sans-serif;font-size:9px;color:#475569">${road.id}</span>
+            </div>
+            <div style="height:5px;background:#1f2a42;border-radius:3px;overflow:hidden">
+              <div style="width:${Math.min(100,d.occ*2)}%;height:100%;background:${col};border-radius:3px"></div>
+            </div>
+          </div>
+        </div>`;
+
+      mainLine.bindPopup(popupHtml, { maxWidth:220, minWidth:200 });
+      glow2.bindPopup(popupHtml,    { maxWidth:220, minWidth:200 });
+
+      layersRef.current.push(glow1, glow2, mainLine, labelMarker);
+      labelLayersRef.current.push({ marker: labelMarker, latlng: L.latLng(mid) });
+    });
+
+    // Update the handler ref, then run collision check after DOM paints
+    labelHandlerRef.current = applyLabelCollision;
+    requestAnimationFrame(() => { if (labelHandlerRef.current) labelHandlerRef.current(); });
+
+  }, [viewMode, propRoads]);
+
+  return <div ref={containerRef} style={{ width:'100%', height:'100%' }}/>;
+}
+
+/* ─── SPEED LEGEND BAR ───────────────────────── */
+function SpeedLegend() {
+  const stops = [0,10,20,30,40,50,60];
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+      <span style={{ fontFamily:T.body, fontSize:10, color:C.fg3, whiteSpace:'nowrap' }}>車速</span>
+      <div style={{ display:'flex', alignItems:'center', gap:0 }}>
+        {stops.map((spd,i) => i < stops.length-1 && (
+          <div key={spd} style={{ display:'flex', flexDirection:'column', alignItems:'center' }}>
+            <div style={{ width:28, height:5, background:`linear-gradient(90deg,${speedColor(spd)},${speedColor(stops[i+1])})`, borderRadius:i===0?'3px 0 0 3px':i===stops.length-2?'0 3px 3px 0':'0' }}></div>
+            <span style={{ fontFamily:T.mono, fontSize:8, color:C.fg3, marginTop:2 }}>{spd}</span>
+          </div>
+        ))}
+        <span style={{ fontFamily:T.mono, fontSize:8, color:C.fg3, marginTop:7, marginLeft:2 }}>60+</span>
+      </div>
+      <span style={{ fontFamily:T.body, fontSize:10, color:C.fg3 }}>km/h</span>
+      <span style={{ fontFamily:T.body, fontSize:10, color:C.fg3, marginLeft:6, borderLeft:`1px solid ${C.border}`, paddingLeft:8 }}>線寬 = 車流量</span>
+      <span style={{ fontFamily:T.body, fontSize:10, color:C.fg3, borderLeft:`1px solid ${C.border}`, paddingLeft:8 }}>點擊路段查看詳情</span>
+    </div>
+  );
+}
+
+/* ─── FLOW TABLE ─────────────────────────────── */
+function FlowTable({ dataKey, accent, label, tag, roads: propRoads }) {
+  const [open, setOpen] = useState(true);
+  const activeRoads = propRoads || ROADS;
+  return (
+    <div style={{ background:C.card, border:`1px solid ${open?C.border:accent+'55'}`, borderRadius:8, overflow:'hidden', flex:1, transition:'border-color 150ms' }}>
+      <div style={{ display:'flex', alignItems:'center', gap:6, padding:'8px 12px', borderBottom: open ? `1px solid ${C.border}` : 'none', background:C.surf, cursor:'pointer', userSelect:'none' }} onClick={()=>setOpen(o=>!o)}>
+        <span style={{ width:7, height:7, borderRadius:'50%', background:accent, boxShadow:`0 0 6px ${accent}`, display:'block', flexShrink:0 }}></span>
+        <span style={{ fontFamily:T.ff, fontSize:12, fontWeight:600, color:C.fg }}>{label}</span>
+        <span style={{ fontFamily:T.mono, fontSize:9, color:C.fg3, background:C.elev, padding:'1px 5px', borderRadius:3 }}>{tag}</span>
+        <span style={{ marginLeft:'auto', color:C.fg3, fontSize:11, lineHeight:1 }}>{open ? '▲' : '▼'}</span>
+      </div>
+      {open && <><table style={{ width:'100%', borderCollapse:'collapse' }}>
+        <thead>
+          <tr>
+            {['路段','車速','車流','狀態'].map(h=>(
+              <th key={h} style={{ fontFamily:T.body, fontSize:9, fontWeight:500, textTransform:'uppercase', letterSpacing:'0.04em', color:C.fg3, padding:'5px 10px', textAlign:'left', borderBottom:`1px solid ${C.border}`, background:'rgba(17,24,39,0.6)' }}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {activeRoads.map(r => {
+            const d = r[dataKey];
+            const col = speedColor(d.spd);
+            return (
+              <tr key={r.id} style={{ borderBottom:'1px solid rgba(42,53,85,0.35)' }}
+                onMouseEnter={e=>e.currentTarget.style.background='rgba(59,130,246,0.06)'}
+                onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                <td style={{ padding:'6px 10px' }}>
+                  <div style={{ fontFamily:T.body, fontSize:11, color:C.fg, fontWeight:500, whiteSpace:'nowrap', maxWidth:120, overflow:'hidden', textOverflow:'ellipsis' }}>{r.name}</div>
+                  <div style={{ fontFamily:T.mono, fontSize:9, color:C.fg3 }}>{r.id}</div>
+                </td>
+                <td style={{ padding:'6px 10px', whiteSpace:'nowrap' }}>
+                  <span style={{ fontFamily:T.ff, fontSize:12, fontWeight:700, color:col }}>{d.spd}</span>
+                  <span style={{ fontSize:9, color:C.fg2, marginLeft:2 }}>km/h</span>
+                </td>
+                <td style={{ padding:'6px 10px' }}>
+                  <span style={{ fontFamily:T.ff, fontSize:12, color:C.fg }}>{d.vol}</span>
+                  <span style={{ fontSize:9, color:C.fg2, marginLeft:2 }}>輛</span>
+                </td>
+                <td style={{ padding:'6px 10px' }}>
+                  <span style={{ display:'inline-block', width:10, height:10, borderRadius:'50%', background:col, boxShadow:`0 0 4px ${col}`, verticalAlign:'middle', marginRight:4 }}></span>
+                  <span style={{ fontFamily:T.body, fontSize:10, color:col, verticalAlign:'middle' }}>
+                    {d.spd<10?'壅塞':d.spd<20?'緩慢':d.spd<35?'普通':'暢通'}
+                  </span>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table></>}
+    </div>
+  );
+}
+
+/* ─── PLAN CARD ──────────────────────────────── */
+function PlanCard({ plan }) {
+  const isBest = plan.tag === 'best';
+  const tagLabel = { best:'推薦', good:'候選', baseline:'基準' }[plan.tag];
+  const tagColor = { best:'#4ade80', good:'#60a5fa', baseline:'#94a3b8' }[plan.tag];
+  const tagBg    = { best:'rgba(34,197,94,0.12)', good:'rgba(59,130,246,0.10)', baseline:'rgba(148,163,184,0.08)' }[plan.tag];
+  const bW=48.2, bL=62.1;
+  const dW=(plan.wait-bW).toFixed(1), dL=(plan.loss-bL).toFixed(1);
+  return (
+    <div style={{ background:C.card, border:`1px solid ${isBest?'rgba(34,197,94,0.5)':C.border}`, borderRadius:8, padding:'10px 12px', flex:1, position:'relative', boxShadow:isBest?'0 0 0 1px rgba(34,197,94,0.12), 0 0 20px rgba(34,197,94,0.06)':'none' }}>
+      {isBest&&<div style={{ position:'absolute',top:-1,left:10,background:'#22c55e',color:'#0a1a0e',fontFamily:T.body,fontSize:9,fontWeight:700,borderRadius:'0 0 4px 4px',padding:'1px 7px',letterSpacing:'0.04em' }}>BEST</div>}
+      <div style={{ display:'flex', alignItems:'flex-start', gap:5, marginBottom:7, marginTop:isBest?7:0 }}>
+        <span style={{ fontFamily:T.ff, fontSize:12, fontWeight:600, color:C.fg, flex:1 }}>{plan.strategy}</span>
+        <span style={{ fontFamily:T.body, fontSize:9, background:tagBg, color:tagColor, borderRadius:4, padding:'1px 6px', flexShrink:0 }}>{tagLabel}</span>
+      </div>
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'4px 8px', marginBottom:8 }}>
+        {[['TopN',plan.topN],['時間池',plan.pool],['邊路數',plan.edges],['結束',plan.endT===3420?'—':`${plan.endT}s`]].map(([l,v])=>(
+          <div key={l}><div style={{ fontFamily:T.body,fontSize:9,color:C.fg3 }}>{l}</div><div style={{ fontFamily:T.ff,fontSize:12,fontWeight:600,color:C.fg }}>{v}</div></div>
+        ))}
+      </div>
+      <div style={{ borderTop:`1px solid ${C.border}`,paddingTop:7,display:'grid',gridTemplateColumns:'1fr 1fr',gap:6 }}>
+        {[['等待時間',plan.wait,dW],['時間損失',plan.loss,dL]].map(([label,val,delta])=>(
+          <div key={label}>
+            <div style={{ fontFamily:T.body,fontSize:9,color:C.fg3 }}>{label}</div>
+            <div style={{ display:'flex',alignItems:'baseline',gap:4,marginTop:2 }}>
+              <span style={{ fontFamily:T.ff,fontSize:14,fontWeight:700,color:isBest?'#4ade80':C.fg }}>{val}s</span>
+              {plan.tag!=='baseline'&&<span style={{ fontFamily:T.body,fontSize:9,color:parseFloat(delta)<0?'#4ade80':'#f87171' }}>{delta>0?'+':''}{delta}s</span>}
+            </div>
+          </div>
+        ))}
+        {plan.score!==null&&(
+          <div style={{ gridColumn:'span 2' }}>
+            <div style={{ fontFamily:T.body,fontSize:9,color:C.fg3 }}>綜合分數（越低越好）</div>
+            <div style={{ display:'flex',alignItems:'center',gap:6,marginTop:3 }}>
+              <div style={{ flex:1,height:4,background:C.elev,borderRadius:2,overflow:'hidden' }}>
+                <div style={{ width:`${(1-plan.score)*100}%`,height:'100%',background:isBest?'#22c55e':'#3b82f6',borderRadius:2 }}></div>
+              </div>
+              <span style={{ fontFamily:T.ff,fontSize:12,fontWeight:700,color:isBest?'#4ade80':'#60a5fa',minWidth:34 }}>{plan.score}</span>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ─── LLM CHAT ───────────────────────────────── */
+const SAMPLE_MSGS = [
+  { role:'ai',   text:'您好！我是 TrafficVision AI 助理，已分析最新車流及地圖標示數據。請問有什麼問題？', time:'11:20' },
+  { role:'user', text:'地圖上紅色路段在哪裡？目前最嚴重的壅塞狀況？', time:'11:22' },
+  { role:'ai',   text:'目前地圖標示兩處紅色（壅塞）路段：\n\n1. **建國北路（長安–忠孝）** — 車速 9.8 km/h，佔有率 47.7%，動畫幾乎靜止\n2. **忠孝東路（金山–中山）** — 車速 20.5 km/h，佔有率 12.6%\n\n建議採用「最佳策略」（topN=4），預計可將平均等待時間降低 **27.2%**，建國北路車速改善至約 18.6 km/h。', time:'11:22' },
+];
+
+function LLMChat() {
+  const [msgs, setMsgs] = useState(SAMPLE_MSGS);
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const scrollRef = useRef(null);
+
+  const send = (txt) => {
+    const t=txt||input; if(!t.trim()) return;
+    const now=new Date().toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'});
+    setMsgs(m=>[...m,{role:'user',text:t,time:now}]);
+    setInput(''); setLoading(true);
+    setTimeout(()=>{
+      setMsgs(m=>[...m,{role:'ai',text:'根據地圖顯示，建議優先處理建國北路壅塞問題。採用最佳策略後，預計整體等待時間從 48.2s 降至 35.1s（改善 27.2%），建國北路車速從 9.8 提升至約 18.6 km/h，地圖動畫速度也會明顯加快。',time:new Date().toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'})}]);
+      setLoading(false);
+    }, 1000);
+  };
+
+  useEffect(()=>{ if(scrollRef.current) scrollRef.current.scrollTop=scrollRef.current.scrollHeight; },[msgs,loading]);
+
+  return (
+    <div style={{ display:'flex',flexDirection:'column',height:'100%',background:C.card,border:`1px solid ${C.border}`,borderRadius:8,overflow:'hidden' }}>
+      <div style={{ display:'flex',alignItems:'center',gap:8,padding:'9px 13px',borderBottom:`1px solid ${C.border}`,background:C.surf,flexShrink:0 }}>
+        <div style={{ width:26,height:26,borderRadius:6,background:'rgba(59,130,246,0.15)',display:'flex',alignItems:'center',justifyContent:'center' }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        </div>
+        <div>
+          <div style={{ fontFamily:T.ff,fontSize:13,fontWeight:600,color:C.fg }}>AI 數據助理</div>
+          <div style={{ fontFamily:T.mono,fontSize:9,color:C.fg3 }}>claude-haiku · 即時分析</div>
+        </div>
+        <div style={{ marginLeft:'auto',display:'flex',alignItems:'center',gap:5 }}>
+          <span style={{ width:6,height:6,borderRadius:'50%',background:'#22c55e',boxShadow:'0 0 5px rgba(34,197,94,0.7)' }}></span>
+          <span style={{ fontFamily:T.body,fontSize:11,color:'#4ade80' }}>連線中</span>
+        </div>
+      </div>
+      <div ref={scrollRef} style={{ flex:1,overflowY:'auto',padding:'12px',display:'flex',flexDirection:'column',gap:9 }}>
+        {msgs.map((m,i)=>{
+          const isUser=m.role==='user';
+          const lines=m.text.split('\n').filter(Boolean);
+          return (
+            <div key={i} style={{ display:'flex',flexDirection:'column',alignItems:isUser?'flex-end':'flex-start' }}>
+              <div style={{ maxWidth:'90%',background:isUser?'#2563eb':C.surf,border:isUser?'none':`1px solid ${C.border}`,borderRadius:isUser?'10px 10px 3px 10px':'3px 10px 10px 10px',padding:'8px 11px',fontFamily:T.body,fontSize:12,color:isUser?'#fff':C.fg2,lineHeight:1.6 }}>
+                {lines.map((ln,j)=>{
+                  const parts=ln.split(/\*\*(.*?)\*\*/g);
+                  return <p key={j} style={{margin:j>0?'4px 0 0':0}}>{parts.map((p,k)=>k%2===1?<strong key={k} style={{color:C.fg,fontWeight:600}}>{p}</strong>:p)}</p>;
+                })}
+              </div>
+              <span style={{ fontFamily:T.mono,fontSize:9,color:'#334155',marginTop:2 }}>{m.time}</span>
+            </div>
+          );
+        })}
+        {loading&&<div style={{ background:C.surf,border:`1px solid ${C.border}`,borderRadius:'3px 10px 10px 10px',padding:'8px 12px',fontFamily:T.body,fontSize:12,color:C.fg3,width:'fit-content' }}>思考中…</div>}
+      </div>
+      <div style={{ padding:'7px 11px 4px',display:'flex',gap:5,flexWrap:'wrap',flexShrink:0 }}>
+        {['壅塞分析','最佳策略','地圖說明','預測準確率'].map(s=>(
+          <button key={s} onClick={()=>send(s)} style={{ fontFamily:T.body,fontSize:10,color:C.fg2,background:C.surf,border:`1px solid ${C.border}`,borderRadius:4,padding:'3px 8px' }}>{s}</button>
+        ))}
+      </div>
+      <div style={{ padding:'5px 11px 11px',display:'flex',gap:7,flexShrink:0 }}>
+        <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&send()} placeholder="詢問交通狀況或優化建議..." style={{ flex:1,background:C.surf,border:`1px solid ${C.border}`,borderRadius:6,padding:'7px 11px',color:C.fg,fontSize:12,outline:'none' }}/>
+        <button onClick={()=>send()} style={{ width:34,height:34,background:'#3b82f6',border:'none',borderRadius:6,display:'flex',alignItems:'center',justifyContent:'center' }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ─── API DATA LOADER ────────────────────────── */
+// Maps API road names → our ROADS array by road-name prefix.
+// Taipei API keys look like "建國南路二段（忠孝東路口）"; frontend names like "建國南路  忠孝–仁愛".
+// We extract the road name prefix (first token before whitespace) and match all API entries
+// that start with that prefix, then aggregate (volume-weighted avg speed, sum volume, avg occ, worst MOE).
+function mergeApiTraffic(apiData, baseRoads) {
+  if (!apiData || !apiData.data) return baseRoads;
+  const entries = Object.entries(apiData.data);
+  return baseRoads.map(road => {
+    const roadPrefix = road.name.trim().split(/\s+/)[0]; // e.g. "建國南路"
+    const matches = entries.filter(([name]) => name.startsWith(roadPrefix));
+    if (!matches.length) return road;
+    const totalVol = matches.reduce((s, [, d]) => s + (d.TotalVol || 0), 0);
+    const avgSpd = totalVol > 0
+      ? matches.reduce((s, [, d]) => s + (d.AvgSpd || 0) * (d.TotalVol || 0), 0) / totalVol
+      : matches.reduce((s, [, d]) => s + (d.AvgSpd || 0), 0) / matches.length;
+    const avgOcc = matches.reduce((s, [, d]) => s + (d.AvgOcc || 0), 0) / matches.length;
+    const worstMoe = Math.max(...matches.map(([, d]) => d.MOELevel || 0));
+    return { ...road, cur: { spd: +avgSpd.toFixed(1), vol: totalVol, occ: +avgOcc.toFixed(2), moe: worstMoe } };
+  });
+}
+
+// Maps SUMO simulation road dict → our ROADS array
+// SUMO keys are broad road names like "建國南路", "忠孝東路" (from _ROAD_PREFIX_MAP in serve_api.py).
+// Frontend road names have format "建國南路  忠孝–仁愛"; we extract the prefix before whitespace.
+function mergeSimData(simRoads, baseRoads) {
+  if (!simRoads) return baseRoads;
+  return baseRoads.map(road => {
+    const roadPrefix = road.name.trim().split(/\s+/)[0]; // e.g. "建國南路"
+    const key = Object.keys(simRoads).find(k => roadPrefix.startsWith(k));
+    if (!key) return road;
+    const d = simRoads[key];
+    const curSpd  = d.speed_kmh;
+    const predSpd = +Math.max(0, curSpd * 0.92).toFixed(1);
+    const predOcc = +Math.min(100, d.occupancy * 1.25).toFixed(2);
+    return {
+      ...road,
+      cur:  { spd: curSpd,  vol: d.count,                  occ: d.occupancy, moe: d.moe },
+      pred: { spd: predSpd, vol: Math.round(d.count * 1.08), occ: predOcc,    moe: predSpd >= 40 ? 0 : predSpd >= 20 ? 1 : 2 },
+    };
+  });
+}
+
+function ApiLoader({ onDataLoaded, apiUrl, setApiUrl, lastFetch, fetchStatus }) {
+  const fileRef = useRef(null);
+
+  const loadFile = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try {
+        const json = JSON.parse(ev.target.result);
+        onDataLoaded(json, file.name);
+      } catch { alert('無法解析 JSON 檔案'); }
+    };
+    reader.readAsText(file);
+  };
+
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 12px', background:'rgba(59,130,246,0.06)', borderBottom:`1px solid ${C.border}` }}>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="2" style={{flexShrink:0}}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      <span style={{ fontFamily:T.body, fontSize:11, color:C.fg3 }}>數據來源</span>
+      <input
+        value={apiUrl} onChange={e=>setApiUrl(e.target.value)}
+        placeholder="http://localhost:8000/api/traffic"
+        style={{ flex:1, background:C.surf, border:`1px solid ${C.border}`, borderRadius:5, padding:'3px 9px', color:C.fg2, fontFamily:T.mono, fontSize:10, outline:'none', minWidth:0 }}
+      />
+      <button onClick={()=>onDataLoaded(null,'api')} style={{ fontFamily:T.body, fontSize:10, padding:'3px 10px', borderRadius:5, border:`1px solid #3b82f6`, background:'rgba(59,130,246,0.12)', color:'#60a5fa' }}>
+        拉取
+      </button>
+      <span style={{ fontFamily:T.body, fontSize:10, color:C.fg3 }}>或</span>
+      <button onClick={()=>fileRef.current.click()} style={{ fontFamily:T.body, fontSize:10, padding:'3px 10px', borderRadius:5, border:`1px solid ${C.border}`, background:C.elev, color:C.fg2 }}>
+        載入 JSON
+      </button>
+      <input ref={fileRef} type="file" accept=".json" style={{display:'none'}} onChange={loadFile}/>
+      {fetchStatus && (
+        <span style={{ fontFamily:T.mono, fontSize:9, color: fetchStatus==='ok'?'#4ade80': fetchStatus==='error'?'#f87171':'#f59e0b', flexShrink:0 }}>
+          {fetchStatus==='ok'?`✓ ${lastFetch}`:'error'===fetchStatus?'✗ 連線失敗':'⟳ 載入中'}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/* ─── RESIZE HANDLE ──────────────────────────── */
+function ResizeHandle({ onResize }) {
+  const dragging = useRef(false);
+  const startY   = useRef(0);
+
+  const onMouseDown = useCallback(e => {
+    e.preventDefault();
+    dragging.current = true;
+    startY.current = e.clientY;
+    const onMove = ev => { if (!dragging.current) return; onResize(ev.clientY - startY.current); startY.current = ev.clientY; };
+    const onUp   = ()  => { dragging.current = false; document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); document.body.style.cursor = ''; document.body.style.userSelect = ''; };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup',   onUp);
+    document.body.style.cursor     = 'row-resize';
+    document.body.style.userSelect = 'none';
+  }, [onResize]);
+
+  return (
+    <div
+      onMouseDown={onMouseDown}
+      style={{ flexShrink:0, height:6, cursor:'row-resize', display:'flex', alignItems:'center', justifyContent:'center', margin:'1px 0' }}
+    >
+      <div style={{ width:32, height:3, borderRadius:2, background:'rgba(59,130,246,0.25)', transition:'background 150ms' }}
+        onMouseEnter={e=>e.currentTarget.style.background='rgba(59,130,246,0.55)'}
+        onMouseLeave={e=>e.currentTarget.style.background='rgba(59,130,246,0.25)'}
+      />
+    </div>
+  );
+}
+
+/* ─── APP ────────────────────────────────────── */
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{"mapMode":"cur","apiUrl":"http://localhost:8000/api/traffic"}/*EDITMODE-END*/;
+
+function App() {
+  const [time, setTime] = useState('');
+  const [mapMode, setMapMode] = useState(TWEAK_DEFAULTS.mapMode);
+  const [showTweaks, setShowTweaks] = useState(false);
+  const [liveRoads, setLiveRoads] = useState(ROADS);
+  const liveRoadsRef = useRef(ROADS);
+  useEffect(() => { liveRoadsRef.current = liveRoads; }, [liveRoads]);
+  const [apiUrl, setApiUrl] = useState(TWEAK_DEFAULTS.apiUrl);
+  const [lastFetch, setLastFetch] = useState('');
+  const [fetchStatus, setFetchStatus] = useState(null);
+  const [simTime, setSimTime] = useState(null);
+  const [simStatus, setSimStatus] = useState('idle'); // 'idle' | 'running' | 'ended'
+  const [mapH,   setMapH]   = useState(270);
+  const [tableH, setTableH] = useState(200);
+  const wsRef = useRef(null);
+
+  const handleDataLoaded = async (json, source) => {
+    setFetchStatus('loading');
+    try {
+      let data = json;
+      if (!data) {
+        const res = await fetch(apiUrl);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        data = await res.json();
+      }
+      const merged = mergeApiTraffic(data, liveRoadsRef.current);
+      setLiveRoads(merged);
+      setLastFetch(new Date().toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit',second:'2-digit'}));
+      setFetchStatus('ok');
+    } catch (e) {
+      console.error(e);
+      setFetchStatus('error');
+    }
+  };
+
+  // Auto-refresh every 5 min if API URL is set
+  useEffect(() => {
+    if (!apiUrl.startsWith('http')) return;
+    const id = setInterval(() => handleDataLoaded(null,'auto'), 5 * 60 * 1000);
+    return () => clearInterval(id);
+  }, [apiUrl]);
+
+  // WebSocket — SUMO 即時串流
+  useEffect(() => {
+    let ws;
+    let retryTimer;
+    const connect = () => {
+      try {
+        ws = new WebSocket('ws://localhost:8000/ws/simulation');
+        wsRef.current = ws;
+        ws.onmessage = evt => {
+          const msg = JSON.parse(evt.data);
+          if (msg.type === 'step') {
+            setSimTime(msg.sim_time);
+            setSimStatus('running');
+            setLiveRoads(prev => mergeSimData(msg.roads, prev));
+          } else if (msg.type === 'end') {
+            setSimStatus('ended');
+            setSimTime(msg.sim_time);
+          }
+        };
+        ws.onclose = () => {
+          setSimStatus(s => s === 'running' ? 'idle' : s);
+          retryTimer = setTimeout(connect, 4000);
+        };
+        ws.onerror = () => ws.close();
+      } catch(e) {}
+    };
+    connect();
+    return () => {
+      clearTimeout(retryTimer);
+      if (wsRef.current) wsRef.current.close();
+    };
+  }, []);
+
+  const startSim = () => fetch('http://localhost:8000/api/simulation/start', { method:'POST' })
+    .then(() => setSimStatus('running')).catch(()=>{});
+  const stopSim  = () => fetch('http://localhost:8000/api/simulation/stop',  { method:'POST' })
+    .then(() => setSimStatus('idle')).catch(()=>{});
+
+  useEffect(()=>{ const tick=()=>setTime(new Date().toLocaleString('zh-TW',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false})); tick(); const id=setInterval(tick,1000); return()=>clearInterval(id); },[]);
+  useEffect(()=>{ const h=e=>{ if(e.data?.type==='__activate_edit_mode') setShowTweaks(true); if(e.data?.type==='__deactivate_edit_mode') setShowTweaks(false); }; window.addEventListener('message',h); window.parent.postMessage({type:'__edit_mode_available'},'*'); return()=>window.removeEventListener('message',h); },[]);
+
+  const modes = { cur:{label:'當前車流',accent:'#3b82f6'}, pred:{label:'5分鐘預測',accent:'#f59e0b'}, opt:{label:'優化後預測',accent:'#22c55e'} };
+
+  return (
+    <div style={{ display:'flex',flexDirection:'column',height:'100vh',background:C.bg }}>
+      {/* TopBar */}
+      <div style={{ height:50,background:C.surf,borderBottom:`1px solid ${C.border}`,display:'flex',alignItems:'center',padding:'0 18px',gap:14,flexShrink:0 }}>
+        <div style={{ display:'flex',alignItems:'center',gap:8 }}>
+          <div style={{ width:28,height:28,background:'rgba(59,130,246,0.14)',borderRadius:6,display:'flex',alignItems:'center',justifyContent:'center' }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="12" x2="15" y2="15"/></svg>
+          </div>
+          <span style={{ fontFamily:T.ff,fontSize:14,fontWeight:700,color:C.fg }}>TrafficVision</span>
+          <span style={{ fontFamily:T.body,fontSize:10,color:C.fg3 }}>NTUT 交通監控</span>
+        </div>
+        <div style={{ display:'flex',alignItems:'center',gap:5,background:'rgba(34,197,94,0.09)',borderRadius:5,padding:'3px 9px' }}>
+          <span style={{ width:6,height:6,borderRadius:'50%',background:'#22c55e',boxShadow:'0 0 5px rgba(34,197,94,0.7)',display:'block' }}></span>
+          <span style={{ fontFamily:T.body,fontSize:11,color:'#4ade80' }}>即時資料</span>
+        </div>
+        <div style={{ flex:1 }}/>
+        <span style={{ fontFamily:T.mono,fontSize:10,color:C.fg3 }}>{time}</span>
+        <button style={{ display:'inline-flex',alignItems:'center',gap:5,height:28,padding:'0 11px',borderRadius:5,border:`1px solid ${C.border}`,background:C.elev,color:C.fg2,fontSize:11 }}>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-.08-7.49"/></svg>重新整理
+        </button>
+        {simTime !== null && (
+          <span style={{ fontFamily:T.mono,fontSize:10,color:'#f59e0b',background:'rgba(245,158,11,0.10)',borderRadius:4,padding:'3px 8px',border:'1px solid rgba(245,158,11,0.25)' }}>
+            模擬 {Math.round(simTime)}s
+          </span>
+        )}
+        <button
+          onClick={simStatus === 'running' ? stopSim : startSim}
+          style={{ display:'inline-flex',alignItems:'center',gap:5,height:28,padding:'0 11px',borderRadius:5,border:`1px solid ${simStatus==='running'?'#ef4444':'#22c55e'}`,background:simStatus==='running'?'rgba(239,68,68,0.12)':'rgba(34,197,94,0.12)',color:simStatus==='running'?'#f87171':'#4ade80',fontSize:11 }}>
+          {simStatus === 'running'
+            ? <><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>停止模擬</>
+            : <><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>啟動模擬</>
+          }
+        </button>
+        <button style={{ display:'inline-flex',alignItems:'center',gap:5,height:28,padding:'0 11px',borderRadius:5,border:'none',background:'#2563eb',color:'#fff',fontSize:11 }}>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>啟動優化
+        </button>
+      </div>
+
+      {/* Body */}
+      <div style={{ flex:1,display:'grid',gridTemplateColumns:'1fr 360px',gap:10,padding:'10px 14px 12px',overflow:'hidden',minHeight:0 }}>
+
+        {/* LEFT */}
+        <div style={{ display:'flex',flexDirection:'column',overflow:'hidden',minHeight:0 }}>
+
+          {/* Map */}
+          <div style={{ display:'flex',flexDirection:'column',background:C.card,border:`1px solid ${C.border}`,borderRadius:8,overflow:'hidden',flexShrink:0,height:mapH }}>
+            <div style={{ display:'flex',alignItems:'center',padding:'7px 12px',borderBottom:`1px solid ${C.border}`,background:C.surf,gap:10,flexShrink:0,flexWrap:'wrap' }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="2" style={{flexShrink:0}}><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
+              <span style={{ fontFamily:T.ff,fontSize:12,fontWeight:600,color:C.fg }}>路網車流地圖</span>
+              {/* Mode tabs */}
+              <div style={{ display:'flex',gap:4 }}>
+                {Object.entries(modes).map(([k,v])=>(
+                  <button key={k} onClick={()=>setMapMode(k)} style={{ fontFamily:T.body,fontSize:10,fontWeight:500,padding:'3px 9px',borderRadius:4,border:`1px solid ${mapMode===k?v.accent:C.border}`,background:mapMode===k?`${v.accent}20`:C.elev,color:mapMode===k?v.accent:C.fg2,transition:'all 150ms' }}>{v.label}</button>
+                ))}
+              </div>
+              {/* Speed legend */}
+              <div style={{ marginLeft:'auto' }}>
+                <SpeedLegend/>
+              </div>
+            </div>
+            <div style={{ flex:1,position:'relative' }}>
+              <TrafficMap viewMode={mapMode} roads={liveRoads}/>
+            </div>
+          </div>
+
+          <ResizeHandle onResize={d => setMapH(h => Math.max(120, Math.min(560, h + d)))}/>
+
+          {/* Flow tables */}
+          <div style={{ flexShrink:0, height:tableH, overflow:'hidden', display:'flex', flexDirection:'column' }}>
+            <div style={{ display:'flex',alignItems:'center',gap:7,marginBottom:6 }}>
+              <div style={{ width:3,height:14,borderRadius:2,background:'#3b82f6' }}></div>
+              <span style={{ fontFamily:T.ff,fontSize:12,fontWeight:600,color:C.fg }}>車流數據對比</span>
+              <span style={{ fontFamily:T.body,fontSize:10,color:C.fg3 }}>當前 · 5分鐘預測 · 優化後</span>
+            </div>
+            <div style={{ display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8 }}>
+              <FlowTable dataKey="cur"  accent="#3b82f6" label="當前車流"  tag="NOW"   roads={liveRoads}/>
+              <FlowTable dataKey="pred" accent="#f59e0b" label="5分鐘預測" tag="+5min" roads={liveRoads}/>
+              <FlowTable dataKey="opt"  accent="#22c55e" label="優化後預測" tag="OPT"  roads={liveRoads}/>
+            </div>
+          </div>
+
+          <ResizeHandle onResize={d => setTableH(h => Math.max(60, Math.min(480, h + d)))}/>
+
+          {/* Signal plans */}
+          <div style={{ flex:1,minHeight:80,overflow:'hidden',display:'flex',flexDirection:'column' }}>
+            <div style={{ display:'flex',alignItems:'center',gap:7,marginBottom:6 }}>
+              <div style={{ width:3,height:14,borderRadius:2,background:'#22c55e' }}></div>
+              <span style={{ fontFamily:T.ff,fontSize:12,fontWeight:600,color:C.fg }}>號誌補全計畫</span>
+              <span style={{ fontFamily:T.body,fontSize:10,color:C.fg3 }}>4 組策略評估結果</span>
+            </div>
+            <div style={{ display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8,flex:1 }}>
+              {PLANS.map(p=><PlanCard key={p.id} plan={p}/>)}
+            </div>
+          </div>
+        </div>
+
+        {/* RIGHT: LLM */}
+        <div style={{ display:'flex',flexDirection:'column',minHeight:0 }}>
+          <div style={{ display:'flex',alignItems:'center',gap:7,marginBottom:6 }}>
+            <div style={{ width:3,height:14,borderRadius:2,background:'#8b5cf6' }}></div>
+            <span style={{ fontFamily:T.ff,fontSize:12,fontWeight:600,color:C.fg }}>AI 數據助理</span>
+          </div>
+          <div style={{ flex:1,minHeight:0 }}><LLMChat/></div>
+        </div>
+      </div>
+
+      {/* Tweaks */}
+      {showTweaks&&(
+        <div style={{ position:'fixed',bottom:18,right:18,width:215,background:C.card,border:`1px solid ${C.border}`,borderRadius:10,zIndex:100,boxShadow:'0 8px 32px rgba(0,0,0,0.5)' }}>
+          <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',padding:'8px 12px',borderBottom:`1px solid ${C.border}` }}>
+            <span style={{ fontFamily:T.ff,fontSize:13,fontWeight:600,color:C.fg }}>Tweaks</span>
+            <button style={{ background:'none',border:'none',color:C.fg3,fontSize:13 }} onClick={()=>{ setShowTweaks(false); window.parent.postMessage({type:'__edit_mode_dismissed'},'*'); }}>✕</button>
+          </div>
+          <div style={{ padding:'10px 12px',display:'flex',flexDirection:'column',gap:6 }}>
+            <div style={{ fontFamily:T.body,fontSize:10,color:C.fg3,textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:2 }}>地圖顯示模式</div>
+            {Object.entries(modes).map(([k,v])=>(
+              <button key={k} onClick={()=>setMapMode(k)} style={{ fontFamily:T.body,fontSize:12,padding:'6px 10px',borderRadius:5,border:`1px solid ${mapMode===k?v.accent:C.border}`,background:mapMode===k?`${v.accent}18`:C.surf,color:mapMode===k?v.accent:C.fg2,textAlign:'left' }}>{v.label}</button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>

@@ -1,7 +1,7 @@
 import xml.etree.ElementTree as ET
 import math
 def getRoot():
-    path = "./data/ntut_network_split.net copy.xml"
+    path = "./data/ntut_network_split.net.xml"
     tree = ET.parse(path)
     root = tree.getroot()
     return root
@@ -27,7 +27,3 @@ def search(position_x, position_y):
             roadInfo[child.attrib["id"]] = [x, y, dist]
     minid = min(roadInfo, key=lambda k: roadInfo[k][2])
     return minid
-
-def remap_junction(junction_id):
-    """Remap junction ID if needed (for now, just return as is)."""
-    return junction_id
