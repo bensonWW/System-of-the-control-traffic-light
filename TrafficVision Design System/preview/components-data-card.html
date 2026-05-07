@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@700&family=Noto+Sans+TC:wght@400;500&family=JetBrains+Mono&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body { background: var(--color-bg-base); padding: 20px; font-family: var(--font-body); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+  .card { background: var(--color-bg-card); border: 1px solid var(--color-border); border-radius: 8px; padding: 14px 16px; }
+  .card-label { font-size: 11px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-text-muted); margin-bottom: 6px; }
+  .card-value { font-family: var(--font-display); font-size: 32px; font-weight: 700; color: var(--color-text-primary); line-height: 1; }
+  .card-unit { font-family: var(--font-body); font-size: 13px; color: var(--color-text-secondary); margin-left: 4px; }
+  .card-delta { font-size: 12px; margin-top: 5px; display: flex; align-items: center; gap: 4px; }
+  .delta-up { color: #f87171; }
+  .delta-down { color: #4ade80; }
+  .card-bar { height: 3px; border-radius: 2px; margin-top: 10px; background: var(--color-bg-elevated); overflow: hidden; }
+  .card-bar-fill { height: 100%; border-radius: 2px; }
+</style>
+</head>
+<body>
+<div class="grid">
+  <div class="card">
+    <div class="card-label">平均車速</div>
+    <div><span class="card-value">34.6</span><span class="card-unit">km/h</span></div>
+    <div class="card-delta delta-down">▼ 12.3 較上輪</div>
+    <div class="card-bar"><div class="card-bar-fill" style="width:58%;background:#3b82f6;"></div></div>
+  </div>
+  <div class="card">
+    <div class="card-label">總車流量</div>
+    <div><span class="card-value">1,240</span><span class="card-unit">輛</span></div>
+    <div class="card-delta delta-up">▲ 87 較上輪</div>
+    <div class="card-bar"><div class="card-bar-fill" style="width:74%;background:#f59e0b;"></div></div>
+  </div>
+  <div class="card">
+    <div class="card-label">平均佔有率</div>
+    <div><span class="card-value">9.4</span><span class="card-unit">%</span></div>
+    <div class="card-delta delta-up">▲ 2.1 較上輪</div>
+    <div class="card-bar"><div class="card-bar-fill" style="width:28%;background:#ef4444;"></div></div>
+  </div>
+</div>
+</body>
+</html>

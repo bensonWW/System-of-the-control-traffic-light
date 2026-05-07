@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500&family=JetBrains+Mono&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body { background: var(--color-bg-base); padding: 20px; font-family: var(--font-body); display: flex; flex-direction: column; gap: 10px; max-width: 420px; }
+  .bubble { max-width: 88%; padding: 10px 14px; border-radius: 10px; font-size: 13px; line-height: 1.6; }
+  .bubble-user { background: #2563eb; color: #fff; border-radius: 10px 10px 3px 10px; align-self: flex-end; margin-left: auto; }
+  .bubble-ai { background: var(--color-bg-card); border: 1px solid var(--color-border); color: var(--color-text-secondary); border-radius: 10px 10px 10px 3px; }
+  .bubble-ai strong { color: var(--color-text-primary); font-weight: 500; }
+  .timestamp { font-family: var(--font-mono); font-size: 10px; color: var(--color-text-muted); text-align: center; }
+  .input-row { display: flex; gap: 8px; margin-top: 4px; }
+  .chat-input { flex: 1; background: var(--color-bg-surface); border: 1px solid var(--color-border); border-radius: 6px; padding: 8px 12px; color: var(--color-text-muted); font-family: var(--font-body); font-size: 13px; }
+  .send-btn { background: #3b82f6; border: none; border-radius: 6px; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+</style>
+</head>
+<body>
+<div class="timestamp">11:22:31</div>
+<div class="bubble bubble-user">請問目前建國北路的車流狀況如何？</div>
+<div class="bubble bubble-ai">根據最新數據，<strong>建國北路（長安東路–忠孝東路）</strong>目前處於 <strong style="color:#f87171;">壅塞（MOE 2）</strong> 狀態。<br><br>平均車速僅 <strong>9.8 km/h</strong>，佔有率高達 <strong>47.7%</strong>，建議考慮調整號誌時制以疏解壅塞。</div>
+<div class="input-row">
+  <div class="chat-input">請輸入問題...</div>
+  <button class="send-btn">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+  </button>
+</div>
+</body>
+</html>

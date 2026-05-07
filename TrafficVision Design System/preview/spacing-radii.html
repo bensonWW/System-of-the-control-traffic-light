@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600&family=Noto+Sans+TC:wght@400;500&family=JetBrains+Mono&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body { background: var(--color-bg-base); padding: 20px; font-family: var(--font-body); display: flex; flex-direction: column; gap: 12px; }
+  .section { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .label { font-family: var(--font-mono); font-size: 10px; color: var(--color-text-muted); width: 100px; flex-shrink: 0; }
+  .box { height: 36px; width: 64px; background: var(--color-bg-card); border: 1px solid var(--color-border); display: flex; align-items: center; justify-content: center; }
+  .note { font-family: var(--font-mono); font-size: 10px; color: var(--color-text-secondary); }
+  .shadow-demo { height: 36px; width: 180px; background: var(--color-bg-card); display: flex; align-items: center; justify-content: center; }
+  .shadow-demo .note { font-size: 11px; }
+</style>
+</head>
+<body>
+<div class="section">
+  <div class="label">--radius-sm 4px</div>
+  <div class="box" style="border-radius:4px;"><span class="note">Badge</span></div>
+  <div class="label">--radius-md 6px</div>
+  <div class="box" style="border-radius:6px;"><span class="note">Button</span></div>
+  <div class="label">--radius-lg 8px</div>
+  <div class="box" style="border-radius:8px;"><span class="note">Card</span></div>
+  <div class="label">--radius-xl 12px</div>
+  <div class="box" style="border-radius:12px;"><span class="note">Modal</span></div>
+  <div class="label">--radius-full</div>
+  <div class="box" style="border-radius:9999px; width:36px;"><span class="note"></span></div>
+</div>
+<div class="section">
+  <div class="label">--shadow-card</div>
+  <div class="shadow-demo" style="border-radius:8px; box-shadow: 0 0 0 1px #2a3555;"><span class="note">Card (border only)</span></div>
+  <div class="label">--shadow-focus</div>
+  <div class="shadow-demo" style="border-radius:6px; box-shadow: 0 0 0 2px rgba(59,130,246,0.40); border:1px solid #3b82f6;"><span class="note">Focus ring</span></div>
+</div>
+<div class="section">
+  <div class="label">Borders</div>
+  <div style="height:1px; width:80px; background:#2a3555;"></div><span class="note">--border</span>
+  <div style="height:1px; width:80px; background:#3b4c72;"></div><span class="note">--border-strong</span>
+  <div style="height:1px; width:80px; background:#3b82f6;"></div><span class="note">--border-focus</span>
+</div>
+</body>
+</html>
