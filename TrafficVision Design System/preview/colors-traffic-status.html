@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<title>TrafficVision DS v2 — Traffic Status Colors</title>
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body { background: var(--bg); padding: 24px; font-family: var(--font-body); }
+  .status-row { display: flex; gap: 12px; margin-bottom: 20px; align-items: stretch; }
+  .status-card {
+    flex: 1;
+    padding: 16px;
+    border-radius: 10px;
+    border: 1px solid;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .status-title { font-size: 13px; font-weight: 600; font-family: var(--font-display); }
+  .status-sub { font-size: 11px; color: var(--fg-2); font-family: var(--font-mono); }
+  .swatch-row { display: flex; gap: 6px; margin-top: 4px; }
+  .mini-swatch { width: 32px; height: 24px; border-radius: 4px; }
+  .swatch-label { font-size: 10px; color: var(--fg-3); font-family: var(--font-mono); margin-top: 3px; }
+  .section-label { font-size: 11px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-3); margin-bottom: 12px; }
+  .signal-demo { display: flex; gap: 10px; align-items: center; margin-bottom: 4px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .badge-demo { display: flex; gap: 8px; margin-top: 4px; }
+</style>
+</head>
+<body>
+
+<div class="section-label">Traffic Status Color System — v2.0</div>
+
+<div class="status-row">
+
+  <div class="status-card" style="background:var(--status-free-bg); border-color:var(--status-free-border);">
+    <div class="signal-demo">
+      <div class="dot" style="background:var(--color-green-500); box-shadow: var(--shadow-glow-free);"></div>
+      <div class="status-title" style="color:var(--status-free-text);">暢通 Free Flow</div>
+    </div>
+    <div class="status-sub">MOE Level 0</div>
+    <div class="swatch-row">
+      <div>
+        <div class="mini-swatch" style="background:#22c55e;"></div>
+        <div class="swatch-label">-500</div>
+      </div>
+      <div>
+        <div class="mini-swatch" style="background:#4ade80;"></div>
+        <div class="swatch-label">-400</div>
+      </div>
+      <div>
+        <div class="mini-swatch" style="background:#86efac;"></div>
+        <div class="swatch-label">-300</div>
+      </div>
+      <div>
+        <div class="mini-swatch" style="background:rgba(34,197,94,0.10);"></div>
+        <div class="swatch-label">-bg</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="status-card" style="background:var(--status-moderate-bg); border-color:var(--status-moderate-border);">
+    <div class="signal-demo">
+      <div class="dot" style="background:var(--color-amber-500); box-shadow: var(--shadow-glow-moderate);"></div>
+      <div class="status-title" style="color:var(--status-moderate-text);">普通 Moderate</div>
+    </div>
+    <div class="status-sub">MOE Level 1</div>
+    <div class="swatch-row">
+      <div>
+        <div class="mini-swatch" style="background:#f59e0b;"></div>
+        <div class="swatch-label">-500</div>
+      </div>
+      <div>
+        <div class="mini-swatch" style="background:#fbbf24;"></div>
+        <div class="swatch-label">-400</div>
+      </div>
+      <div>
+        <div class="mini-swatch" style="background:#fcd34d;"></div>
+        <div class="swatch-label">-300</div>
+      </div>
+      <div>
+        <div class="mini-swatch" style="background:rgba(245,158,11,0.10);"></div>
+        <div class="swatch-label">-bg</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="status-card" style="background:var(--status-congested-bg); border-color:var(--status-congested-border);">
+    <div class="signal-demo">
+      <div class="dot" style="background:var(--color-red-500); box-shadow: var(--shadow-glow-congested);"></div>
+      <div class="status-title" style="color:var(--status-congested-text);">壅塞 Congested</div>
+    </div>
+    <div class="status-sub">MOE Level 2</div>
+    <div class="swatch-row">
+      <div>
+        <div class="mini-swatch" style="background:#ef4444;"></div>
+        <div class="swatch-label">-500</div>
+      </div>
+      <div>
+        <div class="mini-swatch" style="background:#f87171;"></div>
+        <div class="swatch-label">-400</div>
+      </div>
+      <div>
+        <div class="mini-swatch" style="background:#fca5a5;"></div>
+        <div class="swatch-label">-300</div>
+      </div>
+      <div>
+        <div class="mini-swatch" style="background:rgba(239,68,68,0.10);"></div>
+        <div class="swatch-label">-bg</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="status-card" style="background:var(--status-predict-bg); border-color:var(--status-predict-border);">
+    <div class="signal-demo">
+      <div class="dot" style="background:var(--color-violet-500); box-shadow: var(--shadow-glow-predict);"></div>
+      <div class="status-title" style="color:var(--status-predict-text);">預測 Prediction</div>
+    </div>
+    <div class="status-sub">GRU ML Forecast</div>
+    <div class="swatch-row">
+      <div>
+        <div class="mini-swatch" style="background:#8b5cf6;"></div>
+        <div class="swatch-label">-500</div>
+      </div>
+      <div>
+        <div class="mini-swatch" style="background:#a78bfa;"></div>
+        <div class="swatch-label">-400</div>
+      </div>
+      <div>
+        <div class="mini-swatch" style="background:rgba(139,92,246,0.10);"></div>
+        <div class="swatch-label">-bg</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="section-label" style="margin-top:8px;">Badge Specimens</div>
+<div class="badge-demo">
+  <span class="tv-badge tv-badge-free">暢通</span>
+  <span class="tv-badge tv-badge-moderate">普通</span>
+  <span class="tv-badge tv-badge-congested">壅塞</span>
+  <span class="tv-badge tv-badge-predict">GRU 預測</span>
+</div>
+
+</body>
+</html>

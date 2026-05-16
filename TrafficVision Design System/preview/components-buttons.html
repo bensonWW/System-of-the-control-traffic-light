@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<title>TrafficVision DS v2 — Buttons</title>
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body { background: var(--color-bg-base); padding: 24px; font-family: var(--font-body); }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; align-items: center; }
+  .section-label { font-size: 11px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-muted); margin-bottom: 10px; margin-top: 20px; }
+  .section-label:first-child { margin-top: 0; }
+  /* Size variants */
+  .tv-btn-sm { height: 26px; padding: 0 var(--space-2); font-size: var(--text-xs); border-radius: var(--radius-sm); }
+  .tv-btn-lg { height: 40px; padding: 0 var(--space-5); font-size: var(--text-md); }
+  /* Icon-only button */
+  .tv-btn-icon { width: 32px; height: 32px; padding: 0; justify-content: center; border-radius: var(--radius-md); }
+</style>
+</head>
+<body>
+
+<div class="section-label">Variants</div>
+<div class="row">
+  <button class="tv-btn tv-btn-primary">啟動優化</button>
+  <button class="tv-btn tv-btn-secondary">重新整理</button>
+  <button class="tv-btn tv-btn-ghost">匯出報告</button>
+  <button class="tv-btn tv-btn-danger">停止模擬</button>
+</div>
+
+<div class="section-label">Sizes</div>
+<div class="row">
+  <button class="tv-btn tv-btn-primary tv-btn-sm">小按鈕</button>
+  <button class="tv-btn tv-btn-primary">標準 32px</button>
+  <button class="tv-btn tv-btn-primary tv-btn-lg">大按鈕 40px</button>
+</div>
+
+<div class="section-label">States</div>
+<div class="row">
+  <button class="tv-btn tv-btn-primary">正常</button>
+  <button class="tv-btn tv-btn-primary" disabled>停用</button>
+  <button class="tv-btn tv-btn-icon tv-btn-secondary" aria-label="重新整理">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-.08-7.49"/></svg>
+  </button>
+  <button class="tv-btn tv-btn-icon tv-btn-primary" aria-label="最佳化">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+  </button>
+</div>
+
+<div class="section-label">With Icons</div>
+<div class="row">
+  <button class="tv-btn tv-btn-primary">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+    啟動優化
+  </button>
+  <button class="tv-btn tv-btn-secondary">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-.08-7.49"/></svg>
+    重新整理
+  </button>
+  <button class="tv-btn tv-btn-ghost">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+    匯出報告
+  </button>
+</div>
+
+</body>
+</html>

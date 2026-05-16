@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<title>TrafficVision DS v2 — Semantic Tokens</title>
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body { background: var(--bg); padding: 24px; font-family: var(--font-body); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .token { display: flex; align-items: center; gap: 10px; background: var(--bg-card); border: 1px solid var(--color-border-medium); border-radius: 8px; padding: 8px 12px; }
+  .swatch { width: 28px; height: 28px; border-radius: 4px; flex-shrink: 0; border: 1px solid rgba(255,255,255,0.06); }
+  .name { font-family: var(--font-mono); font-size: 11px; color: var(--fg-2); }
+  .desc { font-family: var(--font-body); font-size: 11px; color: var(--fg-3); margin-top: 1px; }
+  .section-label { font-size: 11px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-3); margin-bottom: 10px; margin-top: 20px; }
+  .section-label:first-child { margin-top: 0; }
+</style>
+</head>
+<body>
+
+<div class="section-label">Interactive</div>
+<div class="grid">
+  <div class="token"><div class="swatch" style="background:var(--interactive-default);box-shadow:var(--shadow-glow-blue);"></div><div><div class="name">--interactive-default</div><div class="desc">Primary action · blue-500</div></div></div>
+  <div class="token"><div class="swatch" style="background:var(--interactive-hover);"></div><div><div class="name">--interactive-hover</div><div class="desc">Hover state · blue-400</div></div></div>
+  <div class="token"><div class="swatch" style="background:var(--interactive-subtle);border:1px solid rgba(59,130,246,0.25);"></div><div><div class="name">--interactive-subtle</div><div class="desc">Row hover / active bg</div></div></div>
+  <div class="token"><div class="swatch" style="background:var(--interactive-glow);"></div><div><div class="name">--interactive-glow</div><div class="desc">Button glow backdrop</div></div></div>
+</div>
+
+<div class="section-label">Traffic Status</div>
+<div class="grid">
+  <div class="token"><div class="swatch" style="background:var(--status-free);box-shadow:var(--shadow-glow-free);"></div><div><div class="name">--status-free</div><div class="desc">暢通 / MOE 0 · green-500</div></div></div>
+  <div class="token"><div class="swatch" style="background:var(--status-free-bg);border:1px solid var(--status-free-border);"></div><div><div class="name">--status-free-bg/border</div><div class="desc">Free flow badge surface</div></div></div>
+  <div class="token"><div class="swatch" style="background:var(--status-moderate);box-shadow:var(--shadow-glow-moderate);"></div><div><div class="name">--status-moderate</div><div class="desc">普通 / MOE 1 · amber-500</div></div></div>
+  <div class="token"><div class="swatch" style="background:var(--status-moderate-bg);border:1px solid var(--status-moderate-border);"></div><div><div class="name">--status-moderate-bg/border</div><div class="desc">Moderate badge surface</div></div></div>
+  <div class="token"><div class="swatch" style="background:var(--status-congested);box-shadow:var(--shadow-glow-congested);"></div><div><div class="name">--status-congested</div><div class="desc">壅塞 / MOE 2 · red-500</div></div></div>
+  <div class="token"><div class="swatch" style="background:var(--status-congested-bg);border:1px solid var(--status-congested-border);"></div><div><div class="name">--status-congested-bg/border</div><div class="desc">Congested badge surface</div></div></div>
+  <div class="token"><div class="swatch" style="background:var(--status-predict);box-shadow:var(--shadow-glow-predict);"></div><div><div class="name">--status-predict</div><div class="desc">GRU 預測 · violet-500</div></div></div>
+  <div class="token"><div class="swatch" style="background:var(--status-predict-bg);border:1px solid var(--status-predict-border);"></div><div><div class="name">--status-predict-bg/border</div><div class="desc">Prediction badge surface</div></div></div>
+</div>
+
+<div class="section-label">Text &amp; Borders</div>
+<div class="grid">
+  <div class="token"><div class="swatch" style="background:var(--fg);"></div><div><div class="name">--fg</div><div class="desc">Primary text · #f1f5f9</div></div></div>
+  <div class="token"><div class="swatch" style="background:var(--fg-2);"></div><div><div class="name">--fg-2</div><div class="desc">Secondary text · #94a3b8</div></div></div>
+  <div class="token"><div class="swatch" style="background:var(--fg-3);"></div><div><div class="name">--fg-3</div><div class="desc">Muted text · #4e6080</div></div></div>
+  <div class="token"><div class="swatch" style="background:var(--fg-disabled);"></div><div><div class="name">--fg-disabled</div><div class="desc">Disabled · #2d3d55</div></div></div>
+  <div class="token"><div class="swatch" style="background:var(--border-medium);"></div><div><div class="name">--border-medium</div><div class="desc">Card/panel edge</div></div></div>
+  <div class="token"><div class="swatch" style="background:var(--border-strong);"></div><div><div class="name">--border-strong</div><div class="desc">Active/emphasis</div></div></div>
+</div>
+
+</body>
+</html>

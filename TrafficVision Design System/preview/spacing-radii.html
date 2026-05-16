@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<title>TrafficVision DS v2 — Radii &amp; Shadows</title>
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body { background: var(--bg); padding: 24px; font-family: var(--font-body); display: flex; flex-direction: column; gap: 20px; }
+  .section-label { font-size: 11px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-3); margin-bottom: 10px; }
+  .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .label { font-family: var(--font-mono); font-size: 10px; color: var(--fg-3); width: 120px; flex-shrink: 0; }
+  .box { height: 40px; width: 80px; background: var(--bg-card); border: 1px solid var(--color-border-medium); display: flex; align-items: center; justify-content: center; }
+  .note { font-family: var(--font-mono); font-size: 10px; color: var(--fg-2); }
+  .shadow-box { height: 40px; width: 200px; background: var(--bg-card); display: flex; align-items: center; justify-content: center; border-radius: var(--radius-lg); }
+  .divider-line { height: 1px; flex: 1; max-width: 80px; }
+</style>
+</head>
+<body>
+
+<div>
+  <div class="section-label">Border Radius (v2 — card upgraded to 12px)</div>
+  <div class="row">
+    <div class="label">radius-xs 3px</div>
+    <div class="box" style="border-radius:3px;"><span class="note">Chip</span></div>
+    <div class="label">radius-sm 4px</div>
+    <div class="box" style="border-radius:4px;"><span class="note">Badge</span></div>
+    <div class="label">radius-md 6px</div>
+    <div class="box" style="border-radius:6px;"><span class="note">Button</span></div>
+    <div class="label">radius-lg 8px</div>
+    <div class="box" style="border-radius:8px;"><span class="note">Toast</span></div>
+  </div>
+  <div class="row" style="margin-top:10px;">
+    <div class="label">radius-xl 12px ★</div>
+    <div class="box" style="border-radius:12px;"><span class="note">Card</span></div>
+    <div class="label">radius-2xl 16px</div>
+    <div class="box" style="border-radius:16px;"><span class="note">Modal</span></div>
+    <div class="label">radius-full</div>
+    <div class="box" style="border-radius:9999px; width:40px;"></div>
+  </div>
+</div>
+
+<div>
+  <div class="section-label">Elevation &amp; Shadows (v2 — glass border + ambient)</div>
+  <div class="row">
+    <div class="label">shadow-card</div>
+    <div class="shadow-box" style="box-shadow: 0 0 0 1px rgba(99,130,200,0.25), 0 1px 3px rgba(0,0,0,0.40);"><span class="note">Card</span></div>
+    <div class="label">shadow-elevated</div>
+    <div class="shadow-box" style="box-shadow: 0 0 0 1px rgba(99,130,200,0.25), 0 8px 24px rgba(0,0,0,0.55), 0 2px 6px rgba(0,0,0,0.35);"><span class="note">Dropdown</span></div>
+    <div class="label">shadow-focus</div>
+    <div class="shadow-box" style="box-shadow: 0 0 0 2px #020617, 0 0 0 4px #3b82f6; border-radius:var(--radius-md);"><span class="note">Focus ring</span></div>
+  </div>
+</div>
+
+<div>
+  <div class="section-label">Status Glow</div>
+  <div class="row">
+    <div class="label">glow-free</div>
+    <div class="shadow-box" style="box-shadow: var(--shadow-glow-free); background:var(--status-free-bg);"><span class="note" style="color:var(--status-free-text);">暢通</span></div>
+    <div class="label">glow-moderate</div>
+    <div class="shadow-box" style="box-shadow: var(--shadow-glow-moderate); background:var(--status-moderate-bg);"><span class="note" style="color:var(--status-moderate-text);">普通</span></div>
+    <div class="label">glow-congested</div>
+    <div class="shadow-box" style="box-shadow: var(--shadow-glow-congested); background:var(--status-congested-bg);"><span class="note" style="color:var(--status-congested-text);">壅塞</span></div>
+    <div class="label">glow-predict</div>
+    <div class="shadow-box" style="box-shadow: var(--shadow-glow-predict); background:var(--status-predict-bg);"><span class="note" style="color:var(--status-predict-text);">預測</span></div>
+  </div>
+</div>
+
+<div>
+  <div class="section-label">Border Scale (alpha-based in v2)</div>
+  <div class="row">
+    <div class="label">--border (0.15)</div>
+    <div class="divider-line" style="background:rgba(99,130,200,0.15);"></div>
+    <div class="label">--border-medium (0.25)</div>
+    <div class="divider-line" style="background:rgba(99,130,200,0.25);"></div>
+    <div class="label">--border-strong (0.40)</div>
+    <div class="divider-line" style="background:rgba(99,130,200,0.40);"></div>
+    <div class="label">--border-focus</div>
+    <div class="divider-line" style="background:#3b82f6;"></div>
+  </div>
+</div>
+
+</body>
+</html>

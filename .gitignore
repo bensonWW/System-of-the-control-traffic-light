@@ -1,0 +1,46 @@
+# ── Python ────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# ── IDE / Claude Code ─────────────────────────────────────────
+.vscode/
+.idea/
+.claude/
+*.swp
+*.swo
+
+# ── Secrets ───────────────────────────────────────────────────
+.env
+
+# ── ML 模型（體積過大，用 USB 或雲端傳輸）─────────────────────
+*.pth
+*.gguf
+models/gguf/
+
+# ── SUMO 模擬輸出（runtime 產生，無需版控）────────────────────
+data/tripinfos.xml
+data/ntut_tripinfos.xml
+data/final_output.rou.xml
+data/final_output.rou.alt.xml
+data/edgedata_output.xml
+data/runtime_data/
+
+# ── TrafficVision runtime 輸出 ─────────────────────────────────
+TrafficVision Design System/data/handoff/
+TrafficVision Design System/data/runtime_data/
+
+# ── 舊的 config 輸出（已在 .gitignore 舊版中） ─────────────────
+/data/output.rou.alt.xml
+/data/output.rou.xml
+/data/config/edgeData.xml
+/data/config/stats.xml
+/data/config/tripinfos.xml

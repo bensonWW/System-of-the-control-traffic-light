@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<title>TrafficVision DS v2 — Signal Light</title>
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body { background: var(--bg); padding: 24px; font-family: var(--font-body); }
+  .row { display: flex; gap: 20px; align-items: flex-start; }
+  .signal { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .housing {
+    background: var(--bg-card);
+    border: 1px solid var(--color-border-medium);
+    border-radius: var(--radius-xl);
+    padding: 12px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 48px;
+    box-shadow: var(--shadow-card);
+  }
+  .light { width: 28px; height: 28px; border-radius: 50%; }
+  .light-red-on    { background: var(--color-red-500);   box-shadow: var(--shadow-glow-congested); }
+  .light-red-off   { background: rgba(239,68,68,0.12); border: 1px solid rgba(239,68,68,0.15); }
+  .light-amber-on  { background: var(--color-amber-500); box-shadow: var(--shadow-glow-moderate); }
+  .light-amber-off { background: rgba(245,158,11,0.12); border: 1px solid rgba(245,158,11,0.15); }
+  .light-green-on  { background: var(--color-green-500); box-shadow: var(--shadow-glow-free); }
+  .light-green-off { background: rgba(34,197,94,0.12);  border: 1px solid rgba(34,197,94,0.15); }
+  .signal-label { font-size: 11px; color: var(--fg-3); text-align: center; font-family: var(--font-mono); line-height: 1.4; }
+
+  .info {
+    background: var(--bg-card);
+    border: 1px solid var(--color-border-medium);
+    border-radius: var(--radius-card);
+    padding: 16px;
+    flex: 1;
+    box-shadow: var(--shadow-card);
+  }
+  .info-title { font-size: var(--text-sm); font-weight: var(--weight-semibold); color: var(--fg); margin-bottom: 4px; font-family: var(--font-display); }
+  .info-sub { font-size: var(--text-xs); color: var(--fg-3); font-family: var(--font-mono); margin-bottom: 14px; }
+  .phase-row { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; }
+  .phase-label { font-family: var(--font-mono); font-size: 11px; color: var(--fg-3); width: 52px; flex-shrink: 0; }
+  .phase-bar { height: 20px; border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center; font-size: 11px; color: rgba(255,255,255,0.9); font-weight: 500; font-family: var(--font-mono); }
+  .phase-total { font-size: 11px; color: var(--fg-3); font-family: var(--font-mono); margin-top: 10px; }
+
+  .section-label { font-size: 11px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-3); margin-bottom: 12px; margin-top: 24px; }
+  .section-label:first-child { margin-top: 0; }
+</style>
+</head>
+<body>
+
+<div class="section-label">Signal States + Phase Bar</div>
+<div class="row">
+
+  <div class="signal">
+    <div class="housing">
+      <div class="light light-red-on"></div>
+      <div class="light light-amber-off"></div>
+      <div class="light light-green-off"></div>
+    </div>
+    <div class="signal-label">紅燈<br>STOP</div>
+  </div>
+
+  <div class="signal">
+    <div class="housing">
+      <div class="light light-red-off"></div>
+      <div class="light light-amber-on"></div>
+      <div class="light light-green-off"></div>
+    </div>
+    <div class="signal-label">黃燈<br>CAUTION</div>
+  </div>
+
+  <div class="signal">
+    <div class="housing">
+      <div class="light light-red-off"></div>
+      <div class="light light-amber-off"></div>
+      <div class="light light-green-on"></div>
+    </div>
+    <div class="signal-label">綠燈<br>GO</div>
+  </div>
+
+  <div class="info">
+    <div class="info-title">IK7KP — 建國南一段 / 市民三段</div>
+    <div class="info-sub">週期 90s · 最後更新 2026-05-07 11:22</div>
+    <div class="phase-row">
+      <span class="phase-label">相位 1</span>
+      <div class="phase-bar" style="width:126px; background:var(--color-green-600);">42s</div>
+    </div>
+    <div class="phase-row">
+      <span class="phase-label">相位 2</span>
+      <div class="phase-bar" style="width:84px; background:var(--color-red-600);">28s</div>
+    </div>
+    <div class="phase-row">
+      <span class="phase-label">相位 3</span>
+      <div class="phase-bar" style="width:60px; background:var(--color-amber-600);">20s</div>
+    </div>
+    <div class="phase-total">總計 90s / 剩餘 18s</div>
+  </div>
+
+</div>
+
+<div class="section-label" style="margin-top:28px;">Signal Dot Component (tv-signal-dot)</div>
+<div style="display:flex;gap:20px;align-items:center;">
+  <div style="display:flex;align-items:center;gap:8px;">
+    <div class="tv-signal-dot tv-signal-dot-free"></div>
+    <span style="font-size:13px;color:var(--fg);">暢通</span>
+  </div>
+  <div style="display:flex;align-items:center;gap:8px;">
+    <div class="tv-signal-dot tv-signal-dot-moderate"></div>
+    <span style="font-size:13px;color:var(--fg);">普通</span>
+  </div>
+  <div style="display:flex;align-items:center;gap:8px;">
+    <div class="tv-signal-dot tv-signal-dot-congested"></div>
+    <span style="font-size:13px;color:var(--fg);">壅塞</span>
+  </div>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500&family=JetBrains+Mono&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body { background: var(--color-bg-base); padding: 20px; font-family: var(--font-body); display: flex; flex-direction: column; gap: 14px; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .badge { display: inline-flex; align-items: center; gap: 5px; border-radius: 4px; padding: 3px 9px; font-size: 12px; font-weight: 500; font-family: var(--font-body); letter-spacing: 0.03em; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  /* Traffic status */
+  .badge-free { background: rgba(34,197,94,0.12); color: #4ade80; }
+  .badge-moderate { background: rgba(245,158,11,0.12); color: #fbbf24; }
+  .badge-congested { background: rgba(239,68,68,0.12); color: #f87171; }
+  /* System status */
+  .badge-active { background: rgba(59,130,246,0.12); color: #60a5fa; }
+  .badge-offline { background: rgba(71,85,105,0.3); color: #94a3b8; }
+  .badge-warning { background: rgba(245,158,11,0.12); color: #fbbf24; }
+  /* Pill style */
+  .badge-pill { border-radius: 9999px; }
+  /* Outline style */
+  .badge-outline-blue { background: transparent; color: #60a5fa; border: 1px solid rgba(59,130,246,0.4); }
+  .badge-outline-red { background: transparent; color: #f87171; border: 1px solid rgba(239,68,68,0.4); }
+  .section-label { font-size: 10px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-text-muted); }
+</style>
+</head>
+<body>
+<div class="section-label">Traffic Status</div>
+<div class="row">
+  <span class="badge badge-free"><span class="dot" style="background:#22c55e;"></span>暢通</span>
+  <span class="badge badge-moderate"><span class="dot" style="background:#f59e0b;"></span>普通</span>
+  <span class="badge badge-congested"><span class="dot" style="background:#ef4444;"></span>壅塞</span>
+</div>
+<div class="section-label">System Status</div>
+<div class="row">
+  <span class="badge badge-active">● 連線中</span>
+  <span class="badge badge-offline">● 離線</span>
+  <span class="badge badge-warning">⚠ 資料延遲</span>
+</div>
+<div class="section-label">Pill &amp; Outline</div>
+<div class="row">
+  <span class="badge badge-free badge-pill">MOE 0</span>
+  <span class="badge badge-moderate badge-pill">MOE 1</span>
+  <span class="badge badge-congested badge-pill">MOE 2</span>
+  <span class="badge badge-outline-blue">優化中</span>
+  <span class="badge badge-outline-red">警告</span>
+</div>
+</body>
+</html>

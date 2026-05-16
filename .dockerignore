@@ -1,0 +1,39 @@
+# ── 版本控制 ──────────────────────────────────────────────────────────────────
+.git
+.gitignore
+.github
+
+# ── Python 快取 ───────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+.mypy_cache/
+.ruff_cache/
+
+# ── 虛擬環境 ──────────────────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+.env
+
+# ── 訓練產物（體積大，不放入 API image）──────────────────────────────────────
+models/
+*.pth
+*.gguf
+*.safetensors
+data/finetune_dataset.jsonl
+
+# ── IDE / OS ──────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.DS_Store
+Thumbs.db
+
+# ── 大型 SUMO 執行產物（可從 volume 掛載）────────────────────────────────────
+data/runtime_data/
+TrafficVision Design System/data/trafficData/
+TrafficVision Design System/data/runtime_data/
+
+# ── 文件 ──────────────────────────────────────────────────────────────────────
+*.md
+docs/

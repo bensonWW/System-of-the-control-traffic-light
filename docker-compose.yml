@@ -1,0 +1,71 @@
+services:
+
+  # ── Ollama：本地 LLM 推論（Gemma 4）───────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: trafficvision-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama          # 模型檔案持久化
+      - ./models/gguf:/models/gguf:ro      # GGUF 模型目錄（唯讀掛載）
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    environment:
+      - OLLAMA_KEEP_ALIVE=24h              # 保持模型常駐記憶體
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:11434/"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 30s
+    restart: unless-stopped
+
+  # ── API Server：FastAPI 數據橋接 ───────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trafficvision-api
+    ports:
+      - "8000:8000"
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-trafficvision-gemma4}
+    volumes:
+      # 資料目錄：讓 runtime_pipeline 寫入的資料可被 API 讀取
+      - ./data:/app/data
+      - ./TrafficVision Design System/data:/app/TrafficVision Design System/data
+    depends_on:
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8000/api/status"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  # ── Ollama Model Loader：首次啟動時自動載入模型 ────────────────────────────
+  # 如已在 Ollama 中建立 trafficvision-gemma4，取消以下註解以在啟動時驗證。
+  # model-loader:
+  #   image: curlimages/curl:latest
+  #   depends_on:
+  #     ollama:
+  #       condition: service_healthy
+  #   entrypoint: >
+  #     sh -c "curl -s http://ollama:11434/api/tags |
+  #            grep -q trafficvision-gemma4 &&
+  #            echo 'Model ready.' ||
+  #            (echo 'ERROR: model not found. Run: bash tools/export_to_gguf.sh' && exit 1)"
+  #   restart: "no"
+
+volumes:
+  ollama_data:
+    name: trafficvision-ollama-data
