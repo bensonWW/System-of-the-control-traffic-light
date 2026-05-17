@@ -1,321 +1,239 @@
-# TrafficVision — NTUT 交通號誌智慧控制系統
+# TrafficVision — NTUT 交通監控系統
 
-以台北科技大學周邊路網為範圍，整合台北市 VD 即時車流 API、SUMO 交通模擬、GRU 預測模型、號誌週期優化、FastAPI 後端，以及 Unsloth 微調的 Gemma 4 LLM 助理。
+台北科技大學周邊路網的智慧交通控制系統。整合台北市 VD 感應器、SUMO 模擬、GRU 神經網路預測、號誌優化，以及本地微調的 Gemma 4 LLM 助理，透過 FastAPI + Docker 提供即時儀表板。
 
 ---
 
 ## 完成狀態
 
-| 模組 | 狀態 |
-|------|------|
-| 儀表板 `dashboard.html` | ✅ 完成 |
-| `serve_api.py` FastAPI 後端 | ✅ 完成 |
-| `runtime_pipeline.py` 完整處理流水線 | ✅ 完成 |
-| 號誌週期優化器 `traffic_optimizer_signal.py` | ✅ 完成 |
-| GRU 車流預測訓練程式 `train_model.py` | ✅ 完成 |
-| GRU 模型權重 `gru_traffic_model.pth` | ⚠️ 已訓練，未入 git（需手動傳輸） |
-| Unsloth Gemma 4 微調程式 `tools/finetune_gemma.py` | ✅ 完成 |
-| GGUF 匯出 + Ollama 匯入腳本 `tools/export_to_gguf.sh` | ✅ 完成 |
-| Docker 部署 `Dockerfile` / `docker-compose.yml` | ✅ 完成 |
-| Gemma 4 微調資料集 `data/finetune_dataset.jsonl` | ✅ 已生成（135 筆 Q&A） |
-| Gemma 4 微調執行 `models/trafficvision-gemma4/` | ✅ 已完成（Gemma 4 E4B，loss 0.14，51 steps） |
-| GGUF 匯出 `models/gguf/*.gguf` | ✅ 已完成（Q8_0，7.45 GB，需 Ollama 匯入） |
+| 模組 | 狀態 | 說明 |
+|------|------|------|
+| FastAPI 後端 | ✅ 完成 | 所有 REST 端點 + WebSocket 模擬串流 |
+| 前端儀表板 | ✅ 完成 | React + Leaflet 熱力圖 + LLM 聊天面板，`GET /` 直接可用 |
+| GRU 預測模型 | ✅ 完成 | 已訓練，`gru_traffic_model.pth`（需手動複製至新電腦） |
+| 號誌優化引擎 | ✅ 完成 | 5 策略並行評估，composite score 選最佳 |
+| 資料集生成 | ✅ 完成 | 從 100 個 traffic JSON + 20 個 handoff 目錄生成 ~28k 筆 Q&A |
+| LLM 微調 | ⏳ **待新電腦執行** | A2000 12GB，約 1–2 小時 |
+| GGUF 匯出 | ⏳ **待新電腦執行** | 微調完成後一鍵執行 |
+| Docker 部署 | ⏳ **待新電腦執行** | `docker compose up --build` |
 
 ---
 
 ## 系統架構
 
-系統有兩條完全獨立的資料流，分工如下：
-
-### Flow A — 即時 VD 車流（serve_api.py 自動處理）
-
 ```
-台北市 VD Open Data API（外部）
-        │
-        │  serve_api.py 啟動時：若無快取，立即抓取一次
-        │  serve_api.py 背景排程：每 5 分鐘自動重抓
-        │  GET /api/traffic：讀快取（10 分鐘 TTL），過期則立即重抓
-        ▼
-TrafficVision Design System/data/trafficData/*.json
-        │
-        ▼
-儀表板 路段數據表（速度 / 流量 / 占有率）
-```
-
-### Flow B — SUMO 模擬 + GRU 預測 + 號誌優化（runtime_pipeline.py）
-
-```
-台北市 VD Open Data API（外部）
-        │
-        │  tools/grabapi.py   抓取 VD 資料
-        │  tools/selectRoad.py   篩選北科大周邊路段
-        │  tools/convertToRou.py + duarouter   產生 SUMO 車輛路線
-        ▼
-data/final_output.rou.xml
-        │
-        │  SUMO 模擬
-        ▼
-data/runtime_data/<timestamp>/traffic_data_*.csv
-        │
-        │  tools/predict_main.py   GRU 模型推論（需 gru_traffic_model.pth）
-        │  tools/traffic_optimizer_signal.py   號誌週期優化
-        │  tools/export_handoff.py   整理輸出
-        ▼
-data/runtime_data/<timestamp>/handoff/
-├── prediction*.csv          → serve_api.py GET /api/prediction
-├── *signal_plan_summary*.csv → serve_api.py GET /api/signals
-└── *comparison_summary*.csv → serve_api.py GET /api/comparison
-
-        │
-        │  tools/generate_edge_heatmap.py
-        ▼
-TrafficVision Design System/data/edge_heatmap.json
-        │
-        ▼  serve_api.py GET /api/edge-heatmap
-儀表板 Leaflet 邊道熱圖
-```
-
-### 儀表板 ↔ API 對應
-
-```
-瀏覽器 dashboard.html
-    │
-    │ HTTP port 8000
-    ▼
-serve_api.py（本機執行）
-    ├── GET /api/traffic        ← Flow A：trafficData/*.json
-    ├── GET /api/edge-heatmap   ← Flow B：edge_heatmap.json
-    ├── GET /api/signals        ← Flow B：handoff/*signal*.csv
-    ├── GET /api/prediction     ← Flow B：handoff/prediction*.csv
-    ├── GET /api/comparison     ← Flow B：handoff/*comparison*.csv
-    ├── POST /api/chat          → Ollama :11434（Gemma 4）
-    └── WS /ws/simulation       → SUMO TraCI 即時串流
-```
-
-### LLM 流水線（Unsloth 微調 → Ollama 部署）
-
-```
-tools/generate_finetune_dataset.py
-    ▼  data/finetune_dataset.jsonl
-tools/finetune_gemma.py（Unsloth + LoRA，需 NVIDIA GPU）
-    ▼  models/trafficvision-gemma4/（LoRA adapters）
-tools/export_to_gguf.py（Unsloth merge + llama.cpp Q8_0 量化，Windows 原生）
-    ▼  models/gguf/trafficvision-gemma4-q8_0.gguf
-init_ollama.sh 或手動 ollama create（ollama create）
-    ▼  Ollama serve :11434
-serve_api.py POST /api/chat → 注入即時交通 context → 回覆
+Taipei VD API ─────────────────────────────────────────────────┐
+                                                               ▼
+                                             serve_api.py /api/traffic
+                                                               │
+tools/grabapi.py → convertToRou.py → duarouter                 │
+  → VehicleData.py (SUMO × 16 workers)                        │
+  → data/simulation_data/*.csv                                 │
+  → train_model.py → gru_traffic_model.pth                     │
+  → tools/runtime_pipeline.py:                                 │
+      1. route 生成                                            │
+      2. SUMO 模擬 → CSV                                      │
+      3. predict_main.py → prediction CSV + signal XML         │
+      4. generate_edge_traffic.py → edge_heatmap.json          │
+      → data/runtime_data/<stem>/handoff/                    ──┘
+                                                               │
+                                                    FastAPI (port 8000)
+                                              ┌─────── Ollama (port 11434)
+                                              │         Gemma 4 E4B Q8_0
+                                              │
+                                      GET /  儀表板
+                                      GET /api/*  REST 端點
+                                      WS  /ws/simulation
 ```
 
 ---
 
-## 快速啟動
+## 新電腦設定步驟（你還需要做的事）
 
-### 方法一：雙擊 `start.bat`（Windows，推薦）
+> 按順序執行即可，完成後網站即可正常使用 LLM。
 
-自動開啟兩個終端視窗：
-- **視窗 1**：`serve_api.py`（HTTP API，port 8000）
-- **視窗 2**：`runtime_pipeline.py`（每 5 分鐘執行完整流水線）
+### Step 0 — 確認環境
 
-前置條件：
-- Python 已安裝：`pip install -r requirements.txt`
-- SUMO 已安裝且 `SUMO_HOME` 環境變數已設定（Flow B 需要）
-- `gru_traffic_model.pth` 在專案根目錄（Flow B 需要）
-
-### 方法二：手動分兩個終端執行
-
-```bash
-# 終端 1：啟動 API server
-pip install -r requirements.txt
-python "TrafficVision Design System/serve_api.py"
-
-# 終端 2：啟動 pipeline 排程（每 5 分鐘）
-cd tools
-python runtime_pipeline.py
-
-# 只跑一次（不進入排程）
-python runtime_pipeline.py --once
-
-# 自訂間隔（秒）
-python runtime_pipeline.py --interval 180
+```powershell
+nvidia-smi          # 應顯示 A2000 12GB，右上角 CUDA 版本
+docker --version    # Docker Desktop 需開啟 GPU 支援
+ollama --version    # 若未安裝：https://ollama.com/download
+python --version    # 需要 3.11+
 ```
 
-### 方法三：Docker（僅啟動 API server，不含 pipeline）
+### Step 1 — 複製大型檔案
 
-```bash
-cp .env.example .env
-docker-compose up -d
-# health check: http://localhost:8000/api/status
-```
+以下檔案被 `.gitignore` 排除，需從舊電腦用 USB / 網路硬碟複製：
 
-> Docker 目前只啟動 `serve_api.py` 和 `Ollama`。
-> `runtime_pipeline.py` 需要 SUMO，不在 Docker 容器內，需在本機另外執行。
+| 檔案 / 目錄 | 用途 | 備註 |
+|---|---|---|
+| `gru_traffic_model.pth` | GRU 預測模型（API pipeline 用） | 必要 |
+| `data/simulation_data/` | SUMO 模擬訓練資料 | 只需重訓 GRU 時才複製 |
+| `TrafficVision Design System/data/trafficData/` | 歷史 VD 快取 | 選填，API 啟動後會自動補抓 |
 
-### 開啟儀表板
+> `models/gguf/` 的 GGUF **不用**複製，Step 4 會在新電腦重新生成。
 
-直接雙擊以下 HTML 檔案（不需 build）：
-```
-TrafficVision Design System/ui_kits/traffic-dashboard/dashboard.html
-```
+### Step 2 — 安裝微調依賴並生成資料集
 
-> API 未啟動時，路段數據顯示 `--`，SUMO 邊道以灰色骨架線渲染，LLM Chat 顯示服務未啟動。
-
----
-
-## LLM 設定（Unsloth 微調 → Ollama）
-
-### 步驟 1：生成微調資料集
-
-```bash
-python tools/generate_finetune_dataset.py
-# 輸出：data/finetune_dataset.jsonl
-```
-
-### 步驟 2：微調（需 NVIDIA GPU）
-
-```bash
+```powershell
+# 若 CUDA 不是 12.4，先編輯 requirements-training.txt 改為 cu118 或 cu121
 pip install -r requirements-training.txt
+
+# 生成 fine-tune 資料集（從 100 個 traffic JSON + 20 個 handoff 目錄）
+python tools/generate_finetune_dataset.py
+# 完成後：data/finetune_dataset.jsonl（約 28,000 筆 Q&A）
+```
+
+### Step 3 — 微調 Gemma 4（約 1–2 小時）
+
+```powershell
 python tools/finetune_gemma.py
-# 輸出：models/trafficvision-gemma4/（LoRA adapters）
+# A2000 12GB 足夠，不需修改任何超參數
+# 完成後：models/trafficvision-gemma4/（LoRA adapters）
 ```
 
-| 參數 | 值 |
-|------|----|
-| 基底模型 | `unsloth/gemma-4-12b-it-unsloth-bnb-4bit` |
-| LoRA rank | 16 |
-| Effective batch size | 8（2 × 4 grad accum） |
-| Epochs | 3 |
+訓練設定（`tools/finetune_gemma.py` 頂部可調整）：
+- 模型：`unsloth/gemma-4-E4B-it-unsloth-bnb-4bit`（4B 參數，4-bit NF4）
+- LoRA rank：16，epochs：3，learning rate：2e-4
+- VRAM 用量：約 8–10GB（A2000 12GB 有餘裕）
 
-### 步驟 3：匯出 GGUF 並匯入 Ollama
+### Step 4 — 匯出 GGUF 並匯入 Ollama
 
-```bash
-# Windows（推薦，不需要 cmake）
+```powershell
+# 先確認 Ollama 服務正在執行（另開一個終端機）
+ollama serve
+
+# 匯出並自動匯入（約 10–20 分鐘）
 python tools/export_to_gguf.py
-# 輸出：models/gguf/trafficvision-gemma4-q8_0.gguf（約 7.5 GB，Q8_0 格式）
-# 注意：首次執行會下載 fp16 基底模型（~8 GB），需等候約 20 分鐘
+# 完成後：models/gguf/trafficvision-gemma4-q8_0.gguf
+# 自動執行：ollama create trafficvision-gemma4
 ```
 
-### 步驟 4：啟動 Ollama
+驗證：
 
-```bash
-docker-compose up -d ollama
-bash init_ollama.sh          # 將 GGUF 載入 Ollama
-docker-compose up -d api
+```powershell
+ollama list
+# 應顯示 trafficvision-gemma4
+
+ollama run trafficvision-gemma4 "目前北科大周邊交通如何？"
+# 確認模型有正常回應再繼續
 ```
 
-或直接安裝 Ollama 後跑：
+### Step 5 — 啟動 Docker（網站上線）
 
-```bash
-ollama serve &
-bash init_ollama.sh
+```powershell
+docker compose up --build
+# 首次 build 約 3–5 分鐘，之後啟動只需數秒
+
+# 確認服務健康
+docker compose ps
 ```
 
-### 替代：先用通用模型測試（無需微調）
+服務就緒後：
 
-```bash
-ollama pull gemma3:12b
-# 修改 .env：OLLAMA_MODEL=gemma3:12b
+| URL | 說明 |
+|-----|------|
+| **`http://localhost:8000/`** | **儀表板主頁（由此進入）** |
+| `http://localhost:8000/docs` | FastAPI 自動文件 |
+| `http://localhost:8000/api/status` | 系統狀態 JSON |
+| `http://localhost:8000/api/chat` | LLM 聊天 API（POST） |
+
+### Step 6 — 節省磁碟空間（選填）
+
+微調完成後可刪除：
+
+```powershell
+# 合併後的 fp16 模型（約 8GB，GGUF 已不需要它）
+Remove-Item -Recurse -Force models\trafficvision-gemma4-merged
+
+# Unsloth 編譯快取（機器相關，可自動重生）
+Remove-Item -Recurse -Force unsloth_compiled_cache
 ```
 
 ---
 
-## 換機後待辦事項
+## 日常使用
 
-### 必做
+### 啟動 / 停止
 
-- [ ] **傳輸 `gru_traffic_model.pth`**（4.6 MB，未入 git）  
-  用 USB 或 `scp` 複製到新機，放在專案根目錄。
+```powershell
+docker compose up -d        # 背景執行
+docker compose down         # 停止所有服務
+docker compose logs -f api  # 查看 API 即時 log
+```
 
-- [ ] **安裝 Python 依賴**
-  ```bash
-  pip install -r requirements.txt
-  ```
+### 執行 ML 資料管線（更新預測與號誌）
 
-- [ ] **建立 `.env`**
-  ```bash
-  cp .env.example .env
-  ```
+> 需要安裝 SUMO 並設定環境變數
 
-- [ ] **啟動系統**（雙擊 `start.bat` 或手動執行兩個終端）
+```powershell
+$env:SUMO_HOME = "C:\path\to\sumo"
+python tools/runtime_pipeline.py --once          # 執行一次
+python tools/runtime_pipeline.py --interval 300  # 每 5 分鐘自動執行
+```
 
-### Flow B 需額外安裝 SUMO
+### 更新 LLM（資料累積後重新微調）
 
-- [ ] 安裝 SUMO：<https://sumo.dlr.de/docs/Downloads.php>
-- [ ] 設定 `SUMO_HOME` 環境變數指向 SUMO 安裝目錄
-- [ ] 執行一次 `python tools/runtime_pipeline.py --once` 驗證
-
-### LLM Chat 需額外設定
-
-- [ ] 安裝 Ollama：<https://ollama.com/download>
-- [ ] 完成微調流程（步驟 1–4），或先用 `gemma3:12b` 測試
-- [ ] 確認 `/api/chat` 可正常回應
+```powershell
+python tools/generate_finetune_dataset.py   # 重新生成資料集
+python tools/finetune_gemma.py              # 重新微調
+python tools/export_to_gguf.py             # 重新匯出並匯入 Ollama
+docker compose restart api                  # 重啟 API（不需 rebuild）
+```
 
 ---
 
-## API 端點
+## 常見問題
 
-| 端點 | 說明 |
-|------|------|
-| `GET /api/status` | 各資料檔是否存在、最後更新時間 |
-| `GET /api/traffic` | VD 即時車流（10 分鐘快取，過期自動重抓） |
-| `POST /api/traffic/refresh` | 強制立即重新抓取台北 VD API |
-| `GET /api/edge-heatmap` | SUMO 邊道流量熱圖 |
-| `GET /api/prediction` | GRU 5 分鐘預測結果 |
-| `GET /api/signals` | 號誌週期優化方案 |
-| `GET /api/comparison` | 優化前後效益對比 |
-| `GET /api/handoff` | 完整 handoff 目錄所有 CSV |
-| `POST /api/chat` | LLM 對話（注入即時交通 context，呼叫 Ollama） |
-| `WS /ws/simulation` | SUMO TraCI 即時模擬串流 |
-| `POST /api/simulation/start` | 啟動 SUMO 模擬 |
-| `POST /api/simulation/stop` | 停止 SUMO 模擬 |
-| `GET /api/simulation/status` | 模擬執行狀態 |
+**`export_to_gguf.py` 找不到 llama.cpp？**
+```powershell
+git clone https://github.com/ggerganov/llama.cpp "$HOME\.unsloth\llama.cpp"
+pip install -r "$HOME\.unsloth\llama.cpp\requirements.txt"
+```
+
+**儀表板地圖是空的？**
+
+`edge_heatmap.json` 由 `runtime_pipeline.py` 生成，首次啟動前不存在。
+可以從舊電腦複製 `TrafficVision Design System/data/edge_heatmap.json`，
+或啟動後執行一次 `python tools/runtime_pipeline.py --once`。
+
+**`/api/chat` 回應「AI 服務暫時無法使用」？**
+
+確認 `ollama serve` 正在執行且已有 `trafficvision-gemma4` 模型（`ollama list` 確認）。
+
+**CUDA 版本不是 12.4？**
+
+編輯 `requirements-training.txt`，將 `unsloth[cu124]` 改為 `unsloth[cu118]` 或 `unsloth[cu121]`。
 
 ---
 
-## 目錄結構
+## 專案結構
 
 ```
-.
-├── start.bat                          ← 本機一鍵啟動（API + pipeline 排程）
 ├── TrafficVision Design System/
-│   ├── ui_kits/traffic-dashboard/
-│   │   └── dashboard.html             ← 主儀表板（單一 HTML，無 build 步驟）
-│   ├── data/
-│   │   ├── trafficData/               ← VD 快取（serve_api.py 自動存檔）
-│   │   └── edge_heatmap.json          ← SUMO 邊道流量（runtime_pipeline.py 更新）
-│   └── serve_api.py                   ← FastAPI 後端
-├── data/
-│   ├── ntut_network_split.net.xml     ← SUMO 北科大路網
-│   ├── ntut_config.sumocfg            ← SUMO 模擬設定
-│   └── runtime_data/                  ← pipeline 每輪輸出（gitignore）
-│       └── <timestamp>/
-│           ├── traffic_data_*.csv     ← SUMO 模擬輸出
-│           └── handoff/               ← prediction / signals / comparison CSV
+│   ├── serve_api.py                         ← FastAPI 主程式（含靜態文件服務）
+│   ├── ui_kits/traffic-dashboard/index.html ← 儀表板（GET /）
+│   └── data/
+│       ├── trafficData/      ← VD 快取 JSON（gitignore，API 自動更新）
+│       └── edge_heatmap.json ← 路段熱力圖（gitignore，pipeline 生成）
 ├── tools/
-│   ├── runtime_pipeline.py            ← 完整流水線排程（每 5 分鐘）
-│   ├── grabapi.py                     ← 台北 VD API 抓取
-│   ├── selectRoad.py                  ← 篩選北科大周邊路段
-│   ├── convertToRou.py                ← 車流資料 → SUMO 路線格式
-│   ├── predict_main.py                ← GRU 模型推論
-│   ├── traffic_optimizer_signal.py    ← 號誌週期優化
-│   ├── export_handoff.py              ← 輸出整理
-│   ├── generate_edge_heatmap.py       ← SUMO edgedata → edge_heatmap.json
-│   ├── finetune_gemma.py              ← Unsloth Gemma 4 微調
-│   ├── export_to_gguf.sh              ← LoRA → GGUF → Ollama
-│   └── generate_finetune_dataset.py   ← 微調資料集生成
-├── models/                            ← gitignore；本機訓練產生
-│   ├── trafficvision-gemma4/          ← Unsloth LoRA adapters
-│   └── gguf/                          ← GGUF 量化模型（供 Ollama）
-├── train_model.py                     ← GRU 模型訓練
-├── gru_traffic_model.pth              ← GRU 模型權重（gitignore）
-├── Dockerfile
-├── docker-compose.yml                 ← 啟動 serve_api.py + Ollama
-├── init_ollama.sh                     ← Ollama 模型初始化
-├── requirements.txt                   ← API server 依賴
-└── requirements-training.txt          ← Unsloth 微調依賴（GPU）
+│   ├── runtime_pipeline.py          ← 主排程器（grab→simulate→predict→handoff）
+│   ├── generate_finetune_dataset.py ← 生成 LLM 訓練資料（100 個 JSON）
+│   ├── finetune_gemma.py            ← Gemma 4 LoRA 微調（GPU）
+│   └── export_to_gguf.py            ← 匯出 GGUF + 自動匯入 Ollama
+├── models/
+│   ├── trafficvision-gemma4/         ← LoRA adapters（gitignore）
+│   ├── trafficvision-gemma4-merged/  ← 合併 fp16（gitignore，微調後可刪）
+│   └── gguf/
+│       ├── trafficvision-gemma4-q8_0.gguf ← 量化模型（gitignore）
+│       └── Modelfile                       ← Ollama 設定（temperature=0.2, ctx=8192）
+├── data/
+│   ├── simulation_data/  ← SUMO 模擬輸出（gitignore）
+│   └── runtime_data/     ← Pipeline 執行結果（gitignore）
+├── gru_traffic_model.pth ← GRU 模型（gitignore，需手動複製）
+├── train_model.py        ← GRU 離線訓練
+├── docker-compose.yml    ← ollama + api 兩個服務
+├── Dockerfile            ← API 容器（python:3.11-slim，無 SUMO）
+├── requirements.txt      ← API 容器依賴
+└── requirements-training.txt ← 微調依賴（GPU 環境）
 ```
-
----
-
-## 授權
-
-本專案為學術研究用途。

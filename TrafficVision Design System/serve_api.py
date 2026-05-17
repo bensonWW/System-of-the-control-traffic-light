@@ -38,6 +38,8 @@ try:
     from contextlib import asynccontextmanager
     from fastapi import FastAPI, WebSocket, WebSocketDisconnect
     from fastapi.middleware.cors import CORSMiddleware
+    from fastapi.responses import RedirectResponse
+    from fastapi.staticfiles import StaticFiles
     from pydantic import BaseModel
     import uvicorn
     import pandas as pd
@@ -45,7 +47,7 @@ try:
     import gzip
     import io
 except ImportError:
-    print("請安裝依賴：pip install fastapi uvicorn pandas requests")
+    print("請安裝依賴：pip install fastapi uvicorn[standard] pandas requests aiofiles")
     raise
 
 # ─── 路徑設定（相對於此檔案所在目錄）───────────────
@@ -184,6 +186,18 @@ async def _lifespan(app: FastAPI):
 
 
 app = FastAPI(title="TrafficVision API", version="1.0", lifespan=_lifespan)
+
+# ─── 靜態文件 ─────────────────────────────────────────────────
+# 將 data/ 掛在 /data，供 dashboard HTML 以相對路徑 ../../data/ 取用
+app.mount("/data", StaticFiles(directory=str(DATA_DIR)), name="static-data")
+# 將整個 ui_kits/ 掛在 /ui_kits，讓 dashboard index.html 可被瀏覽器存取
+app.mount("/ui_kits", StaticFiles(directory=str(BASE_DIR / "ui_kits")), name="ui_kits")
+
+
+@app.get("/", include_in_schema=False)
+def root():
+    """重定向到儀表板首頁。"""
+    return RedirectResponse("/ui_kits/traffic-dashboard/index.html")
 
 
 async def _broadcast(data: dict):

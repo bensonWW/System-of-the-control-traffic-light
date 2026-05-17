@@ -5,8 +5,16 @@
 
 執行方式：
     python tools/generate_finetune_dataset.py
+
+說明：
+    - 從最多 MAX_TRAFFIC_FILES 個歷史 traffic JSON 生成多樣化 Q&A
+    - 從所有 handoff 目錄生成預測 / 號誌 / 對比 Q&A
+    - 加入通用知識 Q&A
 """
-import json, glob, os, random
+import json
+import glob
+import os
+import random
 from pathlib import Path
 
 BASE = Path(__file__).parent
@@ -15,39 +23,15 @@ TRAFFIC_DIR = ROOT / "TrafficVision Design System" / "data" / "trafficData"
 RUNTIME_DIR = ROOT / "data" / "runtime_data"
 OUT_FILE    = ROOT / "data" / "finetune_dataset.jsonl"
 
+MAX_TRAFFIC_FILES = 100   # 最多取幾個 traffic JSON
+MAX_HANDOFF_DIRS  = 20    # 最多取幾個 handoff 目錄
+
 SYSTEM_PROMPT = (
     "你是 TrafficVision AI 助理，專門分析台北市北科大周邊路網的即時車流、"
     "GRU 預測與號誌優化結果。請使用繁體中文回答，數據需引用具體數值，"
     "建議要有依據，避免含糊描述。"
 )
 MOE_LABELS = {0: "暢通", 1: "緩行", 2: "壅塞"}
-
-
-def latest_file(pattern):
-    files = sorted(glob.glob(str(pattern)))
-    return files[-1] if files else None
-
-
-def latest_handoff():
-    dirs = sorted(glob.glob(str(RUNTIME_DIR / "*" / "handoff")))
-    return Path(dirs[-1]) if dirs else None
-
-
-def load_traffic():
-    f = latest_file(TRAFFIC_DIR / "*.json")
-    if not f:
-        return {}
-    with open(f, encoding="utf-8") as fp:
-        raw = json.load(fp)
-    return raw.get("data", {})
-
-
-def load_csv(path):
-    try:
-        import pandas as pd
-        return pd.read_csv(path).where(lambda df: df.notna(), None).to_dict(orient="records")
-    except Exception:
-        return []
 
 
 def qa(question, answer):
@@ -58,12 +42,44 @@ def qa(question, answer):
     ]}
 
 
-records = []
+def load_csv(path):
+    try:
+        import pandas as pd
+        return pd.read_csv(path).where(lambda df: df.notna(), None).to_dict(orient="records")
+    except Exception:
+        return []
 
-# ── 1. 即時車流 Q&A ───────────────────────────────────────────────────────────
-traffic = load_traffic()
-if traffic:
+
+# ── 1. 多檔 traffic JSON Q&A ─────────────────────────────────────────────────
+
+def load_all_traffic_files():
+    """載入最多 MAX_TRAFFIC_FILES 個 traffic JSON，回傳 list of (filename, data_dict)。"""
+    files = sorted(glob.glob(str(TRAFFIC_DIR / "*.json")))
+    if len(files) > MAX_TRAFFIC_FILES:
+        # 均勻取樣，保留時序多樣性
+        step = len(files) / MAX_TRAFFIC_FILES
+        files = [files[int(i * step)] for i in range(MAX_TRAFFIC_FILES)]
+    result = []
+    for f in files:
+        try:
+            with open(f, encoding="utf-8") as fp:
+                raw = json.load(fp)
+            data = raw.get("data", {})
+            if data:
+                result.append((Path(f).name, data))
+        except Exception:
+            continue
+    return result
+
+
+def make_traffic_records(fname, traffic):
+    """從單一 traffic snapshot 生成 Q&A 記錄。"""
+    records = []
+    if not traffic:
+        return records
+
     sorted_by_moe = sorted(traffic.items(), key=lambda x: -x[1].get("MOELevel", 0))
+    ts_hint = fname.replace("traffic_", "").replace(".json", "").replace("_", " ")
 
     for road, v in traffic.items():
         spd = v.get("AvgSpd", 0)
@@ -73,7 +89,7 @@ if traffic:
         lbl = MOE_LABELS.get(moe, "未知")
 
         a = (
-            f"根據最新監測數據，**{road}** 目前處於 **{lbl}（MOE {moe}）** 狀態。\n\n"
+            f"根據 {ts_hint} 的監測數據，**{road}** 處於 **{lbl}（MOE {moe}）** 狀態。\n\n"
             f"- 平均車速：**{spd:.1f} km/h**\n"
             f"- 車流量：**{vol} 輛**\n"
             f"- 佔有率：**{occ:.1f}%**\n\n"
@@ -100,16 +116,16 @@ if traffic:
         "目前哪條路段最嚴重？",
         f"目前壅塞最嚴重的是 **{worst_road}**，MOE 等級 {worst_v.get('MOELevel')}，"
         f"平均車速僅 {worst_v.get('AvgSpd', 0):.1f} km/h，"
-        f"佔有率 {worst_v.get('AvgOcc', 0):.1f}%。"
+        f"佔有率 {worst_v.get('AvgOcc', 0):.1f}%。",
     ))
     records.append(qa(
         "哪裡塞車？",
         f"目前最嚴重的壅塞發生在 **{worst_road}**，"
-        f"車速 {worst_v.get('AvgSpd', 0):.1f} km/h（MOE {worst_v.get('MOELevel')}）。"
+        f"車速 {worst_v.get('AvgSpd', 0):.1f} km/h（MOE {worst_v.get('MOELevel')}）。",
     ))
 
     # 整體概況
-    total = len(traffic)
+    total     = len(traffic)
     congested = sum(1 for v in traffic.values() if v.get("MOELevel") == 2)
     slow      = sum(1 for v in traffic.values() if v.get("MOELevel") == 1)
     records.append(qa(
@@ -118,19 +134,45 @@ if traffic:
         f"- 壅塞（MOE 2）：**{congested}** 個\n"
         f"- 緩行（MOE 1）：**{slow}** 個\n"
         f"- 暢通（MOE 0）：**{total - congested - slow}** 個\n\n"
-        f"最嚴重路段：**{worst_road}**（車速 {worst_v.get('AvgSpd', 0):.1f} km/h）。"
+        f"最嚴重路段：**{worst_road}**（車速 {worst_v.get('AvgSpd', 0):.1f} km/h）。",
     ))
 
-# ── 2. 預測 Q&A ───────────────────────────────────────────────────────────────
-handoff = latest_handoff()
-if handoff:
-    pred_file = latest_file(handoff / "*predict.csv")
+    return records
+
+
+records = []
+
+traffic_files = load_all_traffic_files()
+print(f"載入 {len(traffic_files)} 個 traffic JSON 檔案")
+for fname, traffic in traffic_files:
+    records.extend(make_traffic_records(fname, traffic))
+
+
+# ── 2. 多目錄 handoff Q&A ─────────────────────────────────────────────────────
+
+def all_handoff_dirs():
+    """找到所有 handoff 目錄（最多 MAX_HANDOFF_DIRS 個，取最新的）。"""
+    dirs = sorted(glob.glob(str(RUNTIME_DIR / "*" / "handoff")))
+    return [Path(d) for d in dirs[-MAX_HANDOFF_DIRS:]]
+
+
+def make_handoff_records(handoff: Path):
+    """從單一 handoff 目錄生成 Q&A 記錄。"""
+    records = []
+    run_label = handoff.parent.name  # e.g. traffic_data_20260511_014919
+
+    def latest(pattern):
+        files = sorted(glob.glob(str(handoff / pattern)))
+        return files[-1] if files else None
+
+    # ── 預測 Q&A
+    pred_file = latest("*predict.csv")
     if pred_file:
         pred = load_csv(pred_file)
         if pred:
-            spd_key = next((k for k in pred[0] if "speed" in k.lower()), None)
-            vol_key = next((k for k in pred[0] if "volume" in k.lower() or "vol" in k.lower()), None)
-            road_key = next((k for k in pred[0] if "road" in k.lower() or "edge" in k.lower()), None)
+            vol_key  = next((k for k in pred[0] if "vol" in k.lower() or "count" in k.lower()), None)
+            road_key = next((k for k in pred[0] if "edge" in k.lower() or "road" in k.lower()), None)
+            spd_key  = next((k for k in pred[0] if "speed" in k.lower()), None)
 
             top = sorted(pred[:10], key=lambda r: -(float(r.get(vol_key) or 0) if vol_key else 0))
             summary_lines = []
@@ -151,11 +193,11 @@ if handoff:
                 records.append(qa(
                     q_text,
                     f"根據 GRU Seq2Seq 模型（15步×20秒=5分鐘）預測，未來車流如下：\n\n"
-                    f"{summary}\n\n以上為集成預測，請結合即時數據綜合判斷。"
+                    f"{summary}\n\n以上為集成預測，請結合即時數據綜合判斷。",
                 ))
 
-    # 號誌計畫 Q&A
-    sig_file = latest_file(handoff / "*signal_plan_summary*.csv")
+    # ── 號誌計畫 Q&A
+    sig_file = latest("*signal_plan_summary*.csv")
     if sig_file:
         signals = load_csv(sig_file)
         if signals:
@@ -179,11 +221,11 @@ if handoff:
                 records.append(qa(
                     q_text,
                     f"根據多策略優化（composite score = 0.6×等待時間 + 0.4×時間損失），"
-                    f"建議號誌調整如下：\n\n{sig_summary}"
+                    f"建議號誌調整如下：\n\n{sig_summary}",
                 ))
 
-    # 對比 Q&A
-    comp_file = latest_file(handoff / "*comparison_summary*.csv")
+    # ── 對比 Q&A
+    comp_file = latest("*comparison_summary*.csv")
     if comp_file:
         comp = load_csv(comp_file)
         if comp:
@@ -208,10 +250,20 @@ if handoff:
                     f"優化前後對比摘要：\n\n"
                     f"- **平均等待時間**：{wait_b}s → {wait_a}s（改善 {wait_d}）\n"
                     f"- **平均時間損失**：{loss_b}s → {loss_a}s\n\n"
-                    f"採用最佳號誌策略後，整體交通效率顯著提升，建議持續套用最佳方案。"
+                    f"採用最佳號誌策略後，整體交通效率顯著提升，建議持續套用最佳方案。",
                 ))
 
+    return records
+
+
+handoff_dirs = all_handoff_dirs()
+print(f"載入 {len(handoff_dirs)} 個 handoff 目錄")
+for handoff in handoff_dirs:
+    records.extend(make_handoff_records(handoff))
+
+
 # ── 3. 通用知識 Q&A ───────────────────────────────────────────────────────────
+
 general_qas = [
     (
         "什麼是MOE等級？",
@@ -229,7 +281,7 @@ general_qas = [
     ),
     (
         "GRU模型如何預測車流？",
-        "GRU Seq2Seq 模型以 20 秒為步長，輸入最近 10 個時間視窗（滑動集成），"
+        "GRU Seq2Seq 模型以 20 秒為步長，輸入最近 15 個時間視窗（滑動集成），"
         "預測未來 15 步（共 5 分鐘）的各路段車速、車流量與佔有率。"
         "使用 Log1p 縮放與 expm1 逆變換以處理長尾分布。"
     ),
@@ -266,9 +318,24 @@ general_qas = [
         "- **紅色**：壅塞（< 20 km/h）\n\n"
         "線條粗細代表車流量，顏色深淺代表速度快慢。"
     ),
+    (
+        "什麼情況下系統會建議調整號誌？",
+        "當 GRU 預測顯示某路段未來 5 分鐘車流量超過高壅塞閾值（congestion_ratio > 0.5），"
+        "系統會自動提高號誌干預強度（top_n_tls、proportional_pool 等參數上調），"
+        "並縮短更新間隔（最短 60 秒）以快速響應動態車流。"
+    ),
+    (
+        "SUMO模擬在系統中扮演什麼角色？",
+        "SUMO（Simulation of Urban MObility）在系統中承擔兩個角色：\n\n"
+        "1. **訓練資料生成**：VehicleData.py 使用 16 個 worker 並行模擬，產生 CSV 訓練集供 GRU 學習\n"
+        "2. **策略驗證**：traffic_light_optimizer.py 以 ProcessPoolExecutor 並行跑 5 個號誌策略，"
+        "選出 composite score 最低（最佳）的方案後寫入 add.xml 覆蓋原始號誌時制"
+    ),
 ]
+
 for q_text, a_text in general_qas:
     records.append(qa(q_text, a_text))
+
 
 # ── 輸出 ──────────────────────────────────────────────────────────────────────
 OUT_FILE.parent.mkdir(parents=True, exist_ok=True)

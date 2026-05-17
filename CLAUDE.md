@@ -140,7 +140,7 @@ python tools/export_to_gguf.py             # exports to GGUF for Ollama
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **OOP2025f_HW0** (6126 symbols, 8180 relationships, 145 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **System-of-the-control-traffic-light** (6058 symbols, 8127 relationships, 145 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
@@ -163,10 +163,10 @@ This project is indexed by GitNexus as **OOP2025f_HW0** (6126 symbols, 8180 rela
 
 | Resource | Use for |
 |----------|---------|
-| `gitnexus://repo/OOP2025f_HW0/context` | Codebase overview, check index freshness |
-| `gitnexus://repo/OOP2025f_HW0/clusters` | All functional areas |
-| `gitnexus://repo/OOP2025f_HW0/processes` | All execution flows |
-| `gitnexus://repo/OOP2025f_HW0/process/{name}` | Step-by-step execution trace |
+| `gitnexus://repo/System-of-the-control-traffic-light/context` | Codebase overview, check index freshness |
+| `gitnexus://repo/System-of-the-control-traffic-light/clusters` | All functional areas |
+| `gitnexus://repo/System-of-the-control-traffic-light/processes` | All execution flows |
+| `gitnexus://repo/System-of-the-control-traffic-light/process/{name}` | Step-by-step execution trace |
 
 ## CLI
 

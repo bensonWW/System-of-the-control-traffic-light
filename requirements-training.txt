@@ -1,6 +1,8 @@
-# Fine-tuning dependencies (GPU required)
-# Install: pip install -r requirements-training.txt
-unsloth[cu124]>=2024.12.0   # 依你的 CUDA 版本選擇：cu118 / cu121 / cu124
+# Fine-tuning dependencies (GPU required, A2000/RTX 系列均適用)
+# 先確認 CUDA 版本：nvidia-smi → 右上角數字
+# CUDA 12.x → 使用 cu124（建議）
+# CUDA 11.8 → 改用 cu118
+unsloth[cu124]>=2026.1.0
 trl>=0.12.0
 datasets>=2.14.0
 bitsandbytes>=0.43.0
