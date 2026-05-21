@@ -26,6 +26,22 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BASE_SUMOCFG = os.path.join(ROOT_DIR, "data", "ntut_config.sumocfg")
 TEMP_ROUTE_DIR = os.path.join(ROOT_DIR, "data", "VehicleData_check")
 DEFAULT_OUTPUT_ROOT = os.path.join(ROOT_DIR, "data", "prediction_runs")
+# Shared edgeData additional file inherited from BASE_SUMOCFG. Each strategy gets
+# its own copy so parallel SUMO runs never write the same edgedata output file.
+EDGEDATA_ADD_FILE = os.path.join(ROOT_DIR, "data", "edgedata.add.xml")
+EDGEDATA_OUTPUT_FILE = os.path.join(ROOT_DIR, "data", "edgedata_output.xml")
+# Baseline (no_control) edgeData — the forecast traffic state without signal optimization.
+EDGEDATA_BASELINE_FILE = os.path.join(ROOT_DIR, "data", "edgedata_baseline.xml")
+
+
+def _write_strategy_edgedata_add(base_add_file, out_add_file, edgedata_output_path):
+    """Copy the base edgeData add file, redirecting its output to a per-strategy path."""
+    tree = ET.parse(base_add_file)
+    edge_node = tree.getroot().find("edgeData")
+    if edge_node is None:
+        raise RuntimeError(f"edgeData add 檔缺少 <edgeData> 節點: {base_add_file}")
+    edge_node.set("file", os.path.abspath(edgedata_output_path))
+    tree.write(out_add_file)
 
 
 def _resolve_net_file_from_sumocfg(base_sumocfg):
@@ -345,15 +361,25 @@ def process_prediction_csv(
     after_stats_xml = os.path.join(work_dir, f"{source_stem}_after_stats.xml")
     comparison_summary_csv = os.path.join(work_dir, f"{source_stem}_comparison_summary.csv")
 
+    # Per-strategy edgeData output so parallel SUMO runs never collide on the shared file.
+    strategy_edgedata_xml = os.path.join(work_dir, f"{source_stem}_edgedata.xml")
+    strategy_edgedata_add = os.path.join(work_dir, f"{source_stem}_edgedata.add.xml")
+    _write_strategy_edgedata_add(EDGEDATA_ADD_FILE, strategy_edgedata_add, strategy_edgedata_xml)
+
+    additional = [strategy_edgedata_add]
+    if not no_control:
+        additional.append(override_xml)
+
     cfg_kwargs = {
         "output_overrides": {
             # Disable inherited output-prefix so SUMO writes exactly the path we set.
             "output-prefix": "",
             "statistic-output": after_stats_xml,
-        }
+        },
+        "additional_files": additional,
+        # Drop the shared edgedata.add.xml inherited from BASE_SUMOCFG; use the per-strategy copy.
+        "exclude_additional_basenames": [os.path.basename(EDGEDATA_ADD_FILE)],
     }
-    if not no_control:
-        cfg_kwargs["additional_files"] = [override_xml]
 
     create_temp_sumo_cfg(filtered_route_xml, BASE_SUMOCFG, after_cfg, **cfg_kwargs)
 
@@ -367,6 +393,7 @@ def process_prediction_csv(
         "after_cfg": after_cfg,
         "override_xml": override_xml,
         "comparison_summary_csv": comparison_summary_csv,
+        "edgedata_output": strategy_edgedata_xml,
         "after_end_time": None,
     }
 
@@ -521,6 +548,22 @@ def run_prediction_driven_strategy(
         best_strategy, best_result = baseline_strategy, baseline_result
     if best_strategy is None or best_result is None:
         raise RuntimeError("策略評估失敗，找不到最佳解。")
+
+    # Publish the winning strategy's edgeData to the canonical path (single writer, no race).
+    best_edgedata = best_result.get("edgedata_output")
+    if best_edgedata and os.path.exists(best_edgedata):
+        try:
+            shutil.copy2(best_edgedata, EDGEDATA_OUTPUT_FILE)
+        except Exception as exc:
+            print(f"複製最佳策略 edgedata 失敗（非致命）: {exc}")
+
+    # Publish the no_control baseline edgeData — drives the frontend's "5-min forecast" view.
+    baseline_edgedata = baseline_result.get("edgedata_output")
+    if baseline_edgedata and os.path.exists(baseline_edgedata):
+        try:
+            shutil.copy2(baseline_edgedata, EDGEDATA_BASELINE_FILE)
+        except Exception as exc:
+            print(f"複製基準 edgedata 失敗（非致命）: {exc}")
 
     baseline_waiting_time = baseline_strategy.get("actual_waiting_time")
     baseline_end_time = baseline_strategy.get("actual_end_time")

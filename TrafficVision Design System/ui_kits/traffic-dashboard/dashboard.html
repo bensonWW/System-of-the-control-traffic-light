@@ -297,7 +297,7 @@ function HeatmapLegend({ maxCount, mode }) {
 /* ══════════════════════════════════════════════════
    LEAFLET TRAFFIC MAP
 ══════════════════════════════════════════════════ */
-function TrafficMap({ viewMode, roads, heatmapData, apiEdges }) {
+function TrafficMap({ viewMode, roads, heatmapData, baselineHeatmapData, currentHeatmapData, apiEdges }) {
   const containerRef   = useRef(null);
   const mapRef         = useRef(null);
   const layersRef      = useRef([]);
@@ -352,13 +352,19 @@ function TrafficMap({ viewMode, roads, heatmapData, apiEdges }) {
     layersRef.current.forEach(l=>{ try{map.removeLayer(l);}catch(e){} });
     layersRef.current=[]; labelLayersRef.current=[];
 
-    /* ── Edge heatmap — 使用 SUMO edgedata_output.xml 真實速度/佔有率 ── */
-    if (heatmapData) {
-      const maxVol  = heatmapData.meta.max_vol  || heatmapData.meta.max_count || 1;
-      const maxSpd  = heatmapData.meta.max_speed || 50;
+    /* ── Edge heatmap — 使用 SUMO edgedata 真實速度/佔有率 ──
+       pred → 基準(no_control)模擬；opt/heatmap → 最佳策略模擬。
+       cur 例外：改畫真實 VD 路段線（見下方 polyline 分支），與列表一致、真正反映當前。
+       （SUMO 模擬車速偏低；待模擬校準後可改回 currentHeatmapData。） */
+    const activeHeatmap =
+      (viewMode === 'opt' || viewMode === 'heatmap') ? heatmapData
+      : viewMode === 'pred' ? (baselineHeatmapData || heatmapData)
+      : null;   // cur → 走真實 VD polyline 分支
+    if (activeHeatmap) {
+      const maxVol  = activeHeatmap.meta.max_vol  || activeHeatmap.meta.max_count || 1;
       const modeLabel = {cur:'當前車流',pred:'5分鐘預測',opt:'優化後預測',heatmap:'車流密度'}[viewMode]||'車流密度';
 
-      Object.entries(heatmapData.edges).forEach(([eid,ed]) => {
+      Object.entries(activeHeatmap.edges).forEach(([eid,ed]) => {
         if (!ed.shape || ed.shape.length < 2) return;
 
         /* ── 真實資料欄位 ── */
@@ -379,16 +385,10 @@ function TrafficMap({ viewMode, roads, heatmapData, apiEdges }) {
           return;
         }
 
-        /* ── 依模式決定顯示速度 & 顏色 ── */
+        /* ── 速度著色（真實 SUMO 速度，不做假轉換）── */
         let dispSpd, col;
         if (spdKmh > 0) {
-          if (viewMode === 'pred') {
-            dispSpd = +(spdKmh * 0.85).toFixed(1);           // 預測：退化 15%
-          } else if (viewMode === 'opt') {
-            dispSpd = +Math.min(spdKmh * 1.30, maxSpd).toFixed(1);  // 優化：提升 30%
-          } else {
-            dispSpd = spdKmh;
-          }
+          dispSpd = spdKmh;
           col = speedColor(dispSpd);   // 速度著色（綠→紅）
         } else {
           /* 無速度資料 → 用車次密度著色 */
@@ -465,7 +465,7 @@ function TrafficMap({ viewMode, roads, heatmapData, apiEdges }) {
     });
     labelHandlerRef.current=applyLabelCollision;
     requestAnimationFrame(()=>{ if(labelHandlerRef.current) labelHandlerRef.current(); });
-  }, [viewMode, roads, heatmapData, apiEdges]);
+  }, [viewMode, roads, heatmapData, baselineHeatmapData, currentHeatmapData, apiEdges]);
 
   return <div ref={containerRef} style={{ position:'absolute',top:0,left:0,right:0,bottom:0 }}/>;
 }
@@ -507,7 +507,10 @@ function RoadTable({ roads, dataKey, selectedId, onSelectRoad }) {
             {filtered.map(row => {
               const d = row[dataKey]||row.cur;
               const noData = d.spd === null && d.vol === null;
-              const m = noData ? null : (moeCfg[d.moe] || moeCfg[1]);
+              // 顏色與狀態一律由顯示的車速推導，避免與 VD worstMoe 聚合脫節（高均速卻標紅）。
+              const lvl = noData ? null : (d.spd === null ? (d.moe ?? 1) : _moeFromSpd(d.spd));
+              const m = noData ? null : moeCfg[lvl];
+              const spdCol = noData ? null : (d.spd === null ? m.sc : speedColor(d.spd));
               const isSel=selectedId===row.id, isHov=hovered===row.id;
               return (
                 <tr key={row.id} onClick={()=>onSelectRoad&&onSelectRoad(row)} onMouseEnter={()=>setHovered(row.id)} onMouseLeave={()=>setHovered(null)} style={{ cursor:'pointer',background:isSel?blueSubtle:isHov?'rgba(99,130,200,0.05)':'transparent',borderBottom:`1px solid ${divider}`,transition:'background 120ms' }}>
@@ -518,7 +521,7 @@ function RoadTable({ roads, dataKey, selectedId, onSelectRoad }) {
                   <td style={{ padding:'9px 14px',whiteSpace:'nowrap' }}>
                     {noData
                       ? <span style={{ fontFamily:mono,fontSize:13,color:'#2d3d55' }}>---</span>
-                      : <><span style={{ fontFamily:ff,fontWeight:600,fontSize:14,fontVariantNumeric:'tabular-nums',color:m.sc }}>{d.spd}</span>
+                      : <><span style={{ fontFamily:ff,fontWeight:600,fontSize:14,fontVariantNumeric:'tabular-nums',color:spdCol }}>{d.spd}</span>
                           <span style={{ fontFamily:body,fontSize:12,color:'#94a3b8',marginLeft:3 }}>km/h</span></>}
                   </td>
                   <td style={{ padding:'9px 14px',whiteSpace:'nowrap' }}>
@@ -614,7 +617,7 @@ function SignalControl({ apiRecords = [] }){
     if (!apiRecords.length) return signalData;
     return signalData.map(s => {
       const rec = apiRecords.find(r => {
-        const id = String(r.tls_id || r.junction_id || r.id || '');
+        const id = String(r.tl_id || r.tls_id || r.junction_id || r.id || '');
         return id === s.id || id.includes(s.id) || s.id.includes(id);
       });
       if (!rec) return s;
@@ -863,53 +866,32 @@ const MODES = {
 };
 
 
-/* ── Compute predicted roads from GRU prediction CSV records ── */
-function computePredRoads(liveRoads, predRecords) {
-  const byPrefix = {};
-  predRecords.forEach(rec => {
-    const keys = Object.keys(rec);
-    const nameKey = keys.find(k => /name|road|section|路段/i.test(k));
-    const spdKey  = keys.find(k => /spd|speed|速度/i.test(k));
-    const volKey  = keys.find(k => /vol|flow|count|量/i.test(k));
-    if (!nameKey) return;
-    const prefix = String(rec[nameKey] || '').split(/[，,\s　]+/)[0];
-    if (!prefix) return;
-    if (!byPrefix[prefix]) byPrefix[prefix] = { speeds: [], vols: [] };
-    if (spdKey) { const v = parseFloat(rec[spdKey]); if (v > 0) byPrefix[prefix].speeds.push(v); }
-    if (volKey) { const v = parseInt(rec[volKey]);   if (v >= 0) byPrefix[prefix].vols.push(v); }
-  });
+const _moeFromSpd = spd => spd === null ? null : spd < 10 ? 2 : spd < 30 ? 1 : 0;
+
+/* ── Predicted roads ← SUMO baseline forecast ({road:{spd,vol,occ}}), heuristic fallback ── */
+function computePredRoads(liveRoads, predForecast) {
   return liveRoads.map(r => {
-    const prefix = r.name.trim().split(/\s+/)[0];
-    const d = byPrefix[prefix];
-    const spd = d?.speeds?.length
-      ? +(d.speeds.reduce((a, b) => a + b, 0) / d.speeds.length).toFixed(1)
+    const f = predForecast && predForecast[r.name.trim().split(/\s+/)[0]];
+    const spd = (f && f.spd > 0) ? +Number(f.spd).toFixed(1)
       : r.cur.spd !== null ? +(r.cur.spd * 0.87).toFixed(1) : null;
-    const vol = d?.vols?.length
-      ? Math.round(d.vols.reduce((a, b) => a + b, 0) / d.vols.length)
+    const vol = (f && f.vol > 0) ? Math.round(f.vol)
       : r.cur.vol !== null ? Math.round(r.cur.vol * 1.08) : null;
-    const occ = r.cur.occ !== null ? +(r.cur.occ * 1.12).toFixed(1) : null;
-    return { ...r, pred: { spd, vol, occ, moe: spd === null ? null : spd < 10 ? 2 : spd < 30 ? 1 : 0 } };
+    const occ = (f && f.occ > 0) ? +Number(f.occ).toFixed(1)
+      : r.cur.occ !== null ? +(r.cur.occ * 1.12).toFixed(1) : null;
+    return { ...r, pred: { spd, vol, occ, moe: _moeFromSpd(spd) } };
   });
 }
 
-/* ── Compute optimised roads from comparison metrics ── */
-function computeOptRoads(liveRoads, compMetrics) {
-  let spdRatio = 1.20, occRatio = 0.80;
-  const mKeys = Object.keys(compMetrics);
-  const spdKey = mKeys.find(k => /spd|speed|avg_spd/i.test(k));
-  const occKey = mKeys.find(k => /occ|occupancy/i.test(k));
-  if (spdKey) {
-    const { before, after } = compMetrics[spdKey] || {};
-    if (before > 0 && after > 0) spdRatio = after / before;
-  }
-  if (occKey) {
-    const { before, after } = compMetrics[occKey] || {};
-    if (before > 0 && after > 0) occRatio = after / before;
-  }
+/* ── Optimised roads ← SUMO best-strategy forecast ({road:{spd,vol,occ}}), heuristic fallback ── */
+function computeOptRoads(liveRoads, optForecast) {
   return liveRoads.map(r => {
-    const spd = r.cur.spd !== null ? +Math.min(r.cur.spd * spdRatio, 60).toFixed(1) : null;
-    const occ = r.cur.occ !== null ? +Math.max(r.cur.occ * occRatio, 0).toFixed(1) : null;
-    return { ...r, opt: { spd, vol: r.cur.vol, occ, moe: spd === null ? null : spd < 10 ? 2 : spd < 30 ? 1 : 0 } };
+    const f = optForecast && optForecast[r.name.trim().split(/\s+/)[0]];
+    const spd = (f && f.spd > 0) ? +Number(f.spd).toFixed(1)
+      : r.cur.spd !== null ? +Math.min(r.cur.spd * 1.20, 60).toFixed(1) : null;
+    const vol = (f && f.vol > 0) ? Math.round(f.vol) : r.cur.vol;
+    const occ = (f && f.occ > 0) ? +Number(f.occ).toFixed(1)
+      : r.cur.occ !== null ? +Math.max(r.cur.occ * 0.80, 0).toFixed(1) : null;
+    return { ...r, opt: { spd, vol, occ, moe: _moeFromSpd(spd) } };
   });
 }
 
@@ -1002,6 +984,8 @@ function App() {
   const [mapMode, setMapMode] = useState('cur');
   const [liveRoads, setLiveRoads] = useState(ROADS_BASE);
   const [heatmapData, setHeatmapData] = useState(window.__EDGE_HEATMAP || null);
+  const [baselineHeatmapData, setBaselineHeatmapData] = useState(null);
+  const [currentHeatmapData, setCurrentHeatmapData] = useState(null);
   const [apiEdges, setApiEdges] = useState(null);
   const [time, setTime] = useState('');
   const [lastFetch, setLastFetch] = useState('');
@@ -1012,16 +996,30 @@ function App() {
   const [predRecords, setPredRecords] = useState([]);
   const [compMetrics, setCompMetrics] = useState({});
   const [signalApiRecords, setSignalApiRecords] = useState([]);
+  const [forecastData, setForecastData] = useState({ pred:{}, opt:{} });
   const liveRoadsRef = useRef(liveRoads);
   useEffect(() => { liveRoadsRef.current = liveRoads; }, [liveRoads]);
 
-  /* Load heatmap from API, refresh every 5 minutes to match pipeline cycle */
+  /* Load heatmap + road forecast from API, refresh every 5 minutes to match pipeline cycle */
   useEffect(() => {
-    const load = () =>
+    const load = () => {
       fetch('http://localhost:8000/api/edge-heatmap')
         .then(r => r.json())
         .then(d => { if (d && d.edges) setHeatmapData(d); })
         .catch(() => {});
+      fetch('http://localhost:8000/api/edge-heatmap/baseline')
+        .then(r => r.json())
+        .then(d => { if (d && d.edges) setBaselineHeatmapData(d); })
+        .catch(() => {});
+      fetch('http://localhost:8000/api/edge-heatmap/current')
+        .then(r => r.json())
+        .then(d => { if (d && d.edges) setCurrentHeatmapData(d); })
+        .catch(() => {});
+      fetch('http://localhost:8000/api/roads/forecast')
+        .then(r => r.json())
+        .then(d => { if (d && (d.pred || d.opt)) setForecastData({ pred: d.pred || {}, opt: d.opt || {} }); })
+        .catch(() => {});
+    };
     load();
     const tid = setInterval(load, 300000);
     return () => clearInterval(tid);
@@ -1133,8 +1131,8 @@ function App() {
   }, [doRefresh]);
 
   /* Derived pred/opt roads — recomputed only when live roads or API data change */
-  const predRoads = useMemo(() => computePredRoads(liveRoads, predRecords), [liveRoads, predRecords]);
-  const optRoads  = useMemo(() => computeOptRoads(liveRoads, compMetrics),  [liveRoads, compMetrics]);
+  const predRoads = useMemo(() => computePredRoads(liveRoads, forecastData.pred), [liveRoads, forecastData]);
+  const optRoads  = useMemo(() => computeOptRoads(liveRoads, forecastData.opt),  [liveRoads, forecastData]);
   const displayRoads = mapMode === 'pred' ? predRoads : mapMode === 'opt' ? optRoads : liveRoads;
   const dataKey = mapMode==='pred'?'pred':mapMode==='opt'?'opt':'cur';
   const borderMed='rgba(99,130,200,0.25)';
@@ -1181,7 +1179,7 @@ function App() {
             </div>
             {/* Map container */}
             <div style={{flex:1,position:'relative',minHeight:0,overflow:'hidden'}}>
-              <TrafficMap viewMode={mapMode} roads={displayRoads} heatmapData={heatmapData} apiEdges={apiEdges}/>
+              <TrafficMap viewMode={mapMode} roads={displayRoads} heatmapData={heatmapData} baselineHeatmapData={baselineHeatmapData} currentHeatmapData={currentHeatmapData} apiEdges={apiEdges}/>
             </div>
           </div>
 

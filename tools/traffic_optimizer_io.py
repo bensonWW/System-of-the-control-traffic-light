@@ -68,7 +68,7 @@ def _apply_output_overrides(root, output_overrides=None):
             node.set("value", str(file_path))
 
 
-def create_temp_sumo_cfg(route_file, base_cfg, temp_cfg_path, additional_files=None, output_overrides=None):
+def create_temp_sumo_cfg(route_file, base_cfg, temp_cfg_path, additional_files=None, output_overrides=None, exclude_additional_basenames=None):
     try:
         tree = ET.parse(base_cfg)
         root = tree.getroot()
@@ -85,6 +85,9 @@ def create_temp_sumo_cfg(route_file, base_cfg, temp_cfg_path, additional_files=N
         if additional_files is not None:
             add_node = input_node.find("additional-files")
             existing = _resolve_path_list(base_cfg, add_node.get("value", "")) if add_node is not None else []
+            if exclude_additional_basenames:
+                drop = {name.lower() for name in exclude_additional_basenames}
+                existing = [p for p in existing if os.path.basename(p).lower() not in drop]
             merged = existing + [os.path.abspath(p) for p in additional_files if p]
             if add_node is None:
                 add_node = ET.SubElement(input_node, "additional-files")

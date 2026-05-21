@@ -4,6 +4,7 @@ import shutil
 import subprocess
 import sys
 import time
+import xml.etree.ElementTree as ET
 from datetime import datetime
 
 from predict_main import run_full_pipeline
@@ -17,6 +18,20 @@ DATA_DIR = os.path.join(ROOT_DIR, "data")
 RUNTIME_DATA_DIR = os.path.join(DATA_DIR, "runtime_data")
 BASE_SUMOCFG = os.path.join(DATA_DIR, "ntut_config.sumocfg")
 GENERATED_ROUTE_XML = os.path.join(DATA_DIR, "final_output.rou.xml")
+# Shared edgeData add file + the per-flow output it gets redirected to.
+EDGEDATA_ADD_FILE = os.path.join(DATA_DIR, "edgedata.add.xml")
+# Current-demand (Step 2) edgeData — drives the "當前車流" full-network heatmap.
+EDGEDATA_CURRENT_FILE = os.path.join(DATA_DIR, "edgedata_current.xml")
+
+
+def _write_edgedata_add(base_add_file, out_add_file, edgedata_output_path):
+    """Copy the base edgeData add file, redirecting its output to an absolute path."""
+    tree = ET.parse(base_add_file)
+    node = tree.getroot().find("edgeData")
+    if node is None:
+        raise RuntimeError(f"edgeData add 檔缺少 <edgeData> 節點: {base_add_file}")
+    node.set("file", os.path.abspath(edgedata_output_path))
+    tree.write(out_add_file)
 
 
 def _log(message):
@@ -45,10 +60,17 @@ def _run_route_generation():
 
 
 def _simulate_to_csv(route_xml, output_csv, temp_cfg, stats_xml):
+    # Redirect this current-demand run's edgeData to a dedicated file so it isn't
+    # clobbered by the strategy runs; this is the "當前車流" full-network state.
+    current_edgedata_add = os.path.join(os.path.dirname(temp_cfg), "edgedata_current.add.xml")
+    _write_edgedata_add(EDGEDATA_ADD_FILE, current_edgedata_add, EDGEDATA_CURRENT_FILE)
+
     ok_cfg = create_temp_sumo_cfg(
         route_file=route_xml,
         base_cfg=BASE_SUMOCFG,
         temp_cfg_path=temp_cfg,
+        additional_files=[current_edgedata_add],
+        exclude_additional_basenames=[os.path.basename(EDGEDATA_ADD_FILE)],
         output_overrides={
             "output-prefix": "",
             "statistic-output": stats_xml,
@@ -109,16 +131,44 @@ def run_once(model_path=None):
     _log("Step 4/4: 生成邊道熱力圖 JSON")
     tvds_data_dir = os.path.join(ROOT_DIR, "TrafficVision Design System", "data")
     edge_heatmap_out = os.path.join(tvds_data_dir, "edge_heatmap.json")
+    net_file = os.path.join(DATA_DIR, "ntut_network_split.net.xml")
+    rou_file = os.path.join(DATA_DIR, "final_output.rou.alt.xml")
     try:
         _generate_edge_heatmap(
-            net_file  = os.path.join(DATA_DIR, "ntut_network_split.net.xml"),
-            rou_file  = os.path.join(DATA_DIR, "final_output.rou.alt.xml"),
+            net_file  = net_file,
+            rou_file  = rou_file,
             edge_file = os.path.join(DATA_DIR, "edgedata_output.xml"),
             out_file  = edge_heatmap_out,
         )
         _log(f"邊道熱力圖已更新: {edge_heatmap_out}")
     except Exception as exc:
         _log(f"邊道熱力圖生成失敗（非致命）: {exc}")
+
+    # 基準（no_control）熱力圖 — 供前端「5 分鐘預測」視圖聚合使用
+    edge_heatmap_baseline_out = os.path.join(tvds_data_dir, "edge_heatmap_baseline.json")
+    try:
+        _generate_edge_heatmap(
+            net_file  = net_file,
+            rou_file  = rou_file,
+            edge_file = os.path.join(DATA_DIR, "edgedata_baseline.xml"),
+            out_file  = edge_heatmap_baseline_out,
+        )
+        _log(f"基準邊道熱力圖已更新: {edge_heatmap_baseline_out}")
+    except Exception as exc:
+        _log(f"基準邊道熱力圖生成失敗（非致命）: {exc}")
+
+    # 當前需求（Step 2）熱力圖 — 供前端「當前車流」全路網視圖使用
+    edge_heatmap_current_out = os.path.join(tvds_data_dir, "edge_heatmap_current.json")
+    try:
+        _generate_edge_heatmap(
+            net_file  = net_file,
+            rou_file  = rou_file,
+            edge_file = EDGEDATA_CURRENT_FILE,
+            out_file  = edge_heatmap_current_out,
+        )
+        _log(f"當前邊道熱力圖已更新: {edge_heatmap_current_out}")
+    except Exception as exc:
+        _log(f"當前邊道熱力圖生成失敗（非致命）: {exc}")
 
     summary = {
         "run_dir": run_dir,

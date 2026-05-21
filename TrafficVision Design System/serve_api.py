@@ -61,6 +61,8 @@ SUMO_DATA_DIR     = BASE_DIR.parent / "data"
 SUMO_NET_XML      = SUMO_DATA_DIR / "ntut_network_split.net.xml"
 DEFAULT_SUMOCFG   = SUMO_DATA_DIR / "ntut_config.sumocfg"
 EDGE_HEATMAP_FILE = BASE_DIR / "data" / "edge_heatmap.json"
+EDGE_HEATMAP_BASELINE_FILE = BASE_DIR / "data" / "edge_heatmap_baseline.json"
+EDGE_HEATMAP_CURRENT_FILE = BASE_DIR / "data" / "edge_heatmap_current.json"
 
 # 路段名稱前綴 → 前端用的大分類名稱
 _ROAD_PREFIX_MAP = {
@@ -197,7 +199,7 @@ app.mount("/ui_kits", StaticFiles(directory=str(BASE_DIR / "ui_kits")), name="ui
 @app.get("/", include_in_schema=False)
 def root():
     """重定向到儀表板首頁。"""
-    return RedirectResponse("/ui_kits/traffic-dashboard/index.html")
+    return RedirectResponse("/ui_kits/traffic-dashboard/dashboard.html")
 
 
 async def _broadcast(data: dict):
@@ -443,7 +445,7 @@ def get_prediction():
     handoff = latest_handoff_dir()
     if not handoff:
         return {"error": "找不到 handoff 目錄，請先執行 runtime_pipeline.py"}
-    f = latest_file(str(handoff / "prediction*.csv"))
+    f = latest_file(str(handoff / "*_predict.csv"))
     if not f:
         return {"error": "找不到 prediction CSV"}
     return {"source_file": os.path.basename(f), "records": csv_to_records(f)}
@@ -513,6 +515,82 @@ def get_edge_heatmap():
         }
     with open(EDGE_HEATMAP_FILE, encoding="utf-8") as fp:
         return json.load(fp)
+
+
+@app.get("/api/edge-heatmap/baseline")
+def get_edge_heatmap_baseline():
+    """基準（no_control）邊道熱力圖 — 未優化的 5 分鐘預測全路網車況，供「5分鐘預測」使用。"""
+    if not EDGE_HEATMAP_BASELINE_FILE.exists():
+        return {
+            "error": "edge_heatmap_baseline.json 尚未生成",
+            "hint": "請先執行 runtime_pipeline.py（會同時產生基準熱力圖）",
+        }
+    with open(EDGE_HEATMAP_BASELINE_FILE, encoding="utf-8") as fp:
+        return json.load(fp)
+
+
+@app.get("/api/edge-heatmap/current")
+def get_edge_heatmap_current():
+    """當前需求（Step 2）邊道熱力圖 — 當前車流的全路網模擬，供「當前車流」使用。"""
+    if not EDGE_HEATMAP_CURRENT_FILE.exists():
+        return {
+            "error": "edge_heatmap_current.json 尚未生成",
+            "hint": "請先執行 runtime_pipeline.py（會同時產生當前熱力圖）",
+        }
+    with open(EDGE_HEATMAP_CURRENT_FILE, encoding="utf-8") as fp:
+        return json.load(fp)
+
+
+def _aggregate_edges_to_roads(heatmap_file: Path) -> dict:
+    """把 edge 級熱力圖依 _edge_road_map 聚合成 { 大分類路名: {spd, vol, occ} }。
+
+    spd/occ 取有資料 edge 的平均，vol 取總和（無 vol 時退回 count）。
+    """
+    if not heatmap_file.exists():
+        return {}
+    try:
+        with open(heatmap_file, encoding="utf-8") as fp:
+            edges = json.load(fp).get("edges", {})
+    except Exception:
+        return {}
+
+    acc: dict = {}
+    for eid, ed in edges.items():
+        road = _edge_road_map.get(eid)
+        if not road:
+            continue
+        bucket = acc.setdefault(road, {"spds": [], "occs": [], "vol": 0.0})
+        spd = ed.get("spd", 0) or 0
+        occ = ed.get("occ", 0) or 0
+        vol = ed.get("vol", 0) or ed.get("count", 0) or 0
+        if spd > 0:
+            bucket["spds"].append(spd)
+        if occ > 0:
+            bucket["occs"].append(occ)
+        bucket["vol"] += vol
+
+    out: dict = {}
+    for road, b in acc.items():
+        out[road] = {
+            "spd": round(sum(b["spds"]) / len(b["spds"]), 1) if b["spds"] else 0.0,
+            "occ": round(sum(b["occs"]) / len(b["occs"]), 2) if b["occs"] else 0.0,
+            "vol": int(round(b["vol"])),
+        }
+    return out
+
+
+@app.get("/api/roads/forecast")
+def get_road_forecast():
+    """路段級預測 / 優化後車況。
+
+    pred ← no_control 基準模擬（edge_heatmap_baseline.json）
+    opt  ← 最佳策略模擬（edge_heatmap.json）
+    皆由 SUMO edgedata 聚合 edge→大分類路名，含真實速度。
+    """
+    return {
+        "pred": _aggregate_edges_to_roads(EDGE_HEATMAP_BASELINE_FILE),
+        "opt":  _aggregate_edges_to_roads(EDGE_HEATMAP_FILE),
+    }
 
 
 # ─── LLM Chat（本地 Ollama Gemma 4）──────────────────

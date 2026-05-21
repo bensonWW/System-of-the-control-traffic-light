@@ -1,7 +1,10 @@
-# Fine-tuning dependencies (GPU required, A2000/RTX 系列均適用)
-# 先確認 CUDA 版本：nvidia-smi → 右上角數字
-# CUDA 12.x → 使用 cu124（建議）
-# CUDA 11.8 → 改用 cu118
+# Fine-tuning dependencies (GPU required)
+# CUDA 對應表：
+#   CUDA 12.4 / 12.3 / 12.2（新驅動）→ cu124
+#   CUDA 12.1                          → cu121
+#   CUDA 11.8                          → cu118
+# 確認版本：nvidia-smi 右上角
+# A2000 請先更新驅動至最新版：https://www.nvidia.com/Download/index.aspx
 unsloth[cu124]>=2026.1.0
 trl>=0.12.0
 datasets>=2.14.0
