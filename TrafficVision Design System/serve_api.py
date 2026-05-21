@@ -38,7 +38,7 @@ try:
     from contextlib import asynccontextmanager
     from fastapi import FastAPI, WebSocket, WebSocketDisconnect
     from fastapi.middleware.cors import CORSMiddleware
-    from fastapi.responses import RedirectResponse
+    from fastapi.responses import RedirectResponse, FileResponse
     from fastapi.staticfiles import StaticFiles
     from pydantic import BaseModel
     import uvicorn
@@ -190,9 +190,7 @@ async def _lifespan(app: FastAPI):
 app = FastAPI(title="TrafficVision API", version="1.0", lifespan=_lifespan)
 
 # ─── 靜態文件 ─────────────────────────────────────────────────
-# 將 data/ 掛在 /data，供 dashboard HTML 以相對路徑 ../../data/ 取用
-app.mount("/data", StaticFiles(directory=str(DATA_DIR)), name="static-data")
-# 將整個 ui_kits/ 掛在 /ui_kits，讓 dashboard index.html 可被瀏覽器存取
+# 只掛載前端資源目錄；資料一律經 /api/* 端點提供，避免整個 data/ 目錄(含原始 VD 快取)外洩。
 app.mount("/ui_kits", StaticFiles(directory=str(BASE_DIR / "ui_kits")), name="ui_kits")
 
 
@@ -340,12 +338,8 @@ def _traci_worker(cfg_path: str, loop: asyncio.AbstractEventLoop) -> None:
             loop,
         )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],   # 開發用；生產環境請限制來源
-    allow_methods=["GET", "POST"],
-    allow_headers=["*"],
-)
+# CORS 已移除：前端由本服務同源送出（/ui_kits），不需要跨來源中介層。
+# 若日後有跨來源需求，請在此加回 CORSMiddleware 並限制 allow_origins。
 
 # ─── 工具函數 ─────────────────────────────────────
 def latest_file(pattern: str):
@@ -500,6 +494,19 @@ def get_full_handoff():
         "run_time": handoff.parent.name,
         "files": result,
     }
+
+
+@app.get("/api/handoff/download")
+def download_handoff_file(name: str):
+    """下載最新 handoff 目錄內的單一檔案（含目錄穿越防護）。"""
+    handoff = latest_handoff_dir()
+    if not handoff:
+        return {"error": "找不到 handoff 目錄"}
+    safe = Path(name).name                       # 去除任何路徑成分，防目錄穿越
+    target = (handoff / safe).resolve()
+    if target.parent != handoff.resolve() or not target.exists():
+        return {"error": "檔案不存在"}
+    return FileResponse(str(target), filename=safe, media_type="application/octet-stream")
 
 
 @app.get("/api/edge-heatmap")
@@ -779,7 +786,11 @@ async def simulation_ws(websocket: WebSocket):
             try:
                 await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
             except asyncio.TimeoutError:
-                await websocket.send_json({"type": "ping"})
+                # 心跳：送 ping；送不出去代表連線已死，立即跳出迴圈清理
+                try:
+                    await websocket.send_json({"type": "ping"})
+                except Exception:
+                    break
     except (WebSocketDisconnect, Exception):
         pass
     finally:

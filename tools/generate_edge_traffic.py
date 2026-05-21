@@ -72,8 +72,19 @@ def generate(net_file=None, rou_file=None, edge_file=None, out_file=None):
         if idx != -1:
             raw = raw[:idx + len(end_tag)]
         edata_root = ET.fromstring(raw)
-        for interval in edata_root.iter('interval'):
-            for edge_el in interval.findall('edge'):
+        intervals = list(edata_root.iter('interval'))
+
+        # 只取「最繁忙的時間窗」（進入車數最多），代表尖峰 5 分鐘車況，
+        # 而非整場模擬累積（會把車流量灌大、速度被全程平均拉低）。
+        def _interval_load(iv):
+            return sum(
+                float(e.get('entered', 0) or 0)
+                for e in iv.findall('edge')
+            )
+
+        chosen = max(intervals, key=_interval_load) if intervals else None
+        if chosen is not None:
+            for edge_el in chosen.findall('edge'):
                 eid = edge_el.get('id', '')
 
                 def _f(attr, default=0.0, _el=edge_el):
@@ -91,7 +102,8 @@ def generate(net_file=None, rou_file=None, edge_file=None, out_file=None):
                     'wait':    round(_f('waitingTime'), 1),
                     'tloss':   round(_f('timeLoss'), 1),
                 }
-        print(f'  {len(edge_metrics)} edges with edgedata metrics')
+            print(f'  使用時間窗 begin={chosen.get("begin")} end={chosen.get("end")}；'
+                  f'{len(edge_metrics)} edges（共 {len(intervals)} 個窗）')
     except Exception as e:
         print(f'  WARNING: could not parse edgedata ({e}); speed data will be 0')
 
