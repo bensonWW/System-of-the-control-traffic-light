@@ -393,7 +393,7 @@ function TrafficMap({ viewMode, roads, heatmapData, baselineHeatmapData, current
           const note = isCur ? '無 VD 感測資料' : 'SUMO 路網 · 無模擬流量';
           skeleton.bindPopup(`<div style="padding:10px 14px;min-width:170px">
             <div style="font-family:'Noto Sans TC',sans-serif;font-size:10px;color:#4e6080;margin-bottom:3px">${note}</div>
-            <div style="font-family:'Noto Sans TC',sans-serif;font-size:12px;font-weight:600;color:#94a3b8;margin-bottom:6px">${ed.name||eid}</div>
+            <div style="font-family:'Noto Sans TC',sans-serif;font-size:12px;font-weight:600;color:#94a3b8;margin-bottom:6px">${ed.name||'未命名路段'}</div>
             <div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#2a3a5a">${eid}</div>
           </div>`,{maxWidth:200,minWidth:170});
           return;
@@ -430,7 +430,7 @@ function TrafficMap({ viewMode, roads, heatmapData, baselineHeatmapData, current
         const occPct = Math.min(100, Math.round(occ));
         const popup = `<div style="padding:10px 14px;min-width:190px">
           <div style="font-family:'Noto Sans TC',sans-serif;font-size:10px;color:#4e6080;margin-bottom:3px">${modeLabel} · ${isCur ? 'VD 車速 · 路網車流' : 'SUMO 模擬'}</div>
-          <div style="font-family:'Noto Sans TC',sans-serif;font-size:12px;font-weight:600;color:#f1f5f9;margin-bottom:8px">${ed.name||eid}</div>
+          <div style="font-family:'Noto Sans TC',sans-serif;font-size:12px;font-weight:600;color:#f1f5f9;margin-bottom:8px">${ed.name||'未命名路段'}</div>
           ${spdLine}
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:8px">
             <div style="background:#0a0f1e;border-radius:5px;padding:6px 9px">
@@ -1109,7 +1109,7 @@ function App() {
             const avgSpd   = totalVol>0 ? matches.reduce((s,[,d])=>s+(d.AvgSpd||0)*(d.TotalVol||0),0)/totalVol : matches.reduce((s,[,d])=>s+(d.AvgSpd||0),0)/matches.length;
             const avgOcc   = matches.reduce((s,[,d])=>s+(d.AvgOcc||0),0)/matches.length;
             const worstMoe = Math.max(...matches.map(([,d])=>d.MOELevel||0));
-            return {...road, cur:{spd:+avgSpd.toFixed(1),vol:totalVol,occ:+avgOcc.toFixed(1),moe:worstMoe}};
+            return {...road, cur:{spd:+avgSpd.toFixed(1),vol:Math.round(totalVol/3),occ:+avgOcc.toFixed(1),moe:worstMoe}};
           }));
         }
         setApiError(false);

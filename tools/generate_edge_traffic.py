@@ -25,9 +25,43 @@ _DEFAULT_NET_FILE  = os.path.join(_ROOT, 'data', 'ntut_network_split.net copy.xm
 _DEFAULT_ROU_FILE  = os.path.join(_ROOT, 'data', 'final_output.rou.alt.xml')
 _DEFAULT_EDGE_FILE = os.path.join(_ROOT, 'data', 'edgedata_output.xml')
 _DEFAULT_OUT_FILE  = os.path.join(_ROOT, 'TrafficVision Design System', 'data', 'edge_heatmap.json')
+_DEFAULT_VD_DIR    = os.path.join(_ROOT, 'TrafficVision Design System', 'data', 'trafficData')
+
+# 顯示用車流量縮放倍數（模擬累積車流量偏大時除以此值；VD 真實車流不受影響）
+VOL_SCALE = 3
+
+# VD 涵蓋的幹道前綴（與 serve_api._ROAD_PREFIX_MAP 一致；新生北路併入新生南路）
+_ROAD_PREFIXES = ['忠孝東路', '八德路', '市民大道', '建國北路', '建國南路', '新生南路', '新生北路', '松江路']
+_PREFIX_CANON  = {'新生北路': '新生南路'}
 
 
-def generate(net_file=None, rou_file=None, edge_file=None, out_file=None):
+def _road_prefix(name):
+    """edge/VD 路段名 → 大分類前綴（無對應回 None）。"""
+    for p in _ROAD_PREFIXES:
+        if name.startswith(p):
+            return _PREFIX_CANON.get(p, p)
+    return None
+
+
+def _load_vd_road_speeds(vd_dir=None):
+    """讀最新的 VD 快取 JSON，回傳 {大分類路名: 平均車速 km/h}。"""
+    import glob
+    vd_dir = vd_dir or _DEFAULT_VD_DIR
+    files = sorted(glob.glob(os.path.join(vd_dir, '*.json')))
+    if not files:
+        return {}
+    data = json.load(open(files[-1], encoding='utf-8')).get('data', {})
+    acc = {}
+    for section, v in data.items():
+        pref = _road_prefix(section)
+        spd = v.get('AvgSpd', 0) or 0
+        if pref and spd > 0:
+            acc.setdefault(pref, []).append(spd)
+    return {p: sum(xs) / len(xs) for p, xs in acc.items()}
+
+
+def generate(net_file=None, rou_file=None, edge_file=None, out_file=None,
+             calibrate=True, vd_dir=None):
     """
     生成 edge_heatmap.json。
 
@@ -151,18 +185,62 @@ def generate(net_file=None, rou_file=None, edge_file=None, out_file=None):
             skipped += 1
             continue
         m = edge_metrics.get(eid, {})
+        # 車流量顯示縮放：模擬車流量除以 VOL_SCALE（VD 當前車流不受影響，那是真實感測值）
         edges_out[eid] = {
             'name':    edge.get('name', ''),
             'shape':   shape,
-            'count':   edge_counts.get(eid, 0),
+            'count':   round(edge_counts.get(eid, 0) / VOL_SCALE),
             'spd':     m.get('spd',     0),
             'occ':     m.get('occ',     0),
             'density': m.get('density', 0),
-            'vol':     m.get('vol',     0),
+            'vol':     round(m.get('vol', 0) / VOL_SCALE),
             'wait':    m.get('wait',    0),
             'tloss':   m.get('tloss',   0),
         }
     print(f'  {len(edges_out)} edges with geometry ({skipped} skipped)')
+
+    # ── 3.5 VD 校準：以實測車速錨定 SUMO 速度 ────────────────────────────────
+    # SUMO 的 edge 均速含路口停等，普遍比 VD 點速度低（約 1.5x）。用 VD 當地面真值，
+    # 各幹道算 VD/SUMO 比作為校準係數，使顯示速度貼近實測（其餘 edge 套全域中位數）。
+    if calibrate:
+        try:
+            vd_spd = _load_vd_road_speeds(vd_dir)
+        except Exception as exc:
+            vd_spd = {}
+            print(f'  VD 校準略過（讀取失敗）: {exc}')
+        if vd_spd:
+            sumo_by_pref = {}
+            for ed in edges_out.values():
+                pref = _road_prefix(ed.get('name', ''))
+                if pref and ed['spd'] > 0:
+                    sumo_by_pref.setdefault(pref, []).append(ed['spd'])
+            factors = {}
+            for pref, sp in sumo_by_pref.items():
+                avg = sum(sp) / len(sp)
+                if pref in vd_spd and avg > 0:
+                    factors[pref] = max(0.5, min(3.0, vd_spd[pref] / avg))
+            if factors:
+                vals = sorted(factors.values())
+                global_f = vals[len(vals) // 2]   # 中位數，給無 VD 的 edge 用
+                vd_vals = sorted(vd_spd.values())
+                vd_median = vd_vals[len(vd_vals) // 2]
+                # 每條 edge 收斂到該路 VD 的 [LO, HI] 倍：壓低過大的 per-edge 變異，
+                # 讓地圖各 edge 速度貼近列表顯示的路段均速（解決「列表與地圖對不上」）。
+                LO, HI = 0.6, 1.25
+                for ed in edges_out.values():
+                    if ed['spd'] <= 0:
+                        continue
+                    pref = _road_prefix(ed.get('name', ''))
+                    f = factors.get(pref, global_f)
+                    vd = vd_spd.get(pref, vd_median)
+                    scaled = ed['spd'] * f
+                    ed['spd'] = round(min(max(scaled, vd * LO), vd * HI), 1)
+                print(f'  VD 校準: {len(factors)} 幹道，中位數×{global_f:.2f}，'
+                      f'每邊收斂到 VD×[{LO},{HI}]')
+            else:
+                print('  VD 校準：無重疊幹道可錨定，略過')
+        else:
+            print('  VD 校準：無 VD 資料，略過')
 
     # ── 4. Summary stats ─────────────────────────────────────────────────────
     max_count = max((v['count'] for v in edges_out.values()), default=1)
