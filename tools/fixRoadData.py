@@ -29,9 +29,9 @@ def getEdgesVolume():
                 passNum = 0
                 for edgeId in passRoads:
                     if edgeId not in finalInfo:
-                        finalInfo[edgeId] = [int(float(roadInfo[name]["TotalVol"])) * pow(0.75, passNum),1]
+                        finalInfo[edgeId] = [int(float(roadInfo[name]["TotalVol"])),1]
                     else:
-                        finalInfo[edgeId][0] += int(float(roadInfo[name]["TotalVol"])) * pow(0.75, passNum)
+                        finalInfo[edgeId][0] += int(float(roadInfo[name]["TotalVol"])) 
                         finalInfo[edgeId][1] += 1
                     passNum += 1
     for edgeId in finalInfo:
@@ -91,7 +91,7 @@ def completeTheVol(trips,edgesVolume):
         vol = 0
         for passEdge in trips[trip]["pass"]:
             vol += edgesVolume[passEdge]
-        trips[trip]["TotalVol"] = vol
+        trips[trip]["TotalVol"] = min(edgesVolume[e] for e in trips[trip]["pass"])
     return trips
 
 def fixtheRoadData():
