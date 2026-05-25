@@ -33,11 +33,11 @@ def getMapData():
             if("function" not in child.attrib):
                 temp[child.attrib["id"]] = [child.attrib["from"], child.attrib["to"]]
     return temp
-def getEdgesVolume():
+def getEdgesVolume(roadInfo):
     finalInfo = {}
     path = "./data/output.rou.xml"
     tripRoot = ET.parse(path).getroot()
-    roadInfo = ST.select() #'八德路    松江路-忠孝東路': {'SectionId': 'ZJTJ960', 'AvgSpd': '45.435482', 'AvgOcc': '1.6', 'TotalVol': '62.0', 'MOELevel': '0', 'StartWgsX': 392.3516351377892, 'StartWgsY': 366.40778006647395, 'EndWgsX': 105.22111980907044, 'EndWgsY': 285.28874187925237, 'from': 'cluster_2528018119_655375236', 'to': '655375228'}
+    #roadInfo = ST.select() #'八德路    松江路-忠孝東路': {'SectionId': 'ZJTJ960', 'AvgSpd': '45.435482', 'AvgOcc': '1.6', 'TotalVol': '62.0', 'MOELevel': '0', 'StartWgsX': 392.3516351377892, 'StartWgsY': 366.40778006647395, 'EndWgsX': 105.22111980907044, 'EndWgsY': 285.28874187925237, 'from': 'cluster_2528018119_655375236', 'to': '655375228'}
     for info in tripRoot:
         if(info.tag == "vehicle"):
                 fromNode = info.attrib["fromTaz"]
@@ -113,13 +113,13 @@ def completeTheVol(trips,edgesVolume):
         vol = 0
         for passEdge in trips[trip]["pass"]:
             vol += edgesVolume[passEdge]
-        trips[trip]["TotalVol"] = vol
+        trips[trip]["TotalVol"] = min(edgesVolume[e] for e in trips[trip]["pass"])
     return trips
 
-def fixtheRoadData():
+def fixtheRoadData(roadInfo):
     net_path = "./data/ntut_network_split.net.xml"
     mapData = getMapData()
-    edgesVolume = getEdgesVolume()
+    edgesVolume = getEdgesVolume(roadInfo)
     net = SLB.net.readNet(net_path)
     for edgeId in mapData:
         if edgeId not in edgesVolume:

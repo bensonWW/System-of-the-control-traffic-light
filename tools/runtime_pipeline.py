@@ -268,8 +268,9 @@ def main():
     )
     parser.add_argument(
         "--model-path",
-        default=None,
-        help="模型路徑，未指定時使用預設 gru_traffic_model.pth",
+        default=os.path.join(ROOT_DIR, "gru_traffic_model_pair.pth"),
+        help="模型路徑，未指定時使用 pair-based 模型 (gru_traffic_model_pair.pth)。"
+             "若要 rollback 到舊 sliding 模型,顯式指定 --model-path gru_traffic_model.pth",
     )
     args = parser.parse_args()
 

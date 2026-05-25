@@ -23,12 +23,18 @@ class Log1pScaler:
 
 
 class GRUSequence(nn.Module):
-    def __init__(self, num_edges, hidden_dim, num_layers, horizon, dropout=0.2):
+    def __init__(self, num_edges, hidden_dim, num_layers, horizon, dropout=0.2,
+                 input_extra_features=2):
+        """
+        input_extra_features:
+            新版 pair model    : 3 (sin/cos/gap)
+            舊版 sliding model : 2 (sin/cos)
+        """
         super().__init__()
         self.horizon = horizon
         self.num_edges = num_edges
         self.gru = nn.GRU(
-            input_size=num_edges + 2,
+            input_size=num_edges + input_extra_features,
             hidden_size=hidden_dim,
             num_layers=num_layers,
             batch_first=True,
@@ -57,7 +63,9 @@ ROOT_DIR = os.path.dirname(BASE_DIR)
 
 
 TRAFFIC_LIGHT_DEMO_DIR = os.path.join(ROOT_DIR, "data", "traffic_light_demo")
-DEFAULT_MODEL_PATH = os.path.join(ROOT_DIR, "gru_traffic_model.pth")
+# 預設用 pair-based 模型 (gap_feature=True, model_type=gru_pair_log1p_v1)
+# 若要切回舊 sliding 模型,改成 "gru_traffic_model.pth" (INTEGRATION Step 6 rollback)
+DEFAULT_MODEL_PATH = os.path.join(ROOT_DIR, "gru_traffic_model_pair.pth")
 PREDICTION_MIN_THRESHOLD = 0.02
 PREDICTION_TOP_K_PER_STEP = 40
 PREDICTION_FUSION_LAST_WINDOWS = 10
@@ -105,35 +113,19 @@ def load_model(model_path, device):
     if scaler is None:
         scaler = Log1pScaler()
 
-    # Determine actual GRU input size from saved weights so we never mismatch.
-    gru_input_size = checkpoint["model_state_dict"]["gru.weight_ih_l0"].shape[1]
-    model = GRUSequence.__new__(GRUSequence)
-    nn.Module.__init__(model)
-    model.horizon = pred_horizon
-    model.num_edges = num_edges
-    model.gru = nn.GRU(
-        input_size=gru_input_size,
-        hidden_size=hidden_dim,
-        num_layers=num_layers,
-        batch_first=True,
-        dropout=0.2 if num_layers > 1 else 0,
-    )
-    model.attn = nn.Linear(hidden_dim, 1)
-    mid = hidden_dim // 2
-    model.decoder = nn.Sequential(
-        nn.Linear(hidden_dim, mid),
-        nn.ReLU(),
-        nn.Dropout(0.2),
-        nn.Linear(mid, num_edges * pred_horizon),
-    )
-    model.to(device)
+    model_type = config.get("model_type", "gru_sequence_log1p")
+    gap_feature = config.get("gap_feature", False)
+    input_extra = 3 if gap_feature else 2
+
+    print(f"Config: input_len={input_len}, horizon={pred_horizon}, hidden={hidden_dim}")
+    print(f"  model_type={model_type}, gap_feature={gap_feature}, input_extra={input_extra}")
+    print(f"Scaler: {type(scaler)}")
+
+    model = GRUSequence(num_edges, hidden_dim, num_layers, pred_horizon,
+                        input_extra_features=input_extra).to(device)
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
-
-    print(f"Config: input_len={input_len}, horizon={pred_horizon}, hidden={hidden_dim}, "
-          f"gru_input={gru_input_size}, gap_feature={gap_feature}")
-    print(f"Scaler: {type(scaler)}")
-    return model, scaler, edge_ids, input_len, pred_horizon, gap_feature
+    return model, scaler, edge_ids, input_len, pred_horizon, config
 
 
 def find_demo_input_csv():
@@ -171,7 +163,16 @@ def load_demo_csv(file_path, edge_ids):
     return pivot
 
 
-def build_time_features(file_name, num_steps):
+def build_time_features(file_name, num_steps, gap_minutes=None):
+    """
+    Build time features for the model input.
+
+    Args:
+        file_name: 用來解析 start time (HHMMSS)
+        num_steps: input 步數
+        gap_minutes: 若為 None,回傳 2 欄 (sin, cos) — 給舊 sliding model
+                     若有值,回傳 3 欄 (sin, cos, gap) — 給新 pair model
+    """
     time_str = extract_datetime(file_name)
     if time_str:
         hh = int(time_str[8:10])
@@ -183,7 +184,12 @@ def build_time_features(file_name, num_steps):
 
     time_steps = np.arange(num_steps) * 20 + start_seconds
     theta = 2 * np.pi * time_steps / (24 * 3600)
-    return np.stack([np.sin(theta), np.cos(theta)], axis=1).astype(np.float32)
+    sin_t = np.sin(theta).astype(np.float32)
+    cos_t = np.cos(theta).astype(np.float32)
+    if gap_minutes is None:
+        return np.stack([sin_t, cos_t], axis=1)
+    gap_col = np.full(num_steps, float(gap_minutes), dtype=np.float32)
+    return np.stack([sin_t, cos_t, gap_col], axis=1)
 
 
 def _predict_sequence(model, device, input_traf, input_time, scaler, gap_feature=False):
@@ -275,7 +281,7 @@ def export_prediction_csv(input_csv, model_path=DEFAULT_MODEL_PATH, output_root=
         raise FileNotFoundError(f"找不到輸入 CSV: {input_csv}")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model, scaler, edge_ids, input_len, pred_horizon, gap_feature = load_model(model_path, device)
+    model, scaler, edge_ids, input_len, pred_horizon, config = load_model(model_path, device)
 
     pivot = load_demo_csv(input_csv, edge_ids)
     if len(pivot) < input_len:
@@ -284,36 +290,15 @@ def export_prediction_csv(input_csv, model_path=DEFAULT_MODEL_PATH, output_root=
         )
 
     traffic_data = pivot.values.astype(np.float32)
-    time_data = build_time_features(os.path.basename(input_csv), len(pivot))
     scaled_traffic = scaler.transform(traffic_data)
-
     time_index = pivot.index.to_numpy(dtype=np.float64)
 
-    control_sum, control_count = _aggregate_predictions(
-        model=model,
-        device=device,
-        scaler=scaler,
-        scaled_traffic=scaled_traffic,
-        time_data=time_data,
-        time_index=time_index,
-        input_len=input_len,
-        pred_horizon=pred_horizon,
-        max_windows=PREDICTION_FUSION_LAST_WINDOWS,
-        gap_feature=gap_feature,
-    )
-
-    full_sum, full_count = _aggregate_predictions(
-        model=model,
-        device=device,
-        scaler=scaler,
-        scaled_traffic=scaled_traffic,
-        time_data=time_data,
-        time_index=time_index,
-        input_len=input_len,
-        pred_horizon=pred_horizon,
-        max_windows=None,
-        gap_feature=gap_feature,
-    )
+    # ─── Step 2.3: 推算 gap_for_inference ───
+    # gap=5.0 對齊 runtime_pipeline.py --interval 300 (5 分鐘排程週期)
+    # 舊模型 (gap_feature=False) 用 None,build_time_features 會回 2 欄;
+    # 新模型 (gap_feature=True)  用 5.0,回 3 欄。
+    gap_for_inference = 5.0 if config.get("gap_feature", False) else None
+    is_pair_model = config.get("model_type") == "gru_pair_log1p_v1"
 
     source_stem = os.path.splitext(os.path.basename(input_csv))[0]
     prediction_stem = f"{source_stem}_predict"
@@ -326,47 +311,119 @@ def export_prediction_csv(input_csv, model_path=DEFAULT_MODEL_PATH, output_root=
 
     rows = []
     full_rows = []
-    for current_time in sorted(full_sum.keys()):
-        sum_values = full_sum[current_time]
-        count_values = full_count[current_time]
-        step_values = np.divide(
-            sum_values,
-            np.maximum(count_values, 1e-9),
-            out=np.zeros_like(sum_values),
-            where=count_values > 0,
+
+    if is_pair_model:
+        # ═════════════════════════════════════════════════════════════
+        # 新模型: 單次預測 (固定用 CSV 前 input_len 步,符合訓練分布)
+        #
+        # 為何不能滑動視窗? 新模型訓練時只見過「CSV 前 15 步」這種分布,
+        # 把 CSV 中段 (如 time 3000-3340s) 當輸入會輸出垃圾 (訓練分布外)。
+        # ═════════════════════════════════════════════════════════════
+        input_traf = scaled_traffic[:input_len]
+        input_time = build_time_features(
+            os.path.basename(input_csv), input_len, gap_minutes=gap_for_inference
+        )
+        pred_seq_real = _predict_sequence(model, device, input_traf, input_time, scaler)
+        # pred_seq_real shape = (pred_horizon, num_edges)
+
+        # time 軸: 接續輸入 CSV 之後 (對齊舊模型第一個 window 的輸出)
+        last_input_time = float(time_index[input_len - 1])  # 通常 ≈ 340.0
+        for step_index in range(pred_horizon):
+            current_time = float(last_input_time + 20.0 * (step_index + 1))
+            step_values = pred_seq_real[step_index]
+            for edge_index, edge_id in enumerate(edge_ids):
+                vol = round(float(step_values[edge_index]), 4)
+                full_rows.append({
+                    "time": current_time,
+                    "edge_id": edge_id,
+                    "vehicle_count": vol,
+                })
+                if vol > PREDICTION_MIN_THRESHOLD:
+                    rows.append({
+                        "time": current_time,
+                        "edge_id": edge_id,
+                        "vehicle_count": vol,
+                    })
+        # 若 rows 為空 (極稀疏情況),退而求 top-K
+        if not rows:
+            for step_index in range(pred_horizon):
+                current_time = float(last_input_time + 20.0 * (step_index + 1))
+                step_values = pred_seq_real[step_index]
+                for edge_index in _select_edge_indices(step_values):
+                    vol = float(step_values[int(edge_index)])
+                    if vol <= 0:
+                        continue
+                    rows.append({
+                        "time": current_time,
+                        "edge_id": edge_ids[edge_index],
+                        "vehicle_count": round(vol, 4),
+                    })
+    else:
+        # ═════════════════════════════════════════════════════════════
+        # 舊模型: 滑動視窗 + 多窗融合 (保留原始邏輯)
+        # ═════════════════════════════════════════════════════════════
+        time_data = build_time_features(
+            os.path.basename(input_csv), len(pivot), gap_minutes=gap_for_inference
         )
 
-        for edge_index, edge_id in enumerate(edge_ids):
-            full_rows.append(
-                {
+        control_sum, control_count = _aggregate_predictions(
+            model=model,
+            device=device,
+            scaler=scaler,
+            scaled_traffic=scaled_traffic,
+            time_data=time_data,
+            time_index=time_index,
+            input_len=input_len,
+            pred_horizon=pred_horizon,
+            max_windows=PREDICTION_FUSION_LAST_WINDOWS,
+        )
+
+        full_sum, full_count = _aggregate_predictions(
+            model=model,
+            device=device,
+            scaler=scaler,
+            scaled_traffic=scaled_traffic,
+            time_data=time_data,
+            time_index=time_index,
+            input_len=input_len,
+            pred_horizon=pred_horizon,
+            max_windows=None,
+        )
+
+        for current_time in sorted(full_sum.keys()):
+            sum_values = full_sum[current_time]
+            count_values = full_count[current_time]
+            step_values = np.divide(
+                sum_values,
+                np.maximum(count_values, 1e-9),
+                out=np.zeros_like(sum_values),
+                where=count_values > 0,
+            )
+            for edge_index, edge_id in enumerate(edge_ids):
+                full_rows.append({
                     "time": float(current_time),
                     "edge_id": edge_id,
                     "vehicle_count": round(float(step_values[edge_index]), 4),
-                }
+                })
+
+        for current_time in sorted(control_sum.keys()):
+            sum_values = control_sum[current_time]
+            count_values = control_count[current_time]
+            step_values = np.divide(
+                sum_values,
+                np.maximum(count_values, 1e-9),
+                out=np.zeros_like(sum_values),
+                where=count_values > 0,
             )
-
-    for current_time in sorted(control_sum.keys()):
-        sum_values = control_sum[current_time]
-        count_values = control_count[current_time]
-        step_values = np.divide(
-            sum_values,
-            np.maximum(count_values, 1e-9),
-            out=np.zeros_like(sum_values),
-            where=count_values > 0,
-        )
-
-        for edge_index in _select_edge_indices(step_values):
-            vehicle_count = float(step_values[int(edge_index)])
-            if vehicle_count <= 0:
-                continue
-
-            rows.append(
-                {
+            for edge_index in _select_edge_indices(step_values):
+                vehicle_count = float(step_values[int(edge_index)])
+                if vehicle_count <= 0:
+                    continue
+                rows.append({
                     "time": float(current_time),
                     "edge_id": edge_ids[edge_index],
                     "vehicle_count": round(vehicle_count, 4),
-                }
-            )
+                })
 
     prediction_df = pd.DataFrame(rows, columns=["time", "edge_id", "vehicle_count"])
     prediction_df.to_csv(prediction_csv, index=False)
@@ -376,12 +433,17 @@ def export_prediction_csv(input_csv, model_path=DEFAULT_MODEL_PATH, output_root=
 
     print(f"預測 CSV 已輸出: {prediction_csv}")
     print(f"完整預測 CSV 已輸出: {prediction_full_csv}")
+    print(f"  模式: {'pair (單次)' if is_pair_model else 'sliding (多窗)'} | "
+          f"time bins: {prediction_full_df['time'].nunique()} | "
+          f"控制 rows: {len(rows)} | full rows: {len(full_rows)}")
     return {
         "prediction_csv": prediction_csv,
         "prediction_full_csv": prediction_full_csv,
         "work_dir": work_dir,
         "input_len": input_len,
         "pred_horizon": pred_horizon,
+        "model_type": config.get("model_type", "unknown"),
+        "is_pair_model": is_pair_model,
     }
 
 
