@@ -183,8 +183,14 @@ def run_sumo_simulation_with_end_time(config_file, output_csv=None, override_pro
         "--no-warnings",
     ]
 
+    # Explicit free port + numRetries: 5 strategy workers + the orchestrator's
+    # current-demand sim can collide on traci's default port picker. Asking the
+    # OS for a free port + retrying narrows the race window.
+    port = sumolib.miscutils.getFreeSocketPort()
+    label = f"opt_{os.getpid()}_{port}"
     try:
-        traci.start(cmd)
+        traci.start(cmd, port=port, label=label, numRetries=10)
+        traci.switch(label)
         applied_schedule_times = set()
         data_buffer = []
         simulation_end_time = 0.0

@@ -100,7 +100,7 @@ def write_modelfile():
 SYSTEM "你是 TrafficVision AI 助理，專門分析台北市北科大周邊路網的即時車流、GRU 預測與號誌優化結果。請使用繁體中文回答，數據需引用具體數值，建議要有依據，避免含糊描述。"
 
 PARAMETER temperature 0.3
-PARAMETER num_ctx 2048
+PARAMETER num_ctx 16384
 PARAMETER repeat_penalty 1.1
 """
     MODELFILE.write_text(content, encoding="utf-8")

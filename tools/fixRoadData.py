@@ -1,7 +1,28 @@
+import os
 import xml.etree.ElementTree as ET
 from math import floor
 import sumolib as SLB
 import selectRoad as ST
+
+# ─── 可調參數（env override） ──────────────────────────────────────────────
+# 每多經過一條 edge，原始 VD 觀測流量沿路衰減的係數（0..1）。
+# 物理意義：車輛在中途路口分流，遠端 edge 看到的流量會比起點低。
+# 0.75 是現場手調出來的暫定值，沒有實測校準；若有實際 OD 對照表，應該以
+# `route_vol[k] / origin_vol` 的中位數重新估計。
+VOL_DECAY_PER_EDGE = float(os.environ.get("TRAFFICVISION_VOL_DECAY", "0.75"))
+
+# 缺資料 edge 的車流由上游 edge 遞迴反推時，每跳衰減的權重（0..1）。
+# 越小 → 缺資料 edge 越接近 0；越大 → 缺資料 edge 越接近上游平均。
+# 0.35 是原 prototype 設定，無依據；可考慮改成跨資料集的 cross-validation 最佳值。
+UPSTREAM_BACKFILL_ALPHA = float(os.environ.get("TRAFFICVISION_BACKFILL_ALPHA", "0.35"))
+
+# DFS 構造 trip 時，單一 trip 內最多串接幾條 edge。
+# 太短：把原本的長路徑切成多個 trip → 同一輛車重複進系統。
+# 太長：DFS 在迴圈或網狀路口下會回溯非常久。
+# 北科大周邊區網約 150 個 edge，10 是憑經驗的折衷值。
+TRIP_MAX_EDGES = int(os.environ.get("TRAFFICVISION_TRIP_MAX_EDGES", "10"))
+
+
 def getMapData():
     path = "./data/ntut_network_split.net.xml"
     tree = ET.parse(path)
@@ -28,10 +49,11 @@ def getEdgesVolume():
             if(roadInfo[name]["from"] == fromNode and roadInfo[name]["to"] == toNode):
                 passNum = 0
                 for edgeId in passRoads:
+                    decayed_vol = int(float(roadInfo[name]["TotalVol"])) * pow(VOL_DECAY_PER_EDGE, passNum)
                     if edgeId not in finalInfo:
-                        finalInfo[edgeId] = [int(float(roadInfo[name]["TotalVol"])) * pow(0.75, passNum),1]
+                        finalInfo[edgeId] = [decayed_vol, 1]
                     else:
-                        finalInfo[edgeId][0] += int(float(roadInfo[name]["TotalVol"])) * pow(0.75, passNum)
+                        finalInfo[edgeId][0] += decayed_vol
                         finalInfo[edgeId][1] += 1
                     passNum += 1
     for edgeId in finalInfo:
@@ -39,7 +61,7 @@ def getEdgesVolume():
     return finalInfo
 #利用遞迴補足缺失edge的車流資訊
 def generateEmptyEdgesVolume(net,edgesVolume,roadId,visited):
-    ALPHA = 0.35
+    ALPHA = UPSTREAM_BACKFILL_ALPHA
     inComingedges = net.getEdge(roadId).getFromNode().getIncoming()
     vol = 0
     for inEdge in inComingedges:
@@ -55,7 +77,7 @@ def generateEmptyEdgesVolume(net,edgesVolume,roadId,visited):
     return vol
 #深層搜尋
 def deepSearch(id,net,trips,edgesVolume,Edges,remainingEdges):
-    LIMITPASSEDGE = 10
+    LIMITPASSEDGE = TRIP_MAX_EDGES
     if len(Edges) == 0:
         trips["trip:" + id]["to"] = net.getEdge(trips["trip:" + id]["pass"][-1]).getToNode().getID()
         return trips

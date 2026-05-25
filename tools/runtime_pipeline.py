@@ -1,10 +1,12 @@
 import argparse
+import errno
 import os
 import shutil
 import subprocess
 import sys
 import time
 import xml.etree.ElementTree as ET
+from contextlib import contextmanager
 from datetime import datetime
 
 from predict_main import run_full_pipeline
@@ -16,6 +18,10 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(BASE_DIR)
 DATA_DIR = os.path.join(ROOT_DIR, "data")
 RUNTIME_DATA_DIR = os.path.join(DATA_DIR, "runtime_data")
+# Lockfile path — prevents two pipeline runs from overlapping. A previous run
+# that overruns the scheduler interval (>300s default) would otherwise launch a
+# second SUMO batch concurrently, racing for the same edgedata XML outputs.
+LOCKFILE_PATH = os.path.join(RUNTIME_DATA_DIR, ".pipeline.lock")
 BASE_SUMOCFG = os.path.join(DATA_DIR, "ntut_config.sumocfg")
 GENERATED_ROUTE_XML = os.path.join(DATA_DIR, "final_output.rou.xml")
 # Shared edgeData add file + the per-flow output it gets redirected to.
@@ -37,6 +43,43 @@ def _write_edgedata_add(base_add_file, out_add_file, edgedata_output_path):
 def _log(message):
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{now}] {message}")
+
+
+class PipelineBusy(RuntimeError):
+    """Raised by _pipeline_lock when a previous run is still in progress."""
+
+
+@contextmanager
+def _pipeline_lock(lock_path=LOCKFILE_PATH):
+    """Exclusive file lock — only one run_once may execute at a time.
+
+    Uses O_CREAT|O_EXCL for cross-platform atomicity (works on Windows where
+    fcntl.flock is unavailable). Writes PID + start time to the lockfile so a
+    stuck run can be diagnosed; the caller is responsible for clearing a stale
+    lock if the previous process truly crashed.
+    """
+    os.makedirs(os.path.dirname(lock_path), exist_ok=True)
+    try:
+        fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except OSError as exc:
+        if exc.errno == errno.EEXIST:
+            try:
+                existing = open(lock_path, "r", encoding="utf-8").read().strip()
+            except OSError:
+                existing = "<unreadable>"
+            raise PipelineBusy(
+                f"另一輪 pipeline 仍在執行（lock: {lock_path}, 內容: {existing}）"
+            ) from None
+        raise
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fp:
+            fp.write(f"pid={os.getpid()} started={datetime.now().isoformat()}\n")
+        yield
+    finally:
+        try:
+            os.remove(lock_path)
+        except OSError:
+            pass
 
 
 def _build_stem(now=None):
@@ -91,7 +134,11 @@ def _simulate_to_csv(route_xml, output_csv, temp_cfg, stats_xml):
 
 def run_once(model_path=None):
     os.makedirs(RUNTIME_DATA_DIR, exist_ok=True)
+    with _pipeline_lock():
+        return _run_once_locked(model_path=model_path)
 
+
+def _run_once_locked(model_path=None):
     stem = _build_stem()
     run_dir = os.path.join(RUNTIME_DATA_DIR, stem)
     os.makedirs(run_dir, exist_ok=True)
@@ -188,6 +235,10 @@ def run_scheduler(interval_seconds=300, model_path=None):
         started = time.time()
         try:
             run_once(model_path=model_path)
+        except PipelineBusy as exc:
+            # Previous run still in progress — skip this tick rather than queue
+            # a second concurrent SUMO batch that would race for the same files.
+            _log(f"本輪跳過: {exc}")
         except Exception as exc:
             _log(f"本輪執行失敗: {exc}")
 

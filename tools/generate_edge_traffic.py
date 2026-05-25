@@ -264,8 +264,14 @@ def generate(net_file=None, rou_file=None, edge_file=None, out_file=None,
         },
         'edges': edges_out,
     }
-    with open(out_file, 'w', encoding='utf-8') as f:
+    # Atomic write — the dashboard polls these heatmap JSONs while the pipeline
+    # writes them. A partial write breaks JSON.parse on the client.
+    tmp_out = out_file + '.tmp'
+    with open(tmp_out, 'w', encoding='utf-8') as f:
         json.dump(payload, f, ensure_ascii=False, separators=(',', ':'))
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp_out, out_file)
 
     kb = os.path.getsize(out_file) // 1024
     print(f'Written → {out_file}  ({kb} KB)')

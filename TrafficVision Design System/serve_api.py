@@ -81,6 +81,65 @@ _TAIPEI_VD_URL = "https://tcgbusfs.blob.core.windows.net/blobtisv/GetVD.xml.gz"
 _NTUT_ROAD_PREFIXES = list(_ROAD_PREFIX_MAP.keys())
 
 
+# Module-level retrying session for the Taipei VD API.
+# total=3, backoff_factor=1 → waits 1s / 2s / 4s on transient 5xx or 429.
+# Built once at import; reused for every /api/traffic and /api/traffic/refresh
+# call to avoid per-request socket/adapter churn.
+from requests.adapters import HTTPAdapter as _HTTPAdapter
+from urllib3.util.retry import Retry as _Retry
+
+_taipei_session = requests.Session()
+_taipei_session.mount(
+    "https://",
+    _HTTPAdapter(
+        max_retries=_Retry(
+            total=3,
+            backoff_factor=1.0,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=frozenset(["GET", "HEAD"]),
+            raise_on_status=False,
+        )
+    ),
+)
+
+
+# ─── JSON file cache (mtime-keyed) ─────────────────────────────────────────────
+# Without this, every /api/traffic, /api/edge-heatmap*, and /api/roads/forecast
+# request re-parses the same on-disk JSON. Under 100+ clients/min that's 100×
+# disk reads + 100× json.loads per minute on files up to ~100KB.
+# Cache invalidates as soon as the pipeline writes a new version (mtime changes),
+# so freshness is preserved.
+_json_cache: dict = {}
+_json_cache_lock = threading.Lock()
+
+
+def _load_json_cached(path):
+    """Return parsed JSON for `path`, cached until the file's mtime changes.
+
+    Returns None if the file doesn't exist. Any parse error invalidates the
+    cache entry and re-raises so the caller can decide how to handle it.
+    """
+    p = Path(path)
+    try:
+        mtime = p.stat().st_mtime
+    except FileNotFoundError:
+        return None
+
+    key = str(p)
+    with _json_cache_lock:
+        entry = _json_cache.get(key)
+        if entry is not None and entry[0] == mtime:
+            return entry[1]
+
+    # Read outside the lock — large JSONs would otherwise serialize all readers.
+    with open(p, encoding="utf-8") as fp:
+        data = json.load(fp)
+
+    with _json_cache_lock:
+        _json_cache[key] = (mtime, data)
+    return data
+
+
 def _to_float_or_none(v):
     """安全轉 float；None / 空字串 / 非數值一律回 None。"""
     if v is None:
@@ -95,7 +154,7 @@ def _to_float_or_none(v):
 def _fetch_taipei_traffic() -> dict:
     """從台北市 Open Data API 抓取 VD 資料，回傳 NTUT 周邊路段字典。
     每段除了流量指標外，另附 StartLon/Lat、EndLon/Lat（WGS84）方便前端逐段繪製。"""
-    resp = requests.get(_TAIPEI_VD_URL, timeout=30)
+    resp = _taipei_session.get(_TAIPEI_VD_URL, timeout=30)
     resp.raise_for_status()
     with gzip.open(io.BytesIO(resp.content)) as gz:
         root = __import__("xml.etree.ElementTree", fromlist=["ElementTree"]).fromstring(gz.read())
@@ -410,8 +469,7 @@ def get_latest_traffic():
     if f:
         age = (datetime.now() - datetime.fromtimestamp(os.path.getmtime(f))).total_seconds()
         if age < 600:
-            with open(f, encoding="utf-8") as fp:
-                raw = json.load(fp)
+            raw = _load_json_cached(f) or {}
             raw_data = raw.get("data", {})
             timestamp = raw.get("timestamp")
             source = os.path.basename(f)
@@ -536,37 +594,37 @@ def get_edge_heatmap():
     邊道熱力圖 JSON（由 generate_edge_traffic.py / runtime_pipeline.py 產生）。
     格式：{ meta: {...}, edges: { edge_id: { name, shape, count, spd, occ, density, vol, wait, tloss } } }
     """
-    if not EDGE_HEATMAP_FILE.exists():
+    data = _load_json_cached(EDGE_HEATMAP_FILE)
+    if data is None:
         return {
             "error": "edge_heatmap.json 尚未生成",
             "hint": "請先執行 runtime_pipeline.py 或 python tools/generate_edge_traffic.py",
         }
-    with open(EDGE_HEATMAP_FILE, encoding="utf-8") as fp:
-        return json.load(fp)
+    return data
 
 
 @app.get("/api/edge-heatmap/baseline")
 def get_edge_heatmap_baseline():
     """基準（no_control）邊道熱力圖 — 未優化的 5 分鐘預測全路網車況，供「5分鐘預測」使用。"""
-    if not EDGE_HEATMAP_BASELINE_FILE.exists():
+    data = _load_json_cached(EDGE_HEATMAP_BASELINE_FILE)
+    if data is None:
         return {
             "error": "edge_heatmap_baseline.json 尚未生成",
             "hint": "請先執行 runtime_pipeline.py（會同時產生基準熱力圖）",
         }
-    with open(EDGE_HEATMAP_BASELINE_FILE, encoding="utf-8") as fp:
-        return json.load(fp)
+    return data
 
 
 @app.get("/api/edge-heatmap/current")
 def get_edge_heatmap_current():
     """當前需求（Step 2）邊道熱力圖 — 當前車流的全路網模擬，供「當前車流」使用。"""
-    if not EDGE_HEATMAP_CURRENT_FILE.exists():
+    data = _load_json_cached(EDGE_HEATMAP_CURRENT_FILE)
+    if data is None:
         return {
             "error": "edge_heatmap_current.json 尚未生成",
             "hint": "請先執行 runtime_pipeline.py（會同時產生當前熱力圖）",
         }
-    with open(EDGE_HEATMAP_CURRENT_FILE, encoding="utf-8") as fp:
-        return json.load(fp)
+    return data
 
 
 def _aggregate_edges_to_roads(heatmap_file: Path) -> dict:
@@ -574,13 +632,13 @@ def _aggregate_edges_to_roads(heatmap_file: Path) -> dict:
 
     spd/occ 取有資料 edge 的平均，vol 取總和（無 vol 時退回 count）。
     """
-    if not heatmap_file.exists():
-        return {}
     try:
-        with open(heatmap_file, encoding="utf-8") as fp:
-            edges = json.load(fp).get("edges", {})
+        data = _load_json_cached(heatmap_file)
     except Exception:
         return {}
+    if data is None:
+        return {}
+    edges = data.get("edges", {})
 
     acc: dict = {}
     for eid, ed in edges.items():
@@ -639,11 +697,13 @@ def _compact(obj, limit: int = 2000) -> str:
 
 def _top_congested_edges(n: int = 10) -> str:
     """從 edge_heatmap.json 取佔有率最高的前 n 條 edge，序列化為簡潔 JSON。"""
-    if not EDGE_HEATMAP_FILE.exists():
+    try:
+        heatmap = _load_json_cached(EDGE_HEATMAP_FILE)
+    except Exception:
+        heatmap = None
+    if heatmap is None:
         return "（尚無 SUMO edge 數據）"
     try:
-        with open(EDGE_HEATMAP_FILE, encoding="utf-8") as fp:
-            heatmap = json.load(fp)
         edges = heatmap.get("edges", {})
         top = sorted(
             ((eid, ed) for eid, ed in edges.items() if ed.get("occ", 0) > 0 or ed.get("spd", 0) > 0),
@@ -792,6 +852,36 @@ async def chat(req: ChatRequest):
         resp.raise_for_status()
         reply = resp.json()["message"]["content"]
         return {"reply": reply}
+    except requests.exceptions.ConnectTimeout:
+        return {
+            "error": "ollama_connect_timeout",
+            "reply": "AI 服務連線逾時，請確認 Ollama 已啟動（ollama serve）並可從本伺服器存取。",
+        }
+    except requests.exceptions.ReadTimeout:
+        return {
+            "error": "ollama_read_timeout",
+            "reply": f"AI 模型 {OLLAMA_MODEL} 回應超過 120 秒。可能模型過大或主機 CPU/GPU 不足，請改用較小模型或檢查資源。",
+        }
+    except requests.exceptions.ConnectionError:
+        return {
+            "error": "ollama_connection_refused",
+            "reply": f"無法連線到 Ollama ({OLLAMA_BASE_URL})。請執行 `ollama serve` 並確認位址正確。",
+        }
+    except requests.exceptions.HTTPError as exc:
+        status = getattr(exc.response, "status_code", "?")
+        body = ""
+        try:
+            body = (exc.response.text or "")[:200]
+        except Exception:
+            pass
+        if status == 404 or "not found" in body.lower():
+            hint = f"請先執行：ollama create {OLLAMA_MODEL} -f Modelfile"
+        else:
+            hint = "請檢查 Ollama 服務狀態或模型設定。"
+        return {
+            "error": f"ollama_http_{status}",
+            "reply": f"AI 服務回傳錯誤 ({status})：{body}。{hint}",
+        }
     except requests.RequestException as exc:
         return {
             "error": str(exc),

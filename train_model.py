@@ -1,4 +1,5 @@
 import os
+import random
 import re
 import numpy as np
 import pandas as pd
@@ -11,6 +12,15 @@ from tqdm import tqdm
 # =================================================
 # 0. 設定 (Hyperparameters)
 # =================================================
+# Reproducibility — without this, every training run produces different
+# weights, which propagates to different signal plans at inference.
+SEED = 42
+random.seed(SEED)
+np.random.seed(SEED)
+torch.manual_seed(SEED)
+if torch.cuda.is_available():
+    torch.cuda.manual_seed_all(SEED)
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data", "simulation_data")
 MODEL_PATH = os.path.join(BASE_DIR, "gru_traffic_model.pth")
@@ -204,7 +214,14 @@ train_ds = Subset(dataset, train_indices)
 val_ds = Subset(dataset, val_indices)
 
 # num_workers=0 to avoid pickling overhead on Windows, or use small number
-train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True, num_workers=0, pin_memory=True)
+# shuffle=False: this is a time-series dataset whose index_map is already in
+# chronological order. Random shuffling within the train split lets a sample
+# from time t+k leak into the same minibatch as t, breaking temporal causality.
+# A deterministic generator is still passed for reproducibility of any internal
+# DataLoader sampling.
+_loader_generator = torch.Generator()
+_loader_generator.manual_seed(SEED)
+train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=False, num_workers=0, pin_memory=True, generator=_loader_generator)
 val_loader = DataLoader(val_ds, batch_size=BATCH_SIZE, shuffle=False, num_workers=0, pin_memory=True)
 
 # =================================================

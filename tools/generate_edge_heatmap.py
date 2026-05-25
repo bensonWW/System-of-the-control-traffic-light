@@ -95,8 +95,14 @@ out = {
     },
     'edges': edges_out,
 }
-with open(OUT_FILE, 'w', encoding='utf-8') as f:
+# Atomic write — the frontend polls this file live; a partial write would
+# crash JSON.parse on the dashboard.
+tmp_out = OUT_FILE + '.tmp'
+with open(tmp_out, 'w', encoding='utf-8') as f:
     json.dump(out, f, ensure_ascii=False, separators=(',', ':'))
+    f.flush()
+    os.fsync(f.fileno())
+os.replace(tmp_out, OUT_FILE)
 
 kb = os.path.getsize(OUT_FILE) // 1024
 print(f'Written → {OUT_FILE}  ({kb} KB)')

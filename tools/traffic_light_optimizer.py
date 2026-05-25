@@ -1,6 +1,6 @@
 import os
 import shutil
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, TimeoutError as FuturesTimeoutError
 import math
 import xml.etree.ElementTree as ET
 
@@ -70,6 +70,10 @@ SECONDARY_PHASE_EXTRA_SECONDS = 6
 MIN_EDGE_SCORE = 0.01
 FROM_EDGE_WEIGHT = 1.0
 TO_EDGE_WEIGHT = 0.8
+
+# Per-strategy SUMO evaluation budget. Without this cap, a single hung
+# TraCI socket can stall the entire pipeline indefinitely.
+STRATEGY_EVAL_TIMEOUT_SECONDS = float(os.environ.get("TRAFFICVISION_STRATEGY_TIMEOUT", 300))
 
 DEFAULT_STRATEGY = {
     "name": "default",
@@ -536,8 +540,24 @@ def run_prediction_driven_strategy(
         for strategy in remaining_strategies
     ]
     if args_list:
+        # submit + Future.result(timeout) instead of executor.map so a single
+        # hung SUMO worker can be cancelled per-strategy without blocking the
+        # rest. A timed-out strategy is logged and skipped, not propagated.
         with ProcessPoolExecutor(max_workers=len(args_list)) as executor:
-            for strategy, result in executor.map(evaluate_strategy_worker, args_list):
+            futures = {
+                executor.submit(evaluate_strategy_worker, args): args[3]["strategy"]
+                for args in args_list
+            }
+            for future, strategy_name in list(futures.items()):
+                try:
+                    strategy, result = future.result(timeout=STRATEGY_EVAL_TIMEOUT_SECONDS)
+                except FuturesTimeoutError:
+                    print(f"  WARNING: 策略 {strategy_name} 超過 {STRATEGY_EVAL_TIMEOUT_SECONDS:.0f}s 未完成，已略過")
+                    future.cancel()
+                    continue
+                except Exception as exc:
+                    print(f"  WARNING: 策略 {strategy_name} 評估失敗 ({exc})，已略過")
+                    continue
                 strategy_rows.append(strategy)
                 strategy_score = compute_composite_score(strategy)
                 strategy["composite_score"] = strategy_score

@@ -94,15 +94,19 @@ def filter_routes(input_rou, output_rou, valid_edges):
 def run_simulation(config_file, output_csv):
     """Runs SUMO simulation and saves traffic data."""
     # Each process has its own traci instance state, so we just need to ensure start/close
-    
+
     sumoBinary = sumolib.checkBinary('sumo')
-    # Using a unique label can help if we needed to access specific instances, 
-    # but separate processes usually isolate default instance fine.
-    # To be safe against port conflicts/race conditions, let traci pick ports.
+    # Explicit free port + numRetries: with 16 parallel workers, traci's
+    # default random port picker has a non-trivial collision rate. Asking the
+    # OS for a free port narrows the race window; numRetries=10 absorbs the
+    # remaining TOCTOU window between port acquisition and SUMO bind.
+    port = sumolib.miscutils.getFreeSocketPort()
+    label = f"vd_{os.getpid()}_{port}"
     cmd = [sumoBinary, "-c", config_file, "--start", "--quit-on-end"]
-    
+
     try:
-        traci.start(cmd)
+        traci.start(cmd, port=port, label=label, numRetries=10)
+        traci.switch(label)
         data_buffer = []  # Buffer to store data for filtering later
         
         while traci.simulation.getMinExpectedNumber() > 0:
