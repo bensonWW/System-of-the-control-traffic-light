@@ -100,17 +100,40 @@ def load_model(model_path, device):
     pred_horizon = config.get("pred_horizon", 15)
     hidden_dim = config.get("hidden_dim", 256)
     num_layers = config.get("num_layers", 2)
+    gap_feature = bool(config.get("gap_feature", False))
     scaler = checkpoint.get("scaler")
     if scaler is None:
         scaler = Log1pScaler()
 
-    print(f"Config: input_len={input_len}, horizon={pred_horizon}, hidden={hidden_dim}")
-    print(f"Scaler: {type(scaler)}")
-
-    model = GRUSequence(num_edges, hidden_dim, num_layers, pred_horizon).to(device)
+    # Determine actual GRU input size from saved weights so we never mismatch.
+    gru_input_size = checkpoint["model_state_dict"]["gru.weight_ih_l0"].shape[1]
+    model = GRUSequence.__new__(GRUSequence)
+    nn.Module.__init__(model)
+    model.horizon = pred_horizon
+    model.num_edges = num_edges
+    model.gru = nn.GRU(
+        input_size=gru_input_size,
+        hidden_size=hidden_dim,
+        num_layers=num_layers,
+        batch_first=True,
+        dropout=0.2 if num_layers > 1 else 0,
+    )
+    model.attn = nn.Linear(hidden_dim, 1)
+    mid = hidden_dim // 2
+    model.decoder = nn.Sequential(
+        nn.Linear(hidden_dim, mid),
+        nn.ReLU(),
+        nn.Dropout(0.2),
+        nn.Linear(mid, num_edges * pred_horizon),
+    )
+    model.to(device)
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
-    return model, scaler, edge_ids, input_len, pred_horizon
+
+    print(f"Config: input_len={input_len}, horizon={pred_horizon}, hidden={hidden_dim}, "
+          f"gru_input={gru_input_size}, gap_feature={gap_feature}")
+    print(f"Scaler: {type(scaler)}")
+    return model, scaler, edge_ids, input_len, pred_horizon, gap_feature
 
 
 def find_demo_input_csv():
@@ -163,8 +186,13 @@ def build_time_features(file_name, num_steps):
     return np.stack([np.sin(theta), np.cos(theta)], axis=1).astype(np.float32)
 
 
-def _predict_sequence(model, device, input_traf, input_time, scaler):
-    input_comb = np.hstack([input_traf, input_time])
+def _predict_sequence(model, device, input_traf, input_time, scaler, gap_feature=False):
+    parts = [input_traf, input_time]
+    if gap_feature:
+        # Gap feature: fraction of zero-traffic edges per timestep (shape: T x 1)
+        gap = (input_traf == 0).mean(axis=1, keepdims=True).astype(np.float32)
+        parts.append(gap)
+    input_comb = np.hstack(parts)
     input_tensor = torch.tensor(input_comb, dtype=torch.float32).unsqueeze(0).to(device)
     with torch.no_grad():
         pred_seq_scaled = model(input_tensor).cpu().numpy()[0]
@@ -207,6 +235,7 @@ def _aggregate_predictions(
     input_len,
     pred_horizon,
     max_windows=None,
+    gap_feature=False,
 ):
     aggregated_sum = {}
     aggregated_count = {}
@@ -218,7 +247,7 @@ def _aggregate_predictions(
     for window_end in range(window_start, len(time_index) + 1):
         input_traf = scaled_traffic[window_end - input_len:window_end]
         input_time = time_data[window_end - input_len:window_end]
-        pred_seq_real = _predict_sequence(model, device, input_traf, input_time, scaler)
+        pred_seq_real = _predict_sequence(model, device, input_traf, input_time, scaler, gap_feature)
 
         base_time = float(time_index[window_end - 1])
         for step_index in range(pred_horizon):
@@ -246,7 +275,7 @@ def export_prediction_csv(input_csv, model_path=DEFAULT_MODEL_PATH, output_root=
         raise FileNotFoundError(f"找不到輸入 CSV: {input_csv}")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model, scaler, edge_ids, input_len, pred_horizon = load_model(model_path, device)
+    model, scaler, edge_ids, input_len, pred_horizon, gap_feature = load_model(model_path, device)
 
     pivot = load_demo_csv(input_csv, edge_ids)
     if len(pivot) < input_len:
@@ -270,6 +299,7 @@ def export_prediction_csv(input_csv, model_path=DEFAULT_MODEL_PATH, output_root=
         input_len=input_len,
         pred_horizon=pred_horizon,
         max_windows=PREDICTION_FUSION_LAST_WINDOWS,
+        gap_feature=gap_feature,
     )
 
     full_sum, full_count = _aggregate_predictions(
@@ -282,6 +312,7 @@ def export_prediction_csv(input_csv, model_path=DEFAULT_MODEL_PATH, output_root=
         input_len=input_len,
         pred_horizon=pred_horizon,
         max_windows=None,
+        gap_feature=gap_feature,
     )
 
     source_stem = os.path.splitext(os.path.basename(input_csv))[0]

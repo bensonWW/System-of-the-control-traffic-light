@@ -81,8 +81,20 @@ _TAIPEI_VD_URL = "https://tcgbusfs.blob.core.windows.net/blobtisv/GetVD.xml.gz"
 _NTUT_ROAD_PREFIXES = list(_ROAD_PREFIX_MAP.keys())
 
 
+def _to_float_or_none(v):
+    """安全轉 float；None / 空字串 / 非數值一律回 None。"""
+    if v is None:
+        return None
+    try:
+        f = float(v)
+    except (ValueError, TypeError):
+        return None
+    return f if f == f else None  # 過濾 NaN
+
+
 def _fetch_taipei_traffic() -> dict:
-    """從台北市 Open Data API 抓取 VD 資料，回傳 NTUT 周邊路段字典。"""
+    """從台北市 Open Data API 抓取 VD 資料，回傳 NTUT 周邊路段字典。
+    每段除了流量指標外，另附 StartLon/Lat、EndLon/Lat（WGS84）方便前端逐段繪製。"""
     resp = requests.get(_TAIPEI_VD_URL, timeout=30)
     resp.raise_for_status()
     with gzip.open(io.BytesIO(resp.content)) as gz:
@@ -110,6 +122,10 @@ def _fetch_taipei_traffic() -> dict:
                 "AvgOcc":    round(float(fields.get("AvgOcc") or 0), 2),
                 "MOELevel":  int(fields.get("MOELevel") or 0),
                 "SectionId": fields.get("SectionId", ""),
+                "StartLon":  _to_float_or_none(fields.get("StartWgsX")),
+                "StartLat":  _to_float_or_none(fields.get("StartWgsY")),
+                "EndLon":    _to_float_or_none(fields.get("EndWgsX")),
+                "EndLat":    _to_float_or_none(fields.get("EndWgsY")),
             }
         except (ValueError, TypeError):
             continue
@@ -417,6 +433,11 @@ def get_latest_traffic():
             "AvgOcc":    round(float(v.get("AvgOcc") or 0), 2),
             "MOELevel":  int(v.get("MOELevel") or 0),
             "SectionId": v.get("SectionId", ""),
+            # 舊版快取沒有座標欄位 → 回 None，前端會自動跳過該段不繪線。
+            "StartLon":  v.get("StartLon"),
+            "StartLat":  v.get("StartLat"),
+            "EndLon":    v.get("EndLon"),
+            "EndLat":    v.get("EndLat"),
         }
     return {"timestamp": timestamp, "source_file": source, "road_count": len(data), "data": data}
 
@@ -750,7 +771,13 @@ async def chat(req: ChatRequest):
     try:
         import json as _json
         _payload = _json.dumps(
-            {"model": OLLAMA_MODEL, "messages": messages, "stream": False},
+            {
+                "model": OLLAMA_MODEL,
+                "messages": messages,
+                "stream": False,
+                "think": False,                # 關閉 thinking：此模型為 Gemma 4 思考版，關閉可省去每次回答前的英文推理，速度約快 2.5 倍
+                "options": {"num_ctx": 16384},  # grounded system prompt 實測約 9300 tokens（規則+全路段+SUMO+GRU+號誌+效益），預設 2048／8192 都會截斷掉車流資料導致模型亂答；16384 可完整容納並保留多輪對話餘裕
+            },
             ensure_ascii=False,
         ).encode("utf-8")
         resp = await loop.run_in_executor(

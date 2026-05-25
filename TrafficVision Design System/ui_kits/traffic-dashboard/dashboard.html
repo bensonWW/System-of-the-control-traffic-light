@@ -359,7 +359,7 @@ function TrafficMap({ viewMode, roads, heatmapData, baselineHeatmapData, current
       (viewMode === 'opt' || viewMode === 'heatmap') ? heatmapData
       : isCur ? (baselineHeatmapData || currentHeatmapData || heatmapData)
       : (baselineHeatmapData || heatmapData);   // pred
-    // cur 模式：依路名前綴建立 {前綴: VD 車速} 查表，用來給 edge 上色
+
     const vdByPrefix = {};
     if (isCur) {
       roads.forEach(r => {
@@ -376,14 +376,12 @@ function TrafficMap({ viewMode, roads, heatmapData, baselineHeatmapData, current
         /* ── 資料欄位 ── */
         const vol    = ed.vol  || ed.count || 0;   // 車流量(線寬用，五分鐘車流)
         const occ    = ed.occ  || 0;
-        // cur：顏色用該 edge 所屬路段的 VD 車速；其他模式：用 edgedata 模擬車速
         let vdSpd = null;
         if (isCur) {
           const nm = ed.name || '';
           for (const p in vdByPrefix) { if (nm.startsWith(p)) { vdSpd = vdByPrefix[p]; break; } }
         }
         const spdKmh = isCur ? (vdSpd || 0) : (ed.spd || 0);
-        // cur：沒有對應 VD 的 edge 視為無資料(骨架)；其他模式：無速度且無車流才算無資料
         const hasData = isCur ? (vdSpd != null && vdSpd > 0) : (spdKmh > 0 || vol > 0);
 
         /* ── 無資料路段：暗灰骨架線，顯示路網覆蓋 ── */
@@ -393,7 +391,7 @@ function TrafficMap({ viewMode, roads, heatmapData, baselineHeatmapData, current
           const note = isCur ? '無 VD 感測資料' : 'SUMO 路網 · 無模擬流量';
           skeleton.bindPopup(`<div style="padding:10px 14px;min-width:170px">
             <div style="font-family:'Noto Sans TC',sans-serif;font-size:10px;color:#4e6080;margin-bottom:3px">${note}</div>
-            <div style="font-family:'Noto Sans TC',sans-serif;font-size:12px;font-weight:600;color:#94a3b8;margin-bottom:6px">${ed.name||'未命名路段'}</div>
+            <div style="font-family:'Noto Sans TC',sans-serif;font-size:12px;font-weight:600;color:#94a3b8;margin-bottom:4px">${ed.name||'未命名路段'}</div>
             <div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#2a3a5a">${eid}</div>
           </div>`,{maxWidth:200,minWidth:170});
           return;
@@ -487,7 +485,7 @@ function TrafficMap({ viewMode, roads, heatmapData, baselineHeatmapData, current
 /* ══════════════════════════════════════════════════
    ROAD TABLE (driven by live roads data)
 ══════════════════════════════════════════════════ */
-function RoadTable({ roads, dataKey, selectedId, onSelectRoad }) {
+function RoadTable({ roads, dataKey, selectedId, onSelectRoad, collapsed, onToggleCollapse }) {
   const ff="'Inter',system-ui,sans-serif", body="'Noto Sans TC','PingFang TC',sans-serif", mono="'JetBrains Mono',monospace";
   const bgCard='#0f1629', bgSurf='#0a0f1e', borderMed='rgba(99,130,200,0.25)', divider='rgba(99,130,200,0.08)', shadow='0 0 0 1px rgba(99,130,200,0.25),0 1px 3px rgba(0,0,0,0.40)', blueSubtle='rgba(59,130,246,0.08)';
   const [hovered, setHovered] = useState(null);
@@ -500,15 +498,21 @@ function RoadTable({ roads, dataKey, selectedId, onSelectRoad }) {
   };
   return (
     <div style={{ background:bgCard,border:`1px solid ${borderMed}`,borderRadius:12,boxShadow:shadow,overflow:'hidden',flex:1,display:'flex',flexDirection:'column' }}>
-      <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',padding:'11px 16px',borderBottom:`1px solid ${borderMed}` }}>
-        <div style={{ fontFamily:ff,fontSize:13,fontWeight:600,color:'#f1f5f9',letterSpacing:'-0.01em' }}>路段監控列表</div>
+      <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',padding:'11px 16px',borderBottom: collapsed?'none':`1px solid ${borderMed}` }}>
+        <button onClick={onToggleCollapse} aria-label={collapsed?'展開路段監控列表':'收合路段監控列表'} aria-expanded={!collapsed} title={collapsed?'展開列表':'收合列表，讓地圖更大'} style={{ display:'flex',alignItems:'center',gap:8,background:'none',border:'none',cursor:'pointer',padding:0 }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform:collapsed?'rotate(0deg)':'rotate(180deg)',transition:'transform 150ms',flexShrink:0 }}><polyline points="6 9 12 15 18 9"/></svg>
+          <span style={{ fontFamily:ff,fontSize:13,fontWeight:600,color:'#f1f5f9',letterSpacing:'-0.01em' }}>路段監控列表</span>
+          <span style={{ fontFamily:body,fontSize:11,color:'#4e6080' }}>{roads.length} 路段</span>
+        </button>
+        {!collapsed && (
         <div style={{ display:'flex',alignItems:'center',gap:6,background:bgSurf,border:`1px solid ${borderMed}`,borderRadius:6,padding:'4px 10px' }}>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#4e6080" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
           <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="搜尋路段..." style={{ background:'transparent',border:'none',outline:'none',fontFamily:body,fontSize:12,color:'#f1f5f9',width:100 }} onFocus={e=>e.target.style.color='#f1f5f9'} onBlur={e=>e.target.style.color=search?'#f1f5f9':'#4e6080'}/>
           {search && <button onClick={()=>setSearch('')} style={{ background:'none',border:'none',color:'#4e6080',cursor:'pointer',padding:0,fontSize:14,lineHeight:1 }}>×</button>}
         </div>
+        )}
       </div>
-      <div style={{ overflowY:'auto',flex:1 }}>
+      <div style={{ overflowY:'auto',flex:1,display:collapsed?'none':'block' }}>
         <table style={{ width:'100%',borderCollapse:'collapse' }}>
           <thead>
             <tr style={{ background:bgSurf }}>
@@ -899,10 +903,9 @@ function LLMChat({ msgs, setMsgs }){
    APP SHELL
 ══════════════════════════════════════════════════ */
 const MODES = {
-  cur:     { label:'當前車流',   accent:'#3b82f6' },
-  pred:    { label:'5分鐘預測', accent:'#f59e0b' },
-  opt:     { label:'優化後預測', accent:'#22c55e' },
-  heatmap: { label:'車流熱力圖', accent:'#ef4444' },
+  cur:  { label:'原始車流', accent:'#3b82f6' },
+  pred: { label:'預測車流', accent:'#f59e0b' },
+  opt:  { label:'優化車流', accent:'#22c55e' },
 };
 
 
@@ -1029,6 +1032,7 @@ function App() {
   const [activeNav, setActiveNav] = useState('dashboard');
   const [mapMode, setMapMode] = useState('cur');
   const [liveRoads, setLiveRoads] = useState(ROADS_BASE);
+  const [vdRoads, setVdRoads] = useState([]);   // 全 VD 路段（逐段，未聚合）：供監控列表/指標的細分顯示
   const [heatmapData, setHeatmapData] = useState(null);
   const [baselineHeatmapData, setBaselineHeatmapData] = useState(null);
   const [currentHeatmapData, setCurrentHeatmapData] = useState(null);
@@ -1037,6 +1041,7 @@ function App() {
   const [refreshing, setRefreshing] = useState(false);
   const [countdown, setCountdown] = useState(300);
   const [selectedRoadId, setSelectedRoadId] = useState(null);
+  const [roadListCollapsed, setRoadListCollapsed] = useState(false);  // 路段監控列表收合，讓路網車流地圖佔滿可視範圍
   const [simStatus, setSimStatus] = useState('idle');
   const [simTime, setSimTime] = useState(null);
   const [liveSignals, setLiveSignals] = useState(null);   // {tl_id:{state,phase,next_switch}} 來自 WS
@@ -1111,6 +1116,17 @@ function App() {
             const worstMoe = Math.max(...matches.map(([,d])=>d.MOELevel||0));
             return {...road, cur:{spd:+avgSpd.toFixed(1),vol:Math.round(totalVol/3),occ:+avgOcc.toFixed(1),moe:worstMoe}};
           }));
+          /* 逐段 VD 資料（不聚合）：監控列表用，顯示每一條偵測路段。 */
+          setVdRoads(entries.map(([name,d]) => ({
+            name,
+            id: d.SectionId || name,
+            cur: {
+              spd: d.AvgSpd   != null ? +(+d.AvgSpd).toFixed(1)  : null,
+              vol: d.TotalVol != null ? Math.round(+d.TotalVol / 3) : null,
+              occ: d.AvgOcc   != null ? +(+d.AvgOcc).toFixed(1)  : null,
+              moe: d.MOELevel != null ? +d.MOELevel              : null,
+            },
+          })));
         }
         setApiError(false);
       } else { throw new Error('no api'); }
@@ -1118,6 +1134,7 @@ function App() {
       /* API 未啟動：保持 null 數據，不顯示假數值，並顯示連線失敗提示 */
       setApiError(true);
       setLiveRoads(ROADS_BASE.map(r => ({ ...r, cur: { ..._NULL_ROAD_DATA }, pred: { ..._NULL_ROAD_DATA }, opt: { ..._NULL_ROAD_DATA } })));
+      setVdRoads([]);
     }
     const ts = new Date().toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
     setLastFetch(ts);
@@ -1184,7 +1201,10 @@ function App() {
   const predRoads = useMemo(() => computePredRoads(liveRoads, forecastData.pred), [liveRoads, forecastData]);
   const optRoads  = useMemo(() => computeOptRoads(liveRoads, forecastData.opt),  [liveRoads, forecastData]);
   const displayRoads = mapMode === 'pred' ? predRoads : mapMode === 'opt' ? optRoads : liveRoads;
+  /* 監控列表/指標：當前車流(cur)模式顯示逐段 VD 路段（細分）；pred/opt 維持主幹道粒度（預測僅到主幹道層級） */
+  const monitorRoads = vdRoads.length ? vdRoads : displayRoads;
   const dataKey = mapMode==='pred'?'pred':mapMode==='opt'?'opt':'cur';
+  const tableDataKey = vdRoads.length ? 'cur' : dataKey;
   const borderMed='rgba(99,130,200,0.25)';
   const mins=String(Math.floor(countdown/60)).padStart(2,'0');
   const secs=String(countdown%60).padStart(2,'0');
@@ -1203,7 +1223,7 @@ function App() {
       )}
 
       {/* Metrics */}
-      <MetricsPanel roads={displayRoads}/>
+      <MetricsPanel roads={monitorRoads}/>
 
       {/* Body */}
       <div style={{flex:1,display:'grid',gridTemplateColumns:activeNav==='dashboard'?'186px 1fr 290px 272px':'186px 1fr',gap:10,padding:'10px 14px 12px',overflow:'hidden',minHeight:0}}>
@@ -1215,7 +1235,7 @@ function App() {
         <div style={{display:'flex',flexDirection:'column',gap:8,overflow:'hidden',minHeight:0}}>
 
           {/* Map card — keep mounted always to avoid Leaflet teardown; hide via display */}
-          <div style={{display:(activeNav==='dashboard'||activeNav==='roads')?'flex':'none',flexDirection:'column',background:'#0f1629',border:`1px solid ${borderMed}`,borderRadius:12,boxShadow:'0 0 0 1px rgba(99,130,200,0.25),0 1px 3px rgba(0,0,0,0.40)',overflow:'hidden',flex:'0 0 auto',height:290}}>
+          <div style={{display:(activeNav==='dashboard'||activeNav==='roads')?'flex':'none',flexDirection:'column',background:'#0f1629',border:`1px solid ${borderMed}`,borderRadius:12,boxShadow:'0 0 0 1px rgba(99,130,200,0.25),0 1px 3px rgba(0,0,0,0.40)',overflow:'hidden',flex:1,minHeight:200}}>
             {/* Map header */}
             <div style={{display:'flex',alignItems:'center',padding:'7px 12px',borderBottom:`1px solid ${borderMed}`,background:'#0a0f1e',gap:10,flexShrink:0,flexWrap:'wrap'}}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="2" style={{flexShrink:0}}><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
@@ -1229,9 +1249,7 @@ function App() {
               {/* Auto-refresh countdown */}
               <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:8}}>
                 <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:10,color:'#4e6080'}}>下次更新 {mins}:{secs}</span>
-                {mapMode==='heatmap'
-                  ? <HeatmapLegend maxCount={heatmapData?.meta?.max_count||heatmapData?.meta?.max_vol||100} mode={mapMode}/>
-                  : <SpeedLegend/>}
+                <SpeedLegend/>
               </div>
             </div>
             {/* Map container */}
@@ -1242,8 +1260,8 @@ function App() {
 
           {/* Road table — dashboard & roads views */}
           {(activeNav==='dashboard'||activeNav==='roads') && (
-            <div style={{flex:1,minHeight:0,display:'flex'}}>
-              <RoadTable roads={displayRoads} dataKey={dataKey} selectedId={selectedRoadId} onSelectRoad={r=>setSelectedRoadId(r.id)}/>
+            <div style={{flex:'0 0 auto',height:roadListCollapsed?'auto':280,minHeight:0,display:'flex'}}>
+              <RoadTable roads={monitorRoads} dataKey={tableDataKey} selectedId={selectedRoadId} onSelectRoad={r=>setSelectedRoadId(r.id)} collapsed={roadListCollapsed} onToggleCollapse={()=>setRoadListCollapsed(c=>!c)}/>
             </div>
           )}
 
