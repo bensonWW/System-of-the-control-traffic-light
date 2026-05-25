@@ -210,14 +210,23 @@ def main():
 
     # Process files
     files = sorted(glob.glob(os.path.join(VEHICLE_DATA_DIR, "*.rou.xml")))
-    print(f"Found {len(files)} files. Starting pool of 16 processes...")
+
+    # Adaptive worker count: each SUMO process pulls ~300-500 MB; on a 16 GB
+    # dev box, 16 workers is right at the edge of OOM. Use CPU count as a
+    # ceiling (caller can override via env if they know what they're doing).
+    # Cap at 16 to preserve the existing tuned upper bound for large servers.
+    DEFAULT_WORKERS = min(16, multiprocessing.cpu_count() or 1)
+    workers = int(os.environ.get("TRAFFICVISION_VD_WORKERS", DEFAULT_WORKERS))
+    workers = max(1, min(workers, len(files) or 1))
+    print(f"Found {len(files)} files. Starting pool of {workers} processes "
+          f"(cpu_count={multiprocessing.cpu_count()}, override via TRAFFICVISION_VD_WORKERS)")
 
     # Prepare arguments for each task
     tasks = [(f, valid_edges) for f in files]
-    
+
     # Run pool
     start_time = time.time()
-    with multiprocessing.Pool(processes=16) as pool:
+    with multiprocessing.Pool(processes=workers) as pool:
         for i, result in enumerate(pool.imap_unordered(process_file_wrapper, tasks), 1):
             elapsed = time.time() - start_time
             print(f"[{i}/{len(files)}] {result} (Time: {elapsed:.2f}s)")

@@ -90,25 +90,81 @@ def register_legacy_checkpoint_classes():
 
 def load_model(model_path, device):
     print(f"Loading model from {model_path}...")
+
+    # ── Integrity checks: fail fast with actionable messages ──────────────────
+    if not os.path.exists(model_path):
+        raise FileNotFoundError(
+            f"找不到模型檔案: {model_path}\n"
+            f"提示：runtime_pipeline 預設用 gru_traffic_model_pair.pth；"
+            f"請確認檔案存在或用 --model-path 指定其他路徑。"
+        )
+    size_bytes = os.path.getsize(model_path)
+    if size_bytes < 1024:  # < 1 KB = almost certainly empty / write-truncated
+        raise ValueError(
+            f"模型檔案疑似損毀（大小僅 {size_bytes} bytes）: {model_path}\n"
+            f"預期 ~5 MB。請重新下載 / re-train，或從備份還原。"
+        )
+
     register_legacy_checkpoint_classes()
-    checkpoint = torch.load(
-        model_path,
-        map_location=device,
-        weights_only=False,
-    )
+    try:
+        checkpoint = torch.load(
+            model_path,
+            map_location=device,
+            weights_only=False,
+        )
+    except Exception as exc:
+        raise RuntimeError(
+            f"無法載入模型 {model_path}（torch.load 失敗）：{exc}\n"
+            f"可能原因：檔案損毀、PyTorch 版本不相容、或 pickle 內含的類別在當前環境找不到。"
+        ) from exc
+
+    # Required keys — checkpoints saved by train_model.py always have these
+    required_keys = ("model_state_dict",)
+    missing = [k for k in required_keys if k not in checkpoint]
+    if missing:
+        raise ValueError(
+            f"模型 checkpoint 缺少必要欄位 {missing}\n"
+            f"現有 keys: {list(checkpoint.keys())}\n"
+            f"這個檔案可能不是 TrafficVision 的 GRU checkpoint。"
+        )
 
     config = checkpoint.get("config", {})
+    if not isinstance(config, dict):
+        print(f"  ⚠ 警告: checkpoint 中 config 不是 dict ({type(config).__name__})，使用預設值")
+        config = {}
+
     if "edge_ids" in checkpoint:
         edge_ids = checkpoint["edge_ids"]
     else:
         edge_ids = checkpoint.get("edge_ids_list", [])
 
     num_edges = len(edge_ids)
+    if num_edges == 0:
+        raise ValueError(
+            "模型 checkpoint 沒有 edge_ids — 無法對齊 inference 時的 edge 順序。"
+            "此 checkpoint 可能來自舊版 train_model.py，請重新訓練。"
+        )
+
     input_len = config.get("input_len", 15)
     pred_horizon = config.get("pred_horizon", 15)
     hidden_dim = config.get("hidden_dim", 256)
     num_layers = config.get("num_layers", 2)
     gap_feature = bool(config.get("gap_feature", False))
+
+    # Sanity check: weight shape matches declared num_edges + extras
+    state = checkpoint["model_state_dict"]
+    gru_weight = state.get("gru.weight_ih_l0")
+    if gru_weight is not None:
+        expected_input = num_edges + (3 if gap_feature else 2)
+        actual_input = gru_weight.shape[1]
+        if actual_input != expected_input:
+            raise ValueError(
+                f"模型維度不一致：state_dict 的 GRU input = {actual_input}，"
+                f"但 edge_ids({num_edges}) + features({3 if gap_feature else 2}) = {expected_input}。\n"
+                f"可能原因：checkpoint 是用不同的 gap_feature 設定訓練的，"
+                f"或 edge_ids 在訓練後被人手動改過。"
+            )
+
     scaler = checkpoint.get("scaler")
     if scaler is None:
         scaler = Log1pScaler()
@@ -243,6 +299,16 @@ def _aggregate_predictions(
     max_windows=None,
     gap_feature=False,
 ):
+    """Sliding-window ensemble aggregator.
+
+    Vectorized over windows: instead of N separate batch-size-1 forwards (one
+    per sliding window), stack all windows into a single (B, input_len, features)
+    batch and do one forward. For a ~280 window run this cuts inference time
+    from ~280×forward_latency to ~1×forward_latency.
+
+    Memory is bounded: B × input_len × (num_edges + 2 or 3) × 4 bytes. For
+    typical B=300, input_len=15, num_edges=1000 that's ~17 MB — fine.
+    """
     aggregated_sum = {}
     aggregated_count = {}
 
@@ -250,15 +316,33 @@ def _aggregate_predictions(
     if max_windows is not None:
         window_start = max(input_len, len(time_index) - int(max_windows) + 1)
 
-    for window_end in range(window_start, len(time_index) + 1):
+    window_ends = list(range(window_start, len(time_index) + 1))
+    if not window_ends:
+        return aggregated_sum, aggregated_count
+
+    # Build batched input: (B, input_len, num_edges + extras)
+    batch_inputs = []
+    for window_end in window_ends:
         input_traf = scaled_traffic[window_end - input_len:window_end]
         input_time = time_data[window_end - input_len:window_end]
-        pred_seq_real = _predict_sequence(model, device, input_traf, input_time, scaler, gap_feature)
+        parts = [input_traf, input_time]
+        if gap_feature:
+            gap = (input_traf == 0).mean(axis=1, keepdims=True).astype(np.float32)
+            parts.append(gap)
+        batch_inputs.append(np.hstack(parts))
+    batch_np = np.stack(batch_inputs, axis=0)  # (B, input_len, features)
+    batch_tensor = torch.tensor(batch_np, dtype=torch.float32).to(device)
 
+    with torch.no_grad():
+        pred_scaled = model(batch_tensor).cpu().numpy()  # (B, pred_horizon, num_edges)
+    pred_real = scaler.inverse_transform(pred_scaled)
+    pred_real = np.clip(pred_real, 0.0, None)
+
+    for batch_idx, window_end in enumerate(window_ends):
         base_time = float(time_index[window_end - 1])
         for step_index in range(pred_horizon):
             current_time = float(base_time + 20 * (step_index + 1))
-            step_values = pred_seq_real[step_index]
+            step_values = pred_real[batch_idx, step_index]
 
             if current_time not in aggregated_sum:
                 aggregated_sum[current_time] = np.zeros_like(step_values, dtype=np.float64)

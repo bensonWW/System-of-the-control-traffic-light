@@ -4,6 +4,12 @@ from concurrent.futures import ProcessPoolExecutor, TimeoutError as FuturesTimeo
 import math
 import xml.etree.ElementTree as ET
 
+try:
+    import psutil  # type: ignore
+    _HAVE_PSUTIL = True
+except ImportError:
+    _HAVE_PSUTIL = False
+
 import pandas as pd
 
 from traffic_optimizer_io import (
@@ -74,6 +80,49 @@ TO_EDGE_WEIGHT = 0.8
 # Per-strategy SUMO evaluation budget. Without this cap, a single hung
 # TraCI socket can stall the entire pipeline indefinitely.
 STRATEGY_EVAL_TIMEOUT_SECONDS = float(os.environ.get("TRAFFICVISION_STRATEGY_TIMEOUT", 300))
+
+
+def _kill_orphan_sumo_descendants():
+    """Force-terminate any SUMO process spawned by us or our worker pool.
+
+    Background: ProcessPoolExecutor.future.cancel() returns False for an
+    already-running task and does NOT kill the worker. The worker's SUMO
+    sub-process (started via traci.start) thus keeps running after a timeout,
+    holding its TraCI port and consuming CPU until natural completion.
+
+    This helper walks descendants of the current process and TERMs/KILLs any
+    process whose name matches sumo/sumo-gui/sumolib. No-op if psutil isn't
+    installed (caller can `pip install psutil`).
+    """
+    if not _HAVE_PSUTIL:
+        return 0
+    killed = 0
+    try:
+        me = psutil.Process()
+        descendants = me.children(recursive=True)
+    except psutil.Error:
+        return 0
+    for proc in descendants:
+        try:
+            name = (proc.name() or "").lower()
+        except psutil.Error:
+            continue
+        if not any(token in name for token in ("sumo", "sumo-gui", "sumolib")):
+            continue
+        try:
+            proc.terminate()
+            killed += 1
+        except psutil.Error:
+            pass
+    # Give them ~3s to exit cleanly, then SIGKILL the stragglers.
+    if killed:
+        gone, alive = psutil.wait_procs(descendants, timeout=3)
+        for p in alive:
+            try:
+                p.kill()
+            except psutil.Error:
+                pass
+    return killed
 
 DEFAULT_STRATEGY = {
     "name": "default",
@@ -554,9 +603,16 @@ def run_prediction_driven_strategy(
                 except FuturesTimeoutError:
                     print(f"  WARNING: 策略 {strategy_name} 超過 {STRATEGY_EVAL_TIMEOUT_SECONDS:.0f}s 未完成，已略過")
                     future.cancel()
+                    # future.cancel() doesn't actually stop a running worker —
+                    # force-kill any orphan SUMO sub-process so its TraCI port
+                    # and memory are reclaimed before the next batch.
+                    killed = _kill_orphan_sumo_descendants()
+                    if killed:
+                        print(f"  → 強制終結 {killed} 個 orphan SUMO 程序")
                     continue
                 except Exception as exc:
                     print(f"  WARNING: 策略 {strategy_name} 評估失敗 ({exc})，已略過")
+                    _kill_orphan_sumo_descendants()
                     continue
                 strategy_rows.append(strategy)
                 strategy_score = compute_composite_score(strategy)

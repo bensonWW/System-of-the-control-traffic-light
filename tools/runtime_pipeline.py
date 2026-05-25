@@ -49,20 +49,92 @@ class PipelineBusy(RuntimeError):
     """Raised by _pipeline_lock when a previous run is still in progress."""
 
 
+def _pid_alive(pid):
+    """Cross-platform PID liveness check. Returns True if pid maps to a live
+    process *whose argv looks like our pipeline* (best-effort to avoid PID
+    reuse false positives). Falls back to bare PID check if psutil missing."""
+    try:
+        import psutil  # type: ignore
+    except ImportError:
+        # No psutil → use os.kill(pid, 0) which works on POSIX. On Windows
+        # without psutil the safest assumption is "alive" (don't steal a
+        # potentially-real lock); operator can still rm the file manually.
+        if os.name == "nt":
+            return True
+        try:
+            os.kill(pid, 0)
+            return True
+        except (ProcessLookupError, PermissionError):
+            return False
+        except OSError:
+            return True
+    try:
+        proc = psutil.Process(pid)
+        cmdline = " ".join(proc.cmdline()).lower()
+        # Best-effort guard: only treat as ours if the cmdline mentions our
+        # script. Otherwise the PID was reused by some unrelated process and
+        # we should still respect the lock (caller can rm manually).
+        if "runtime_pipeline" in cmdline or "pipeline_lock" in cmdline:
+            return True
+        return False
+    except psutil.NoSuchProcess:
+        return False
+    except psutil.Error:
+        # AccessDenied or similar → can't tell, be conservative
+        return True
+
+
+def _parse_lockfile_pid(lock_path):
+    """Extract the PID from a lockfile. Returns None if absent or malformed."""
+    try:
+        content = open(lock_path, "r", encoding="utf-8").read()
+    except OSError:
+        return None
+    for token in content.split():
+        if token.startswith("pid="):
+            try:
+                return int(token.split("=", 1)[1])
+            except (ValueError, IndexError):
+                return None
+    return None
+
+
 @contextmanager
 def _pipeline_lock(lock_path=LOCKFILE_PATH):
     """Exclusive file lock — only one run_once may execute at a time.
 
     Uses O_CREAT|O_EXCL for cross-platform atomicity (works on Windows where
     fcntl.flock is unavailable). Writes PID + start time to the lockfile so a
-    stuck run can be diagnosed; the caller is responsible for clearing a stale
-    lock if the previous process truly crashed.
+    stuck run can be diagnosed. On encountering an existing lockfile, checks
+    whether the owning PID is actually alive — if not, reclaims the lock
+    instead of failing (the previous process crashed without cleanup).
     """
     os.makedirs(os.path.dirname(lock_path), exist_ok=True)
-    try:
-        fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-    except OSError as exc:
-        if exc.errno == errno.EEXIST:
+    while True:
+        try:
+            fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            break  # acquired
+        except OSError as exc:
+            if exc.errno != errno.EEXIST:
+                raise
+            # Lock exists — check if its owning PID is alive
+            stale_pid = _parse_lockfile_pid(lock_path)
+            if stale_pid is None:
+                # Malformed lockfile; take it over
+                _log(f"  發現損壞的 lockfile（無法解析 PID），接管: {lock_path}")
+                try:
+                    os.remove(lock_path)
+                except OSError:
+                    pass
+                continue
+            if not _pid_alive(stale_pid):
+                _log(f"  發現 stale lockfile（PID {stale_pid} 已死），接管: {lock_path}")
+                try:
+                    os.remove(lock_path)
+                except OSError:
+                    pass
+                continue
+            # Still alive — genuine conflict
             try:
                 existing = open(lock_path, "r", encoding="utf-8").read().strip()
             except OSError:
@@ -70,7 +142,6 @@ def _pipeline_lock(lock_path=LOCKFILE_PATH):
             raise PipelineBusy(
                 f"另一輪 pipeline 仍在執行（lock: {lock_path}, 內容: {existing}）"
             ) from None
-        raise
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fp:
             fp.write(f"pid={os.getpid()} started={datetime.now().isoformat()}\n")
