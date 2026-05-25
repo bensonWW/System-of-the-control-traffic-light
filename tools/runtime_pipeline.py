@@ -1,5 +1,7 @@
 import argparse
+import csv
 import errno
+import json
 import os
 import shutil
 import subprocess
@@ -28,6 +30,59 @@ GENERATED_ROUTE_XML = os.path.join(DATA_DIR, "final_output.rou.xml")
 EDGEDATA_ADD_FILE = os.path.join(DATA_DIR, "edgedata.add.xml")
 # Current-demand (Step 2) edgeData — drives the "當前車流" full-network heatmap.
 EDGEDATA_CURRENT_FILE = os.path.join(DATA_DIR, "edgedata_current.xml")
+# Append-only run history. One JSON line per run_once invocation. Used for
+# computing success rate, average duration, and which strategies win over time.
+METRICS_PATH = os.path.join(RUNTIME_DATA_DIR, "_metrics.jsonl")
+
+
+def _read_best_strategy(handoff_dir):
+    """Extract best_strategy + composite_score from a handoff's summary CSV.
+    Returns (strategy_name, composite_score) or (None, None) on failure."""
+    if not handoff_dir or not os.path.isdir(handoff_dir):
+        return None, None
+    candidates = [f for f in os.listdir(handoff_dir) if f.endswith("_best_strategy.csv")]
+    if not candidates:
+        candidates = ["best_result_summary.csv"] if os.path.exists(os.path.join(handoff_dir, "best_result_summary.csv")) else []
+    if not candidates:
+        return None, None
+    try:
+        path = os.path.join(handoff_dir, candidates[0])
+        with open(path, encoding="utf-8-sig") as fp:
+            row = next(csv.DictReader(fp), None)
+        if not row:
+            return None, None
+        strat = row.get("strategy")
+        try:
+            score = float(row.get("composite_score", "nan"))
+        except (TypeError, ValueError):
+            score = None
+        return strat, score
+    except Exception:
+        return None, None
+
+
+def _append_metric(record):
+    """Append one JSON line to the metrics log. Best-effort; never raises.
+
+    Schema (each line is independent — no header, easy to tail):
+        {
+          "ts": "2026-05-26T01:23:45.678",
+          "duration_sec": 71.3,
+          "success": true,
+          "step3_skipped": null | "資料長度不足...",
+          "strategy": "baseline_more_edges_more_tls" | null,
+          "composite_score": 0.99 | null,
+          "run_dir": "data/runtime_data/traffic_data_..." | null,
+          "error": null | "<exception class>: <msg>"
+        }
+    """
+    try:
+        os.makedirs(os.path.dirname(METRICS_PATH), exist_ok=True)
+        with open(METRICS_PATH, "a", encoding="utf-8") as fp:
+            fp.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except Exception as exc:
+        # Logging must never break the pipeline itself
+        _log(f"  指標寫入失敗（非致命）: {exc}")
 
 
 def _write_edgedata_add(base_add_file, out_add_file, edgedata_output_path):
@@ -205,8 +260,33 @@ def _simulate_to_csv(route_xml, output_csv, temp_cfg, stats_xml):
 
 def run_once(model_path=None):
     os.makedirs(RUNTIME_DATA_DIR, exist_ok=True)
-    with _pipeline_lock():
-        return _run_once_locked(model_path=model_path)
+    started_at = time.time()
+    record = {
+        "ts": datetime.now().isoformat(timespec="seconds"),
+        "duration_sec": None,
+        "success": False,
+        "step3_skipped": None,
+        "strategy": None,
+        "composite_score": None,
+        "run_dir": None,
+        "error": None,
+    }
+    try:
+        with _pipeline_lock():
+            summary = _run_once_locked(model_path=model_path)
+        record["success"] = True
+        record["step3_skipped"] = summary.get("step3_skipped")
+        record["run_dir"] = summary.get("run_dir")
+        strat, score = _read_best_strategy(summary.get("handoff_dir"))
+        record["strategy"] = strat
+        record["composite_score"] = score
+        return summary
+    except Exception as exc:
+        record["error"] = f"{type(exc).__name__}: {exc}"
+        raise
+    finally:
+        record["duration_sec"] = round(time.time() - started_at, 2)
+        _append_metric(record)
 
 
 def _run_once_locked(model_path=None):
@@ -248,18 +328,30 @@ def _run_once_locked(model_path=None):
             handoff_dir=handoff_dir,
             route_xml_dir=vehicle_data_dir,
         )
-    except ValueError as exc:
-        # predict_to_csv raises ValueError when the simulation CSV has fewer
-        # time bins than the model's input_len. Adaptive trim in
-        # traffic_optimizer_io covers most low-traffic cases, but if the sim
-        # ends extremely fast (e.g. < 360s, no vehicles), even that isn't
-        # enough. Degrade gracefully: log + skip Step 3, still update Step 4
-        # heatmaps from whatever XMLs exist (stale predict/baseline, fresh
-        # current). The dashboard sees the latest reachable data instead of
-        # a hard 500.
-        pipeline_skipped_reason = str(exc)
-        _log(f"Step 3 跳過（資料不足，無法預測）: {pipeline_skipped_reason}")
-        _log("  → 號誌維持現行，僅更新「當前車流」熱力圖；其他兩張保留上輪資料")
+    except Exception as exc:
+        # Distinguish error categories so we don't silently swallow real bugs.
+        # Imported lazily to avoid cycles (predict_to_csv imports torch).
+        from predict_to_csv import PredictDataShortageError, PredictModelMismatchError
+        if isinstance(exc, PredictDataShortageError):
+            # Adaptive trim handled most low-traffic cases; this only fires when
+            # sim ends < 360s (essentially no cars). Graceful skip + still run
+            # Step 4 heatmaps from whatever XMLs exist (stale predict/baseline,
+            # fresh current).
+            pipeline_skipped_reason = f"data_shortage: {exc}"
+            _log(f"Step 3 跳過（資料不足，無法預測）: {exc}")
+            _log("  → 號誌維持現行，僅更新「當前車流」熱力圖；其他兩張保留上輪資料")
+        elif isinstance(exc, PredictModelMismatchError):
+            # Model is fundamentally incompatible (edge count / feature width
+            # mismatch). Skipping won't help — the operator must fix the model.
+            # But we still want the pipeline to complete the current heatmap
+            # so the dashboard isn't blank.
+            pipeline_skipped_reason = f"model_mismatch: {exc}"
+            _log(f"Step 3 跳過（模型不相容，需操作員介入）: {exc}")
+        else:
+            # Unknown failure mode — re-raise so the scheduler logs it and
+            # operators see the actual stack trace. Don't pretend everything's
+            # fine when it isn't.
+            raise
 
     _log("Step 4/4: 生成邊道熱力圖 JSON")
     tvds_data_dir = os.path.join(ROOT_DIR, "TrafficVision Design System", "data")

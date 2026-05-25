@@ -77,6 +77,23 @@ def extract_datetime(filename):
     return None
 
 
+class PredictDataShortageError(ValueError):
+    """Input CSV has fewer time bins than the model's input_len.
+    Caller (runtime_pipeline) should treat this as a graceful skip, not crash."""
+    def __init__(self, available, required):
+        self.available = available
+        self.required = required
+        super().__init__(
+            f"資料長度不足，至少需要 {required} 筆，但目前只有 {available} 筆。"
+        )
+
+
+class PredictModelMismatchError(RuntimeError):
+    """Model checkpoint and input CSV disagree on edge count or feature width.
+    Distinct from data shortage — this means the model is fundamentally
+    incompatible with the current SUMO net, not just that the sim was short."""
+
+
 def register_legacy_checkpoint_classes():
     main_module = sys.modules.get("__main__")
     if main_module is None:
@@ -369,9 +386,9 @@ def export_prediction_csv(input_csv, model_path=DEFAULT_MODEL_PATH, output_root=
 
     pivot = load_demo_csv(input_csv, edge_ids)
     if len(pivot) < input_len:
-        raise ValueError(
-            f"資料長度不足，至少需要 {input_len} 筆，但目前只有 {len(pivot)} 筆。"
-        )
+        # Use typed exception so runtime_pipeline can skip Step 3 gracefully
+        # without confusing it with model-loading errors or genuine code bugs.
+        raise PredictDataShortageError(available=len(pivot), required=input_len)
 
     traffic_data = pivot.values.astype(np.float32)
     scaled_traffic = scaler.transform(traffic_data)

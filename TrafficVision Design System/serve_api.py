@@ -523,15 +523,77 @@ async def refresh_traffic():
         return {"status": "error", "message": str(exc)}
 
 
+# ─── Run history helpers (read tools/runtime_pipeline.py's _metrics.jsonl) ──
+_METRICS_PATH = BASE_DIR.parent / "data" / "runtime_data" / "_metrics.jsonl"
+
+
+def _latest_run_metric():
+    """Return the most recent JSONL entry from the pipeline metrics log,
+    or None if the log doesn't exist or is empty."""
+    if not _METRICS_PATH.exists():
+        return None
+    try:
+        with open(_METRICS_PATH, "rb") as fp:
+            # tail-read last 16KB so we don't load the whole history
+            fp.seek(0, 2)
+            size = fp.tell()
+            fp.seek(max(0, size - 16384))
+            tail = fp.read().decode("utf-8", errors="replace")
+        last_line = tail.strip().splitlines()[-1] if tail.strip() else ""
+        if not last_line:
+            return None
+        return json.loads(last_line)
+    except Exception:
+        return None
+
+
+def _diagnose_missing_handoff():
+    """Compose a friendlier error payload when handoff is absent.
+
+    Inspects the metrics log to tell the user *why* nothing's there:
+    pipeline hasn't run yet, last run failed, or last run skipped Step 3
+    due to data shortage."""
+    last = _latest_run_metric()
+    if last is None:
+        return {
+            "error": "pipeline_never_ran",
+            "message": "尚無任何 pipeline 執行紀錄。請執行 python tools/runtime_pipeline.py --once",
+            "hint": "通常每 5 分鐘自動跑一次；如未啟用 scheduler，請先手動跑一輪。",
+        }
+    if last.get("error"):
+        return {
+            "error": "last_run_failed",
+            "message": f"上一次 pipeline 在 {last.get('ts')} 失敗：{last.get('error')}",
+            "hint": "看 serve_api / scheduler log 取得完整 traceback。",
+            "duration_sec": last.get("duration_sec"),
+        }
+    if last.get("step3_skipped"):
+        return {
+            "error": "step3_skipped",
+            "message": f"上一次 pipeline 於 {last.get('ts')} 跳過 Step 3（預測 + 號誌優化）。",
+            "reason": last.get("step3_skipped"),
+            "hint": "常見原因：低車流時段 SUMO 模擬太短，無法產生 15 個時間步給 pair model。",
+            "duration_sec": last.get("duration_sec"),
+        }
+    return {
+        "error": "handoff_not_found",
+        "message": f"上一次 pipeline 於 {last.get('ts')} 成功，但找不到對應的 handoff 目錄。",
+        "hint": f"預期位置：{last.get('run_dir')}/handoff/。可能被外部刪掉了。",
+        "last_strategy": last.get("strategy"),
+        "duration_sec": last.get("duration_sec"),
+    }
+
+
 @app.get("/api/prediction")
 def get_prediction():
     """GRU 預測結果 CSV → JSON"""
     handoff = latest_handoff_dir()
     if not handoff:
-        return {"error": "找不到 handoff 目錄，請先執行 runtime_pipeline.py"}
+        return _diagnose_missing_handoff()
     f = latest_file(str(handoff / "*_predict.csv"))
     if not f:
-        return {"error": "找不到 prediction CSV"}
+        return {"error": "找不到 prediction CSV", "handoff_dir": str(handoff),
+                "hint": "Step 3 可能被跳過或失敗；查 /api/status 或 _metrics.jsonl。"}
     return {"source_file": os.path.basename(f), "records": csv_to_records(f)}
 
 
@@ -540,10 +602,11 @@ def get_signal_plan():
     """號誌計畫摘要"""
     handoff = latest_handoff_dir()
     if not handoff:
-        return {"error": "找不到 handoff 目錄"}
+        return _diagnose_missing_handoff()
     f = latest_file(str(handoff / "*signal_plan_summary*.csv"))
     if not f:
-        return {"error": "找不到 signal plan CSV"}
+        return {"error": "找不到 signal plan CSV", "handoff_dir": str(handoff),
+                "hint": "如果 best strategy 是 no_control，signal_plan_summary 會是空的（無號誌調整）。"}
     return {"source_file": os.path.basename(f), "records": csv_to_records(f)}
 
 
@@ -552,10 +615,10 @@ def get_comparison():
     """前後對比：baseline vs 最佳策略的 8 個指標"""
     handoff = latest_handoff_dir()
     if not handoff:
-        return {"error": "找不到 handoff 目錄"}
+        return _diagnose_missing_handoff()
     f = latest_file(str(handoff / "*comparison_summary*.csv"))
     if not f:
-        return {"error": "找不到 comparison CSV"}
+        return {"error": "找不到 comparison CSV", "handoff_dir": str(handoff)}
     records = csv_to_records(f)
     # 整理成 { metric: { before, after, delta } } 格式
     formatted = {}
@@ -573,7 +636,7 @@ def get_full_handoff():
     """完整 handoff 目錄摘要（所有可用 CSV）"""
     handoff = latest_handoff_dir()
     if not handoff:
-        return {"error": "找不到 handoff 目錄，請先執行 runtime_pipeline.py"}
+        return _diagnose_missing_handoff()
     result = {}
     for csv_file in sorted(handoff.glob("*.csv")):
         key = csv_file.stem
@@ -966,9 +1029,43 @@ async def chat(req: ChatRequest):
 
 # ─── WebSocket / 模擬控制端點 ──────────────────────
 
+# Optional bearer-token auth for the WebSocket. Set TRAFFICVISION_WS_TOKEN to
+# enable; leave unset to allow anonymous connections (current default — fine
+# for localhost deployment). Two ways to supply: ?token=... query param OR
+# Sec-WebSocket-Protocol: bearer.<token>  (some browsers won't let you set
+# the Authorization header on a WS handshake, hence the query-param fallback).
+WS_TOKEN = os.environ.get("TRAFFICVISION_WS_TOKEN", "").strip() or None
+
+
+def _extract_ws_token(websocket: WebSocket) -> Optional[str]:
+    # 1. Query string
+    qp = websocket.query_params.get("token")
+    if qp:
+        return qp
+    # 2. Sec-WebSocket-Protocol: bearer.<token>
+    proto = websocket.headers.get("sec-websocket-protocol", "")
+    if proto.startswith("bearer."):
+        return proto[len("bearer."):]
+    # 3. Authorization: Bearer <token> (works for native ws clients, not browsers)
+    auth = websocket.headers.get("authorization", "")
+    if auth.lower().startswith("bearer "):
+        return auth[7:].strip()
+    return None
+
+
 @app.websocket("/ws/simulation")
 async def simulation_ws(websocket: WebSocket):
-    """即時模擬串流：每 10 模擬秒推送 {type, sim_time, roads, signals}。"""
+    """即時模擬串流：每 10 模擬秒推送 {type, sim_time, roads, signals}。
+
+    若設定 TRAFFICVISION_WS_TOKEN 環境變數，要求 client 帶 bearer token
+    （?token=… 或 Sec-WebSocket-Protocol: bearer.…）。否則開放連線。
+    """
+    if WS_TOKEN is not None:
+        supplied = _extract_ws_token(websocket)
+        if supplied != WS_TOKEN:
+            # 1008 = policy violation, per RFC 6455
+            await websocket.close(code=1008, reason="unauthorized")
+            return
     await websocket.accept()
     _sim_clients.add(websocket)
     if _sim_snapshot:
