@@ -1,55 +1,100 @@
+"""
+train_model.py — Pair-based 5 分鐘車流預測 GRU 模型
+
+訓練範式：給定一輪 SUMO 模擬暖機後的狀態 (CSV_A 前 15 步, time 60-340s)，
+預測 5 分鐘後另一輪 SUMO 模擬的暖機後狀態 (CSV_B 前 15 步)。
+Pair 由同日內檔名相鄰、timestamp 差 [3, 15] 分鐘的 CSV 對構成。
+
+支援三種模式 (CLI):
+  python train_model.py                                      # 訓練 (預設)
+  python train_model.py --mode eval --input A.csv --target B.csv [--gap 5.0]
+  python train_model.py --mode eval-batch --dir data/simulation_data/
+  python train_model.py --mode eval-batch --dir ... --dry-run    # 只看 pair 統計
+
+新模型存到 gru_traffic_model_pair.pth (不覆寫舊的 gru_traffic_model.pth)，
+inference 整合方式詳見 INTEGRATION_PAIR_MODEL.md。
+"""
+import argparse
+import json
 import os
 import re
+import sys
+from collections import defaultdict
+from datetime import datetime
+
 import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader, Subset
-import sys
+from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 
 # =================================================
-# 0. 設定 (Hyperparameters)
+# 0. 設定
 # =================================================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data", "simulation_data")
-MODEL_PATH = os.path.join(BASE_DIR, "gru_traffic_model.pth")
+MODEL_PATH = os.path.join(BASE_DIR, "gru_traffic_model_pair.pth")
+EDGE_UNION_CACHE = os.path.join(BASE_DIR, "data", "edge_ids_union.json")
 
-INPUT_LEN = 15          # Lookback
-PRED_HORIZON = 15       # Predict Sequence (15 steps)
+INPUT_LEN = 15        # 5 分鐘 (20 秒/步)
+PRED_HORIZON = 15     # 5 分鐘
 HIDDEN_DIM = 256
 NUM_LAYERS = 2
-BATCH_SIZE = 64
-EPOCHS = 80
-PATIENCE = 10
+BATCH_SIZE = 128
+EPOCHS = 60
+PATIENCE = 8
 LR = 3e-4
 DROPOUT = 0.2
 
-# Optimization: Limit files if needed. None = Load All.
-# If still OOM, set this to 1000 or 2000.
-MAX_FILES_TO_LOAD = None 
+GAP_MIN_SEC = 180     # pair 最小時間差 (3 分鐘)
+GAP_MAX_SEC = 900     # pair 最大時間差 (15 分鐘)
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print("Using device:", DEVICE)
+
 
 # =================================================
-# 1. 工具 (Utils: Time Features & Log1p)
+# 1. 工具 (Utils)
 # =================================================
 def extract_datetime(filename):
+    """從檔名抓 timestamp 字串 (YYYYMMDDHHMMSS)。"""
     m = re.search(r"(\d{8})_(\d{6})", filename)
     if m:
         return m.group(1) + m.group(2)
     return None
 
-def load_one_file(path, fname):
-    df = pd.read_csv(path)
-    if "時間" in df.columns:
-        df = df.rename(columns={"時間":"time","路段ID":"edge_id","車輛數":"vehicle_count"})
-    pivot = df.pivot(index="time", columns="edge_id", values="vehicle_count").fillna(0)
-    pivot = pivot.sort_index()
-    
-    # Extract start time from filename
-    time_str = extract_datetime(fname)
+
+def parse_timestamp(filename):
+    """從檔名解析為 datetime 物件。"""
+    ts = extract_datetime(filename)
+    if ts is None:
+        return None
+    try:
+        return datetime.strptime(ts, "%Y%m%d%H%M%S")
+    except ValueError:
+        return None
+
+
+class Log1pScaler:
+    """log1p 縮放,與舊版相容 (predict_to_csv.py 會 unpickle 此類別)。"""
+    def fit(self, data):
+        pass
+
+    def transform(self, data):
+        return np.log1p(data)
+
+    def inverse_transform(self, data):
+        return np.expm1(data)
+
+
+def build_time_features(filename, num_steps, gap_minutes):
+    """
+    建構 time features: shape = (num_steps, 3)
+        欄 0: sin(time-of-day)
+        欄 1: cos(time-of-day)
+        欄 2: gap_minutes (廣播到全部 steps)
+    """
+    time_str = extract_datetime(filename)
     if time_str:
         hh = int(time_str[8:10])
         mm = int(time_str[10:12])
@@ -58,175 +103,206 @@ def load_one_file(path, fname):
     else:
         start_seconds = 0
 
-    # Create time steps (assuming 20s interval)
-    time_steps = np.arange(len(pivot)) * 20 + start_seconds
-    seconds_in_day = 24 * 3600
-    theta = 2 * np.pi * time_steps / seconds_in_day
-    
-    sin_t = np.sin(theta)
-    cos_t = np.cos(theta)
-    time_feat = np.stack([sin_t, cos_t], axis=1).astype(np.float32)
-    
-    return pivot, time_feat
+    time_steps = np.arange(num_steps) * 20 + start_seconds
+    theta = 2 * np.pi * time_steps / (24 * 3600)
+    sin_t = np.sin(theta).astype(np.float32)
+    cos_t = np.cos(theta).astype(np.float32)
+    gap_col = np.full(num_steps, float(gap_minutes), dtype=np.float32)
+    return np.stack([sin_t, cos_t, gap_col], axis=1)
 
-class Log1pScaler:
-    def fit(self, data):
-        pass 
-    def transform(self, data):
-        return np.log1p(data)
-    def inverse_transform(self, data):
-        return np.expm1(data)
 
 # =================================================
-# 2. 讀取與前處理 (Store in List, Do NOT Concat)
+# 2. Pair 選擇
 # =================================================
-print("Loading files...")
-files = [f for f in os.listdir(DATA_DIR) if f.startswith("traffic_data_") and f.endswith(".csv")]
-files = sorted(files, key=lambda x: extract_datetime(x))
+def find_csv_pairs(dir_path, min_gap_sec=GAP_MIN_SEC, max_gap_sec=GAP_MAX_SEC):
+    """
+    從資料夾找出所有「同日、時間差在範圍內」的 (A, B) CSV pair。
 
-if MAX_FILES_TO_LOAD:
-    files = files[:MAX_FILES_TO_LOAD]
+    對每個起點 A,往後掃描所有 B,只要 gap 落在 [min_gap_sec, max_gap_sec]
+    都收錄;一旦 gap 超過上限就提早跳出 (因檔案已按時間升序)。
 
-traffic_pieces = [] # List of numpy arrays
-time_pieces = []    # List of numpy arrays
-all_edges = None
+    這對「密集取樣」資料 (例如 2 分鐘一筆) 特別重要 —— 若只取相鄰 pair,
+    幾乎所有 gap 都會落在 1-3 分鐘區間而被 min_gap_sec=180 過濾掉。
 
-for fname in files:
+    Returns:
+        list of (path_A, path_B, gap_minutes)
+    """
+    if not os.path.isdir(dir_path):
+        raise FileNotFoundError(f"找不到資料夾: {dir_path}")
+
+    files = [
+        f for f in os.listdir(dir_path)
+        if f.startswith("traffic_data_") and f.endswith(".csv")
+    ]
+
+    by_date = defaultdict(list)
+    for f in files:
+        dt = parse_timestamp(f)
+        if dt is None:
+            continue
+        by_date[dt.strftime("%Y%m%d")].append((dt, f))
+
+    pairs = []
+    for items in by_date.values():
+        items.sort()  # 按 datetime 升序
+        for i in range(len(items)):
+            dt_a, f_a = items[i]
+            for j in range(i + 1, len(items)):
+                dt_b, f_b = items[j]
+                gap_sec = (dt_b - dt_a).total_seconds()
+                if gap_sec > max_gap_sec:
+                    break  # 因 items 已排序,後面只會更大,提早終止
+                if gap_sec >= min_gap_sec:
+                    pairs.append((
+                        os.path.join(dir_path, f_a),
+                        os.path.join(dir_path, f_b),
+                        gap_sec / 60.0,
+                    ))
+    return pairs
+
+
+# =================================================
+# 3. Edge ID Union (canonical edge list)
+# =================================================
+def build_edge_union(csv_paths, cache_path=EDGE_UNION_CACHE, rebuild=False):
+    """
+    掃描所有 CSV 收集 edge_id 聯集,結果寫到 cache。
+    再次執行直接讀 cache (除非 rebuild=True)。
+    """
+    if os.path.exists(cache_path) and not rebuild:
+        with open(cache_path, "r", encoding="utf-8") as f:
+            edges = json.load(f)
+        print(f"Loaded edge union from cache ({len(edges)} edges): {cache_path}")
+        return edges
+
+    print(f"Scanning {len(csv_paths)} CSV files for edge_id union ...")
+    edge_set = set()
+    for p in tqdm(csv_paths, desc="Edge scan"):
+        try:
+            df = pd.read_csv(p, usecols=["edge_id"])
+            edge_set.update(df["edge_id"].unique().tolist())
+        except Exception as exc:
+            print(f"  skip {os.path.basename(p)}: {exc}")
+            continue
+
+    edges = sorted(edge_set)
+    os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+    with open(cache_path, "w", encoding="utf-8") as f:
+        json.dump(edges, f, ensure_ascii=False)
+    print(f"Edge union: {len(edges)} edges saved to {cache_path}")
+    return edges
+
+
+# =================================================
+# 4. CSV 載入 (取前 N 步,對齊 edge)
+# =================================================
+def load_csv_first_n_steps(csv_path, edge_ids, n_steps):
+    """
+    讀 CSV → pivot (time, edge_id) → 對齊 edge_ids → 取前 n_steps 步。
+
+    Returns:
+        (ndarray shape=(n_steps, num_edges), fname) 或 None (資料不足/讀取失敗)
+    """
     try:
-        p, t = load_one_file(os.path.join(DATA_DIR, fname), fname)
-        if all_edges is None:
-            all_edges = sorted(p.columns.tolist())
-        
-        # Ensure alignment
-        p = p.reindex(columns=all_edges, fill_value=0)
-        
-        # Log1p Transform Immediately to save memory (float32)
-        # Log1p is element-wise, so we can do it file by file
-        traf_data = np.log1p(p.values.astype(np.float32))
-        
-        traffic_pieces.append(traf_data)
-        time_pieces.append(t)
-    except Exception as e:
-        print(f"Skipping error file {fname}: {e}")
+        df = pd.read_csv(csv_path)
+        if "時間" in df.columns:
+            df = df.rename(columns={"時間": "time", "路段ID": "edge_id", "車輛數": "vehicle_count"})
+        pivot = df.pivot(index="time", columns="edge_id", values="vehicle_count").fillna(0)
+        pivot = pivot.sort_index()
+        pivot = pivot.reindex(columns=edge_ids, fill_value=0)
+        if len(pivot) < n_steps:
+            return None
+        arr = pivot.iloc[:n_steps].values.astype(np.float32)
+        return arr, os.path.basename(csv_path)
+    except Exception:
+        return None
 
-num_edges = len(all_edges)
-print(f"Loaded {len(traffic_pieces)} files. Total edges: {num_edges}")
 
-# We do NOT run MinMaxScaler. fit is implicit for Log1p.
-scaler = Log1pScaler()
+def preload_csvs(csv_paths, edge_ids, n_steps):
+    """一次性把所有 CSV 的前 n_steps 步載入記憶體,加速訓練。"""
+    cache = {}
+    skipped = 0
+    for p in tqdm(csv_paths, desc="Preloading CSVs"):
+        res = load_csv_first_n_steps(p, edge_ids, n_steps)
+        if res is None:
+            skipped += 1
+            continue
+        cache[p] = res[0]
+    print(f"Preloaded {len(cache)} CSVs (skipped {skipped})")
+    return cache
+
 
 # =================================================
-# 3. Lazy Dataset (Memory Efficient)
+# 5. PairDataset
 # =================================================
-class LazySequenceDataset(Dataset):
-    def __init__(self, traffic_list, time_list, input_len, pred_horizon):
-        self.traffic_list = traffic_list
-        self.time_list = time_list
-        self.input_len = input_len
-        self.pred_horizon = pred_horizon
-        
-        # Create Index Map: (file_idx, start_idx)
-        # Only valid start indices
-        self.index_map = []
-        
-        print("Building Index Map...")
-        # Stride = 3 to reduce data size (User Suggestion)
-        stride = 3
-        
-        # Pre-calculate log1p(5) for filtering
-        # 5 vehicles is a good threshold for "active traffic"
-        threshold_val = np.log1p(5).astype(np.float32)
-        
-        for file_i, traf in enumerate(traffic_list):
-            T = len(traf)
-            
-            if T < input_len + pred_horizon:
-                continue
-                
-            max_start = T - input_len - pred_horizon
-            
-            # Optimization: Check if file has ANY significant traffic
-            if np.max(traf) < threshold_val: 
-                continue
-                
-            for i in range(0, max_start + 1, stride):
-                # Window Check: Check max in the TARGET sequence
-                # We want the model to learn to predict meaningful values
-                # If target is all < 5, it might just learn noise/zero.
-                
-                target_window = traf[i + input_len : i + input_len + pred_horizon]
-                
-                if np.max(target_window) < threshold_val:
-                    continue
-                    
-                self.index_map.append((file_i, i))
-                
-        print(f"Dataset ready. Total samples: {len(self.index_map)}")
+class PairDataset(Dataset):
+    """
+    每個樣本: (input, target)
+        input  shape = (INPUT_LEN, num_edges + 3)   ← edges + sin/cos/gap
+        target shape = (PRED_HORIZON, num_edges)
+    """
+    def __init__(self, pair_list, edge_ids, scaler, csv_cache):
+        self.edge_ids = edge_ids
+        self.num_edges = len(edge_ids)
+        self.scaler = scaler
+        self.cache = csv_cache
+        # 只留下兩端 CSV 都已成功 preload 的 pair
+        self.pair_list = [
+            (a, b, g) for a, b, g in pair_list if a in csv_cache and b in csv_cache
+        ]
+        # 額外過濾: 若 A 的 max < log1p(5),代表幾乎無車流,跳過
+        threshold = np.log1p(5).astype(np.float32)
+        kept = []
+        for a, b, g in self.pair_list:
+            a_arr = self.cache[a][:INPUT_LEN]
+            a_max = float(np.log1p(a_arr).max())
+            if a_max >= threshold:
+                kept.append((a, b, g))
+        self.pair_list = kept
 
     def __len__(self):
-        return len(self.index_map)
+        return len(self.pair_list)
 
     def __getitem__(self, idx):
-        file_i, start_i = self.index_map[idx]
-        
-        # Retrieve full arrays from list (Reference only, cheap)
-        full_traf = self.traffic_list[file_i]
-        full_time = self.time_list[file_i]
-        
-        # Slice on-the-fly
-        # Input: [start : start + input]
-        x_traf = full_traf[start_i : start_i + self.input_len]
-        x_time = full_time[start_i : start_i + self.input_len]
-        
-        # Target: [start + input : start + input + horizon]
-        target_start = start_i + self.input_len
-        y_target = full_traf[target_start : target_start + self.pred_horizon]
-        
-        # Combined Input
+        path_a, path_b, gap = self.pair_list[idx]
+        arr_a = self.cache[path_a][:INPUT_LEN]
+        arr_b = self.cache[path_b][:PRED_HORIZON]
+        x_traf = self.scaler.transform(arr_a)
+        y_target = self.scaler.transform(arr_b)
+        x_time = build_time_features(os.path.basename(path_a), INPUT_LEN, gap)
         x_comb = np.hstack([x_traf, x_time])
-        
-        return torch.tensor(x_comb, dtype=torch.float32), torch.tensor(y_target, dtype=torch.float32)
+        return (
+            torch.tensor(x_comb, dtype=torch.float32),
+            torch.tensor(y_target, dtype=torch.float32),
+        )
 
-dataset = LazySequenceDataset(traffic_pieces, time_pieces, INPUT_LEN, PRED_HORIZON)
-
-if len(dataset) == 0:
-    print("Error: Dataset empty.")
-    exit(1)
-
-# 時序切割 (保留時間順序，避免資料洩漏)
-# index_map 已按 (file_idx, start) 建立，整體是時間順序排列
-split = int(len(dataset) * 0.9)
-train_indices = np.arange(split)
-val_indices = np.arange(split, len(dataset))
-
-# Use Subset with original Lazy dataset
-train_ds = Subset(dataset, train_indices)
-val_ds = Subset(dataset, val_indices)
-
-# num_workers=0 to avoid pickling overhead on Windows, or use small number
-train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True, num_workers=0, pin_memory=True)
-val_loader = DataLoader(val_ds, batch_size=BATCH_SIZE, shuffle=False, num_workers=0, pin_memory=True)
 
 # =================================================
-# 4. Model (Sequence Output)
+# 6. Model
 # =================================================
 class GRUSequence(nn.Module):
-    def __init__(self, num_edges, hidden_dim, num_layers, horizon, dropout=0.2):
+    """
+    GRU + Attention + Decoder。
+    input  shape = (B, INPUT_LEN, num_edges + input_extra_features)
+    output shape = (B, PRED_HORIZON, num_edges)
+
+    input_extra_features:
+        新版 (pair model): 3 (sin/cos/gap)
+        舊版 (sliding):    2 (sin/cos)
+    """
+    def __init__(self, num_edges, hidden_dim, num_layers, horizon, dropout=0.2,
+                 input_extra_features=3):
         super().__init__()
         self.horizon = horizon
         self.num_edges = num_edges
-
         self.gru = nn.GRU(
-            input_size=num_edges + 2,
+            input_size=num_edges + input_extra_features,
             hidden_size=hidden_dim,
             num_layers=num_layers,
             batch_first=True,
-            dropout=dropout if num_layers > 1 else 0
+            dropout=dropout if num_layers > 1 else 0,
         )
-        # Attention: 對所有時步的 hidden state 做加權平均
         self.attn = nn.Linear(hidden_dim, 1)
-
-        # 分層解碼: hidden_dim → hidden_dim//2 → edges*horizon
         mid = hidden_dim // 2
         self.decoder = nn.Sequential(
             nn.Linear(hidden_dim, mid),
@@ -236,91 +312,410 @@ class GRUSequence(nn.Module):
         )
 
     def forward(self, x):
-        out, _ = self.gru(x)                          # (B, T, H)
-        attn_w = torch.softmax(self.attn(out), dim=1) # (B, T, 1)
-        context = (attn_w * out).sum(dim=1)           # (B, H)
+        out, _ = self.gru(x)                            # (B, T, H)
+        attn_w = torch.softmax(self.attn(out), dim=1)   # (B, T, 1)
+        context = (attn_w * out).sum(dim=1)             # (B, H)
         pred_flat = self.decoder(context)
-        pred_seq = pred_flat.view(-1, self.horizon, self.num_edges)
-        return pred_seq
+        return pred_flat.view(-1, self.horizon, self.num_edges)
 
-model = GRUSequence(num_edges, HIDDEN_DIM, NUM_LAYERS, PRED_HORIZON, DROPOUT).to(DEVICE)
-optimizer = torch.optim.Adam(model.parameters(), lr=LR)
 
-# =================================================
-# 5. Weighted Sequence Loss
-# =================================================
 def weighted_sequence_loss(pred, target):
-    # Log1p of 10 cars ~ 2.4
-    threshold = 2.4 
+    """高流量 edge (target > log1p(10) ≈ 2.4) 權重 5×。"""
+    threshold = 2.4
     weights = 1.0 + 4.0 * (target > threshold).float()
     loss = (pred - target) ** 2
-    loss = loss * weights
-    return loss.mean()
+    return (loss * weights).mean()
+
 
 # =================================================
-# 6. Training Loop
+# 7. Training
 # =================================================
-print(f"Start Training V2 (Lazy Dataset, Log1p)...")
-min_val = float("inf")
-best_state = None
-pat = 0
+def run_training(args):
+    print(f"Device: {DEVICE}")
+    print(f"Data dir: {args.dir}")
 
-for epoch in range(EPOCHS):
-    model.train()
-    tr_loss = 0.0
-    
-    for i, (bx, by) in enumerate(tqdm(train_loader, desc=f"Epoch {epoch+1} Training")):
-        bx, by = bx.to(DEVICE), by.to(DEVICE)
-        optimizer.zero_grad()
-        pred = model(bx)
-        loss = weighted_sequence_loss(pred, by)
-        loss.backward()
-        optimizer.step()
-        tr_loss += loss.item() * bx.size(0)
-        
-        if i % 500 == 0: # Print less frequently
-            p_mean = pred.mean().item()
-            # print(f"  Batch {i}: Loss={loss.item():.4f}")
+    pairs = find_csv_pairs(args.dir)
+    if not pairs:
+        print("No valid pairs found. Exiting.")
+        return
+    print(f"Found {len(pairs)} valid pairs")
 
-    tr_loss /= len(train_indices)
-    
-    model.eval()
-    va_loss = 0.0
-    with torch.no_grad():
-        for vx, vy in val_loader:
-            vx, vy = vx.to(DEVICE), vy.to(DEVICE)
-            vp = model(vx)
-            va_loss += weighted_sequence_loss(vp, vy).item() * vx.size(0)
-    va_loss /= len(val_indices)
-    
-    print(f"Epoch {epoch+1:03d} | Train {tr_loss:.6f} | Val {va_loss:.6f}", end="")
-    
-    if va_loss < min_val:
-        min_val = va_loss
-        best_state = {
-            "model_state_dict": model.state_dict(),
-            "scaler_type": "log1p", 
-            "scaler": scaler,
-            "edge_ids": all_edges,
-            "config": {
-                "input_len": INPUT_LEN,
-                "pred_horizon": PRED_HORIZON,
-                "hidden_dim": HIDDEN_DIM,
-                "num_layers": NUM_LAYERS,
-                "model_type": "gru_sequence_log1p"
+    gaps = [g for _, _, g in pairs]
+    print(f"  Gap minutes: min={min(gaps):.2f}, max={max(gaps):.2f}, mean={sum(gaps)/len(gaps):.2f}")
+
+    if args.max_pairs and args.max_pairs > 0:
+        pairs = pairs[:args.max_pairs]
+        print(f"  Limited to first {len(pairs)} pairs (--max-pairs)")
+
+    # Edge union (canonical)
+    all_paths = sorted({p for pa, pb, _ in pairs for p in (pa, pb)})
+    edge_ids = build_edge_union(all_paths, rebuild=args.rebuild_cache)
+    num_edges = len(edge_ids)
+
+    # 預載入所有 CSV (節省每 epoch 重複 I/O)
+    n_steps = max(INPUT_LEN, PRED_HORIZON)
+    csv_cache = preload_csvs(all_paths, edge_ids, n_steps)
+
+    # 切分 (時序: 最後 10% 當 val,避免時序洩漏)
+    split = int(len(pairs) * 0.9)
+    train_pairs = pairs[:split]
+    val_pairs = pairs[split:]
+
+    scaler = Log1pScaler()
+    train_ds = PairDataset(train_pairs, edge_ids, scaler, csv_cache)
+    val_ds = PairDataset(val_pairs, edge_ids, scaler, csv_cache)
+    print(f"Train: {len(train_ds)} pairs, Val: {len(val_ds)} pairs (after filtering)")
+
+    if len(train_ds) == 0:
+        print("Train set empty after filtering. Exiting.")
+        return
+
+    train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True,
+                              num_workers=0, pin_memory=True)
+    val_loader = DataLoader(val_ds, batch_size=BATCH_SIZE, shuffle=False,
+                            num_workers=0, pin_memory=True)
+
+    model = GRUSequence(num_edges, HIDDEN_DIM, NUM_LAYERS, PRED_HORIZON, DROPOUT,
+                        input_extra_features=3).to(DEVICE)
+    optimizer = torch.optim.Adam(model.parameters(), lr=LR)
+
+    print(f"\nStart training (pair-based, gap feature ON)")
+    print(f"Model: input_size={num_edges + 3}, hidden={HIDDEN_DIM}, layers={NUM_LAYERS}, horizon={PRED_HORIZON}")
+    print(f"Hyperparams: epochs={EPOCHS}, batch={BATCH_SIZE}, lr={LR}, patience={PATIENCE}\n")
+
+    min_val = float("inf")
+    best_state = None
+    pat = 0
+
+    for epoch in range(EPOCHS):
+        model.train()
+        tr_loss = 0.0
+        n_train = 0
+        for bx, by in tqdm(train_loader, desc=f"Epoch {epoch + 1} Train"):
+            bx, by = bx.to(DEVICE), by.to(DEVICE)
+            optimizer.zero_grad()
+            pred = model(bx)
+            loss = weighted_sequence_loss(pred, by)
+            loss.backward()
+            optimizer.step()
+            tr_loss += loss.item() * bx.size(0)
+            n_train += bx.size(0)
+        tr_loss /= max(n_train, 1)
+
+        model.eval()
+        va_loss = 0.0
+        n_val = 0
+        with torch.no_grad():
+            for vx, vy in val_loader:
+                vx, vy = vx.to(DEVICE), vy.to(DEVICE)
+                vp = model(vx)
+                va_loss += weighted_sequence_loss(vp, vy).item() * vx.size(0)
+                n_val += vx.size(0)
+        va_loss /= max(n_val, 1)
+
+        print(f"Epoch {epoch + 1:03d} | Train {tr_loss:.6f} | Val {va_loss:.6f}", end="")
+
+        if va_loss < min_val:
+            min_val = va_loss
+            best_state = {
+                "model_state_dict": model.state_dict(),
+                "scaler_type": "log1p",
+                "scaler": scaler,
+                "edge_ids": edge_ids,
+                "config": {
+                    "input_len": INPUT_LEN,
+                    "pred_horizon": PRED_HORIZON,
+                    "hidden_dim": HIDDEN_DIM,
+                    "num_layers": NUM_LAYERS,
+                    "model_type": "gru_pair_log1p_v1",
+                    "gap_feature": True,
+                    "input_basis": "pair",
+                },
             }
-        }
-        print(" * Best")
-        pat = 0
-    else:
-        print(f" | Pat {pat+1}/{PATIENCE}")
-        pat += 1
-        if pat >= PATIENCE:
-            print("\nEarly stopping.")
-            break
+            print(" * Best")
+            pat = 0
+        else:
+            print(f" | Pat {pat + 1}/{PATIENCE}")
+            pat += 1
+            if pat >= PATIENCE:
+                print("\nEarly stopping.")
+                break
 
-if best_state:
-    torch.save(best_state, MODEL_PATH)
-    print(f"Saved best model to {MODEL_PATH}")
-else:
-    print("Training failed.")
+    if best_state:
+        torch.save(best_state, MODEL_PATH)
+        print(f"\nSaved best model to {MODEL_PATH}")
+        print(f"  Best val loss: {min_val:.6f}")
+    else:
+        print("\nTraining failed (no best state saved).")
+
+
+# =================================================
+# 8. Evaluation
+# =================================================
+def _register_legacy_classes():
+    """讓 torch.load 能 unpickle 自訂類別。"""
+    main_module = sys.modules.get("__main__")
+    if main_module is None:
+        return
+    if not hasattr(main_module, "Log1pScaler"):
+        setattr(main_module, "Log1pScaler", Log1pScaler)
+    if not hasattr(main_module, "GRUSequence"):
+        setattr(main_module, "GRUSequence", GRUSequence)
+
+
+def load_checkpoint(model_path):
+    print(f"Loading model from {model_path} ...")
+    _register_legacy_classes()
+    ckpt = torch.load(model_path, map_location=DEVICE, weights_only=False)
+    config = ckpt.get("config", {})
+    edge_ids = ckpt.get("edge_ids") or ckpt.get("edge_ids_list") or []
+    num_edges = len(edge_ids)
+
+    input_extra = 3 if config.get("gap_feature", False) else 2
+
+    model = GRUSequence(
+        num_edges,
+        config.get("hidden_dim", HIDDEN_DIM),
+        config.get("num_layers", NUM_LAYERS),
+        config.get("pred_horizon", PRED_HORIZON),
+        input_extra_features=input_extra,
+    ).to(DEVICE)
+    model.load_state_dict(ckpt["model_state_dict"])
+    model.eval()
+
+    scaler = ckpt.get("scaler") or Log1pScaler()
+    print(f"  num_edges={num_edges}, model_type={config.get('model_type', 'unknown')}, "
+          f"gap_feature={config.get('gap_feature', False)}")
+    return model, scaler, edge_ids, config
+
+
+def evaluate_pair(input_csv, target_csv, model_path=None, gap_minutes=None, bundle=None):
+    """
+    Returns dict: input_csv, target_csv, gap_minutes,
+                  overall_mae, overall_rmse, per_step_mae (list len=PRED_HORIZON)
+    """
+    if bundle is None:
+        bundle = load_checkpoint(model_path)
+    model, scaler, edge_ids, config = bundle
+
+    input_len = config.get("input_len", INPUT_LEN)
+    pred_horizon = config.get("pred_horizon", PRED_HORIZON)
+
+    res_a = load_csv_first_n_steps(input_csv, edge_ids, input_len)
+    res_b = load_csv_first_n_steps(target_csv, edge_ids, pred_horizon)
+    if res_a is None:
+        raise ValueError(f"Input CSV 不足 {input_len} 步或讀取失敗: {input_csv}")
+    if res_b is None:
+        raise ValueError(f"Target CSV 不足 {pred_horizon} 步或讀取失敗: {target_csv}")
+    arr_a, fname_a = res_a
+    arr_b, _ = res_b
+
+    # gap_minutes 推算 (若未指定)
+    if gap_minutes is None:
+        dt_a = parse_timestamp(os.path.basename(input_csv))
+        dt_b = parse_timestamp(os.path.basename(target_csv))
+        if dt_a and dt_b:
+            gap_minutes = abs((dt_b - dt_a).total_seconds()) / 60.0
+        else:
+            gap_minutes = 5.0
+
+    # 前向
+    x_traf = scaler.transform(arr_a)
+    if config.get("gap_feature", False):
+        x_time = build_time_features(fname_a, input_len, gap_minutes)
+    else:
+        # legacy 模型: 只用 sin/cos 兩欄
+        x_time = build_time_features(fname_a, input_len, gap_minutes)[:, :2]
+    x_comb = np.hstack([x_traf, x_time])
+    x_tensor = torch.tensor(x_comb, dtype=torch.float32).unsqueeze(0).to(DEVICE)
+
+    with torch.no_grad():
+        pred_scaled = model(x_tensor).cpu().numpy()[0]
+    pred_real = np.clip(scaler.inverse_transform(pred_scaled), 0.0, None)
+
+    abs_err = np.abs(pred_real - arr_b)
+    sq_err = (pred_real - arr_b) ** 2
+    return {
+        "input_csv": os.path.basename(input_csv),
+        "target_csv": os.path.basename(target_csv),
+        "gap_minutes": float(gap_minutes),
+        "overall_mae": float(np.mean(abs_err)),
+        "overall_rmse": float(np.sqrt(np.mean(sq_err))),
+        "per_step_mae": [float(np.mean(abs_err[t])) for t in range(pred_horizon)],
+    }
+
+
+def print_eval_result(res):
+    print(f"\n[Pair Eval] {res['input_csv']}  →  {res['target_csv']}")
+    print(f"  Gap         : {res['gap_minutes']:.2f} min")
+    print(f"  Overall MAE : {res['overall_mae']:.4f}")
+    print(f"  Overall RMSE: {res['overall_rmse']:.4f}")
+    print(f"  Per-step MAE (each step = 20s):")
+    for i, mae in enumerate(res["per_step_mae"]):
+        sec = (i + 1) * 20
+        bar = "█" * int(mae * 20)
+        print(f"    +{sec:>3d}s (step {i + 1:2d}): {mae:.4f}  {bar}")
+
+
+def evaluate_batch(args):
+    pairs = find_csv_pairs(args.dir)
+    print(f"Found {len(pairs)} pairs in {args.dir}")
+    if not pairs:
+        return
+
+    if args.max_pairs and args.max_pairs > 0:
+        pairs = pairs[:args.max_pairs]
+        print(f"Limited to first {len(pairs)} pairs (--max-pairs)")
+
+    bundle = load_checkpoint(args.model)
+
+    overall_maes = []
+    overall_rmses = []
+    per_step_acc = np.zeros(PRED_HORIZON, dtype=np.float64)
+    n_success = n_fail = 0
+
+    for path_a, path_b, gap in tqdm(pairs, desc="Evaluating"):
+        try:
+            res = evaluate_pair(path_a, path_b, gap_minutes=gap, bundle=bundle)
+            overall_maes.append(res["overall_mae"])
+            overall_rmses.append(res["overall_rmse"])
+            per_step_acc += np.array(res["per_step_mae"])
+            n_success += 1
+        except Exception:
+            n_fail += 1
+
+    if n_success == 0:
+        print("All pairs failed evaluation.")
+        return
+
+    per_step_mean = per_step_acc / n_success
+    print("\n========== Batch Eval Summary ==========")
+    print(f"Pairs evaluated: {n_success} (skipped {n_fail})")
+    print(f"Overall MAE  : mean={np.mean(overall_maes):.4f}, "
+          f"median={np.median(overall_maes):.4f}, "
+          f"p90={np.percentile(overall_maes, 90):.4f}")
+    print(f"Overall RMSE : mean={np.mean(overall_rmses):.4f}, "
+          f"median={np.median(overall_rmses):.4f}")
+    print(f"Per-step MAE (mean over all pairs):")
+    for i, mae in enumerate(per_step_mean):
+        sec = (i + 1) * 20
+        bar = "█" * int(mae * 20)
+        print(f"  +{sec:>3d}s (step {i + 1:2d}): {mae:.4f}  {bar}")
+    monotonic = all(per_step_mean[i] <= per_step_mean[i + 1] + 1e-6
+                    for i in range(len(per_step_mean) - 1))
+    print(f"Monotonic per-step degradation: {'YES' if monotonic else 'NO'}")
+
+    # ---------- Step 1 驗收 (對照 INTEGRATION_PAIR_MODEL.md) ----------
+    mae_mean = float(np.mean(overall_maes))
+    mae_median = float(np.median(overall_maes))
+    rmse_mean = float(np.mean(overall_rmses))
+    step1_mae = float(per_step_mean[0])
+    step_last_mae = float(per_step_mean[-1])
+    ratio_last_first = (step_last_mae / step1_mae) if step1_mae > 0 else float("inf")
+    total_attempted = n_success + n_fail
+    skip_ratio = (n_fail / total_attempted) if total_attempted > 0 else 0.0
+
+    checks = [
+        ("整體 MAE mean ≤ 3.0",
+         mae_mean <= 3.0,
+         f"mean={mae_mean:.4f} (threshold ≤ 3.0)"),
+        ("整體 MAE median ≤ 2.5",
+         mae_median <= 2.5,
+         f"median={mae_median:.4f} (threshold ≤ 2.5)"),
+        ("Monotonic per-step degradation",
+         monotonic,
+         f"{'YES' if monotonic else 'NO'}"),
+        ("第 1 步 vs 最末步 MAE 比值 < 2.5",
+         ratio_last_first < 2.5,
+         f"step1={step1_mae:.4f}, step{len(per_step_mean)}={step_last_mae:.4f}, "
+         f"ratio={ratio_last_first:.3f} (threshold < 2.5)"),
+        ("整體 RMSE mean ≤ 6.0",
+         rmse_mean <= 6.0,
+         f"mean={rmse_mean:.4f} (threshold ≤ 6.0)"),
+        ("失敗 pair 比例 < 5%",
+         skip_ratio < 0.05,
+         f"skipped={n_fail}/{total_attempted} = {skip_ratio*100:.2f}% (threshold < 5%)"),
+    ]
+
+    print("\n========== Step 1 驗收檢查 ==========")
+    n_pass = 0
+    for name, passed, detail in checks:
+        tag = "[PASS]" if passed else "[FAIL]"
+        print(f"  {tag} {name}")
+        print(f"         → {detail}")
+        if passed:
+            n_pass += 1
+
+    all_pass = n_pass == len(checks)
+    print(f"\n通過: {n_pass}/{len(checks)}")
+    if all_pass:
+        print(">>> 全部通過,可進行 INTEGRATION_PAIR_MODEL.md Step 2 整合 <<<")
+    else:
+        print(">>> 未全部通過,請依 INTEGRATION_PAIR_MODEL.md 附錄 C 調整 hyperparameters <<<")
+
+
+# =================================================
+# 9. Dry-run (僅統計 pair,不跑模型)
+# =================================================
+def dry_run(args):
+    pairs = find_csv_pairs(args.dir)
+    print(f"Found {len(pairs)} pairs in {args.dir}")
+    if not pairs:
+        return
+    gaps = [g for _, _, g in pairs]
+    print(f"Gap minutes: min={min(gaps):.2f}, max={max(gaps):.2f}, mean={sum(gaps)/len(gaps):.2f}")
+    print("Gap distribution:")
+    for lo, hi in [(3, 5), (5, 7), (7, 9), (9, 11), (11, 15)]:
+        n = sum(1 for g in gaps if lo <= g < hi)
+        pct = 100.0 * n / len(gaps)
+        print(f"  [{lo:>2d}, {hi:>2d}) min: {n:>5d} pairs ({pct:5.1f}%)")
+    print("First 3 pairs:")
+    for pa, pb, g in pairs[:3]:
+        print(f"  {os.path.basename(pa)}  →  {os.path.basename(pb)}  ({g:.2f} min)")
+    print("Last 3 pairs:")
+    for pa, pb, g in pairs[-3:]:
+        print(f"  {os.path.basename(pa)}  →  {os.path.basename(pb)}  ({g:.2f} min)")
+
+
+# =================================================
+# 10. CLI
+# =================================================
+def main():
+    parser = argparse.ArgumentParser(
+        description="Pair-based GRU 5-minute traffic prediction "
+                    "(train / eval / eval-batch).")
+    parser.add_argument("--mode", choices=["train", "eval", "eval-batch"], default="train",
+                        help="train (預設) | eval (單組 pair) | eval-batch (整個資料夾)")
+    parser.add_argument("--input", help="[eval] 輸入 CSV 路徑")
+    parser.add_argument("--target", help="[eval] 目標 CSV 路徑")
+    parser.add_argument("--gap", type=float, default=None,
+                        help="[eval] gap_minutes (未指定則從檔名推算)")
+    parser.add_argument("--dir", default=DATA_DIR,
+                        help="[train/eval-batch] CSV 資料夾路徑")
+    parser.add_argument("--model", default=MODEL_PATH,
+                        help="模型 checkpoint 路徑 (預設 gru_traffic_model_pair.pth)")
+    parser.add_argument("--rebuild-cache", action="store_true",
+                        help="強制重建 data/edge_ids_union.json")
+    parser.add_argument("--max-pairs", type=int, default=0,
+                        help="限制 pair 數量 (除錯用,0 = 全部)")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="[eval-batch] 僅統計 pair 不跑模型")
+    args = parser.parse_args()
+
+    if args.mode == "train":
+        run_training(args)
+    elif args.mode == "eval":
+        if not args.input or not args.target:
+            parser.error("--input 與 --target 為 eval 模式必填")
+        res = evaluate_pair(args.input, args.target, model_path=args.model,
+                            gap_minutes=args.gap)
+        print_eval_result(res)
+    elif args.mode == "eval-batch":
+        if args.dry_run:
+            dry_run(args)
+        else:
+            evaluate_batch(args)
+
+
+if __name__ == "__main__":
+    main()

@@ -8,7 +8,9 @@ from traffic_light_optimizer import run_prediction_driven_strategy
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(BASE_DIR)
 TRAFFIC_LIGHT_DEMO_DIR = os.path.join(ROOT_DIR, "data", "traffic_light_demo")
-MODEL_PATH = os.path.join(ROOT_DIR, "gru_traffic_model.pth")
+# 預設用 pair-based 模型 (gap_feature=True, model_type=gru_pair_log1p_v1)
+# Rollback: 改回 "gru_traffic_model.pth" 即可
+MODEL_PATH = os.path.join(ROOT_DIR, "gru_traffic_model_pair.pth")
 
 
 def find_demo_input_csv():
