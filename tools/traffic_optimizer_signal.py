@@ -1,7 +1,51 @@
+import os
 import xml.etree.ElementTree as ET
 from collections import defaultdict
 
 import pandas as pd
+
+
+# ─── SUMO 號誌物理約束 ─────────────────────────────────────────────────────────
+# 違反這些下限的 phase 會在 SUMO 模擬中導致非法相位切換或行人/車輛無安全通過
+# 時間。預設值是道路工程的保守下限（FHWA MUTCD 與 SUMO 官方範例皆採用）。
+# 若你的路口需更嚴格（例如有行人保護相位），可透過環境變數覆蓋。
+MIN_YELLOW_DURATION = float(os.environ.get("TRAFFICVISION_MIN_YELLOW", "3.0"))
+MIN_ALL_RED_DURATION = float(os.environ.get("TRAFFICVISION_MIN_ALL_RED", "1.0"))
+MIN_GREEN_DURATION = float(os.environ.get("TRAFFICVISION_MIN_GREEN", "5.0"))
+
+
+def classify_phase_kind(state):
+    """根據 SUMO state 字串判斷 phase 種類。
+
+    state 每個字元代表一個 controlled connection：
+      r/s = red / red-stop
+      y/Y = yellow（清空相位）
+      g/G = green（小寫 g 為 yield-green）
+      o/O = off / blinking
+    判定優先序：yellow（含 'y'/'Y'）> all-red（全 r/s）> green（含 G/g）
+    """
+    if not state:
+        return "unknown"
+    s = str(state)
+    if any(c in ("y", "Y") for c in s):
+        return "yellow"
+    if all(c in ("r", "s", "R", "S") for c in s):
+        return "all_red"
+    if any(c in ("g", "G") for c in s):
+        return "green"
+    return "other"
+
+
+def _physics_min_duration(state):
+    """回傳此 phase 應有的最低秒數（依其 kind）。"""
+    kind = classify_phase_kind(state)
+    if kind == "yellow":
+        return MIN_YELLOW_DURATION
+    if kind == "all_red":
+        return MIN_ALL_RED_DURATION
+    if kind == "green":
+        return MIN_GREEN_DURATION
+    return 0.0
 
 
 def _format_num(value):
@@ -118,8 +162,16 @@ def get_phase_duration_bounds(phase):
 
 
 def clamp_phase_duration(phase, new_duration):
+    """夾在 [min, max] 之間，同時不得低於 SUMO 物理下限（黃燈/全紅/綠燈）。
+
+    黑箱下限（hasMinDur=False 時推算的 base*0.4）對黃燈這種固定 3s 的 phase
+    來說可能算出 1.2s — 已違反道路工程下限。此處強制把物理下限疊加進去。
+    """
     min_duration, max_duration = get_phase_duration_bounds(phase)
-    return max(min_duration, min(max_duration, float(new_duration)))
+    physics_floor = _physics_min_duration(phase.get("state", ""))
+    effective_min = max(min_duration, physics_floor)
+    effective_max = max(effective_min, max_duration)
+    return max(effective_min, min(effective_max, float(new_duration)))
 
 
 def build_updated_phase(phase, duration):
