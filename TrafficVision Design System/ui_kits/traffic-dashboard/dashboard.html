@@ -214,16 +214,19 @@ function TopBar({ time, lastFetch, refreshing, onRefresh, simStatus, onStartOpti
 /* ══════════════════════════════════════════════════
    METRICS PANEL (computed from live roads)
 ══════════════════════════════════════════════════ */
-function MetricsPanel({ roads }) {
+function MetricsPanel({ roads, dataKey = 'cur' }) {
   const ff="'Inter',system-ui,sans-serif", body="'Noto Sans TC','PingFang TC',sans-serif";
   const bgCard='#0f1629', bgElev='#162036', borderMed='rgba(99,130,200,0.25)', shadow='0 0 0 1px rgba(99,130,200,0.25),0 1px 3px rgba(0,0,0,0.40)';
   const n = roads.length;
-  const roadsWithData = roads.filter(r => r.cur.spd !== null);
+  /* 依當前模式 (cur / pred / opt) 取對應的指標欄位；
+     不然 pred / opt 模式下 edgeMonitorRoads 的 cur 是空殼，所有統計都會變 -- */
+  const _d = (r) => r[dataKey] || r.cur || {};
+  const roadsWithData = roads.filter(r => _d(r).spd != null);
   const hasData = roadsWithData.length > 0;
-  const avgSpd = hasData ? +(roadsWithData.reduce((s,r)=>s+r.cur.spd,0)/roadsWithData.length).toFixed(1) : null;
-  const totalVol = hasData ? roadsWithData.reduce((s,r)=>s+(r.cur.vol||0),0) : null;
-  const congested = hasData ? roadsWithData.filter(r=>r.cur.moe===2).length : null;
-  const free = hasData ? roadsWithData.filter(r=>r.cur.moe===0).length : null;
+  const avgSpd = hasData ? +(roadsWithData.reduce((s,r)=>s+_d(r).spd,0)/roadsWithData.length).toFixed(1) : null;
+  const totalVol = hasData ? roadsWithData.reduce((s,r)=>s+(_d(r).vol||0),0) : null;
+  const congested = hasData ? roadsWithData.filter(r=>_d(r).moe===2).length : null;
+  const free = hasData ? roadsWithData.filter(r=>_d(r).moe===0).length : null;
   const sigCount = signalData.length;
 
   const cards = [
@@ -370,7 +373,31 @@ function TrafficMap({ viewMode, roads, heatmapData, baselineHeatmapData, current
       const maxVol  = activeHeatmap.meta.max_vol  || activeHeatmap.meta.max_count || 1;
       const modeLabel = {cur:'當前車流',pred:'5分鐘預測',opt:'優化後預測',heatmap:'車流密度'}[viewMode]||'車流密度';
 
-      Object.entries(activeHeatmap.edges).forEach(([eid,ed]) => {
+      /* 兩階段渲染：先畫無資料骨架 → 再畫有資料彩色線，後者自然蓋在上面。
+         避免單一 forEach 順序裡，後處理的灰骨架蓋掉前面的綠線。
+
+         注意：_entryHasData 的判斷必須與下方主迴圈裡的 hasData 完全一致，
+         否則一條 edge 可能被排序為「無資料」（排到前面 → 被後面蓋住）但
+         主迴圈又判定為「有資料」並彩色繪製，視覺上就被覆蓋住消失。 */
+      const _entryHasData = ([_eid, ed]) => {
+        const vol = ed.vol || ed.count || 0;
+        if (isCur) {
+          const nm = ed.name || '';
+          for (const p in vdByPrefix) {
+            if (nm.startsWith(p)) {
+              const vSpd = vdByPrefix[p];
+              return vSpd != null && vSpd > 0;
+            }
+          }
+          return false;
+        }
+        return vol > 0;
+      };
+      const sortedEntries = Object.entries(activeHeatmap.edges)
+        .slice()
+        .sort((a, b) => (_entryHasData(a) ? 1 : 0) - (_entryHasData(b) ? 1 : 0));
+
+      sortedEntries.forEach(([eid,ed]) => {
         if (!ed.shape || ed.shape.length < 2) return;
 
         /* ── 資料欄位 ── */
@@ -382,18 +409,22 @@ function TrafficMap({ viewMode, roads, heatmapData, baselineHeatmapData, current
           for (const p in vdByPrefix) { if (nm.startsWith(p)) { vdSpd = vdByPrefix[p]; break; } }
         }
         const spdKmh = isCur ? (vdSpd || 0) : (ed.spd || 0);
-        const hasData = isCur ? (vdSpd != null && vdSpd > 0) : (spdKmh > 0 || vol > 0);
+        /* hasData 條件：
+             cur 模式 — 只要 VD 有速度就算有資料（跟下方監控列表一致；
+                        SUMO 模擬 vol 可能為 0 不代表真的沒車經過）
+             pred / opt — SUMO 必須有車流量才算 */
+        const hasData = isCur
+          ? (vdSpd != null && vdSpd > 0)
+          : (vol > 0);
 
-        /* ── 無資料路段：暗灰骨架線，顯示路網覆蓋 ── */
+        /* ── 無車流資料路段：藍灰骨架（#8b97b3），不綁 popup —
+           點擊不彈窗，避免顯示誤導性的「0 輛 / 0%」面板。 */
         if (!hasData) {
-          const skeleton = L.polyline(ed.shape, {color:'#1e3050', weight:1.5, opacity:0.55, lineCap:'round', lineJoin:'round'}).addTo(map);
-          layersRef.current.push(skeleton);
-          const note = isCur ? '無 VD 感測資料' : 'SUMO 路網 · 無模擬流量';
-          skeleton.bindPopup(`<div style="padding:10px 14px;min-width:170px">
-            <div style="font-family:'Noto Sans TC',sans-serif;font-size:10px;color:#4e6080;margin-bottom:3px">${note}</div>
-            <div style="font-family:'Noto Sans TC',sans-serif;font-size:12px;font-weight:600;color:#94a3b8;margin-bottom:4px">${ed.name||'未命名路段'}</div>
-            <div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#2a3a5a">${eid}</div>
-          </div>`,{maxWidth:200,minWidth:170});
+          const noDataCol = '#8b97b3';
+          const sk1 = L.polyline(ed.shape, {color:noDataCol, weight:8,  opacity:0.08, lineCap:'round', lineJoin:'round', interactive:false}).addTo(map);
+          const sk2 = L.polyline(ed.shape, {color:noDataCol, weight:4,  opacity:0.18, lineCap:'round', lineJoin:'round', interactive:false}).addTo(map);
+          const sk3 = L.polyline(ed.shape, {color:noDataCol, weight:2,  opacity:0.85, lineCap:'round', lineJoin:'round', interactive:false}).addTo(map);
+          layersRef.current.push(sk1, sk2, sk3);
           return;
         }
 
@@ -425,24 +456,10 @@ function TrafficMap({ viewMode, roads, heatmapData, baselineHeatmapData, current
                <span style="margin-left:auto;font-family:'Noto Sans TC',sans-serif;font-size:11px;font-weight:600;color:${col};background:${col}22;border-radius:4px;padding:2px 7px">${dispSpd<10?'壅塞':dispSpd<20?'緩慢':dispSpd<35?'普通':'暢通'}</span>
              </div>`
           : '';
-        const occPct = Math.min(100, Math.round(occ));
         const popup = `<div style="padding:10px 14px;min-width:190px">
           <div style="font-family:'Noto Sans TC',sans-serif;font-size:10px;color:#4e6080;margin-bottom:3px">${modeLabel} · ${isCur ? 'VD 車速 · 路網車流' : 'SUMO 模擬'}</div>
           <div style="font-family:'Noto Sans TC',sans-serif;font-size:12px;font-weight:600;color:#f1f5f9;margin-bottom:8px">${ed.name||'未命名路段'}</div>
           ${spdLine}
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:8px">
-            <div style="background:#0a0f1e;border-radius:5px;padding:6px 9px">
-              <div style="font-family:'Noto Sans TC',sans-serif;font-size:9px;color:#4e6080;margin-bottom:2px">車流量</div>
-              <div style="font-family:'Inter',sans-serif;font-size:15px;font-weight:700;color:#f1f5f9;font-variant-numeric:tabular-nums">${vol} <span style="font-size:10px;color:#94a3b8;font-weight:400">輛</span></div>
-            </div>
-            <div style="background:#0a0f1e;border-radius:5px;padding:6px 9px">
-              <div style="font-family:'Noto Sans TC',sans-serif;font-size:9px;color:#4e6080;margin-bottom:2px">佔有率</div>
-              <div style="font-family:'Inter',sans-serif;font-size:15px;font-weight:700;color:#f1f5f9;font-variant-numeric:tabular-nums">${occ} <span style="font-size:10px;color:#94a3b8;font-weight:400">%</span></div>
-            </div>
-          </div>
-          <div style="height:4px;background:#162036;border-radius:2px;overflow:hidden;margin-bottom:5px">
-            <div style="width:${occPct}%;height:100%;background:${col};border-radius:2px"></div>
-          </div>
           <div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#4e6080">${eid}</div>
         </div>`;
         line.bindPopup(popup,{maxWidth:220,minWidth:190});
@@ -1050,7 +1067,11 @@ function App() {
   const [signalApiRecords, setSignalApiRecords] = useState([]);
   const [chatMsgs, setChatMsgs] = useState(SAMPLE_MSGS);   // 提升到 App，避免切頁丟失對話
   const [apiError, setApiError] = useState(false);          // /api/traffic 連線失敗提示
+  const [forecastError, setForecastError] = useState(false); // /api/{roads,edges}/forecast 失敗提示
   const [forecastData, setForecastData] = useState({ pred:{}, opt:{} });
+  /* Edge 級預測 / 優化（132 條 named edges）— 取代舊版 pred/opt 模式下監控列表
+     只能看到 7 條主幹道聚合的問題；資料來自 /api/edges/forecast */
+  const [edgeForecast, setEdgeForecast] = useState({ pred:[], opt:[] });
 
   /* Load heatmap + road forecast from API, refresh every 5 minutes to match pipeline cycle */
   useEffect(() => {
@@ -1067,10 +1088,24 @@ function App() {
         .then(r => r.json())
         .then(d => { if (d && d.edges) setCurrentHeatmapData(d); })
         .catch(() => {});
-      fetch('/api/roads/forecast')
-        .then(r => r.json())
-        .then(d => { if (d && (d.pred || d.opt)) setForecastData({ pred: d.pred || {}, opt: d.opt || {} }); })
-        .catch(() => {});
+      /* D3: forecast endpoints 也要 no-store，避免 dashboard 顯示
+             /api/traffic 新值（已 no-store）+ forecast 舊值 的混合狀態。
+         D4: 任一 forecast 失敗都要讓使用者知道；之前 .catch(()=>{}) 把
+             timeout / 500 全吞掉，table 退回 7 行聚合資料卻無視覺提示。
+         allSettled 確保兩個 fetch 都跑完才一次 setForecastError，避免兩條
+         fetch 平行 + 各自掛 .finally 造成的 race。 */
+      Promise.allSettled([
+        fetch('/api/roads/forecast', { cache: 'no-store' })
+          .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+          .then(d => { if (d && (d.pred || d.opt)) setForecastData({ pred: d.pred || {}, opt: d.opt || {} }); }),
+        fetch('/api/edges/forecast', { cache: 'no-store' })
+          .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+          .then(d => { if (d && (Array.isArray(d.pred) || Array.isArray(d.opt))) setEdgeForecast({ pred: d.pred || [], opt: d.opt || [] }); }),
+      ]).then(results => {
+        const failed = results.filter(r => r.status === 'rejected');
+        failed.forEach(r => console.warn('[dashboard] forecast fetch 失敗:', r.reason && r.reason.message));
+        setForecastError(failed.length > 0);
+      });
     };
     load();
     const tid = setInterval(load, 300000);
@@ -1101,7 +1136,7 @@ function App() {
     setRefreshing(true);
     try {
       /* Try real API first */
-      const res = await fetch('/api/traffic', { signal: AbortSignal.timeout(3000) });
+      const res = await fetch('/api/traffic', { cache: 'no-store', signal: AbortSignal.timeout(3000) });
       if (res.ok) {
         const json = await res.json();
         if (json.data) {
@@ -1201,10 +1236,44 @@ function App() {
   const predRoads = useMemo(() => computePredRoads(liveRoads, forecastData.pred), [liveRoads, forecastData]);
   const optRoads  = useMemo(() => computeOptRoads(liveRoads, forecastData.opt),  [liveRoads, forecastData]);
   const displayRoads = mapMode === 'pred' ? predRoads : mapMode === 'opt' ? optRoads : liveRoads;
-  /* 監控列表/指標：當前車流(cur)模式顯示逐段 VD 路段（細分）；pred/opt 維持主幹道粒度（預測僅到主幹道層級） */
-  const monitorRoads = vdRoads.length ? vdRoads : displayRoads;
   const dataKey = mapMode==='pred'?'pred':mapMode==='opt'?'opt':'cur';
-  const tableDataKey = vdRoads.length ? 'cur' : dataKey;
+  /* Edge 級監控列表：把 /api/edges/forecast 的 132 條 named edges 攤平成
+     RoadTable 需要的 {id, name, pred:{...}, opt:{...}} 形狀。
+     同時保留每條 edge 的 cur 為 null（cur 模式下我們用 vdRoads，不會走這條） */
+  const edgeMonitorRoads = useMemo(() => {
+    const byId = new Map();
+    (edgeForecast.pred || []).forEach(e => {
+      byId.set(e.id, { id: e.id, name: e.name, cur: { spd:null, vol:null, occ:null, moe:null },
+                       pred: { spd:e.spd, vol:e.vol, occ:e.occ, moe:e.moe }, opt: null });
+    });
+    (edgeForecast.opt || []).forEach(e => {
+      const ent = byId.get(e.id) || { id: e.id, name: e.name, cur: { spd:null, vol:null, occ:null, moe:null }, pred: null };
+      ent.opt = { spd:e.spd, vol:e.vol, occ:e.occ, moe:e.moe };
+      byId.set(e.id, ent);
+    });
+    return Array.from(byId.values());
+  }, [edgeForecast]);
+  /* 監控列表來源：
+       - cur 模式 → vdRoads（64 條逐段 VD，真實感測器）
+       - pred / opt 模式 → edgeMonitorRoads（132 條 named SUMO edges，含 75 條全 0 骨架）
+         若 /api/edges/forecast 未回應，回退到 displayRoads（7 條聚合）以避免空列表
+     舊版兩個三元都鎖在 vdRoads/cur，導致 pred/opt 模式表格永遠顯示 VD 原始值。 */
+  const rawMonitorRoads =
+    (mapMode === 'cur' && vdRoads.length) ? vdRoads
+    : ((mapMode === 'pred' || mapMode === 'opt') && edgeMonitorRoads.length) ? edgeMonitorRoads
+    : displayRoads;
+  const tableDataKey = dataKey;
+  /* 過濾掉當前模式下「速度/車流/佔有率全為 0 或 null」的列。
+     pair model 在深夜時段會讓 ~75 條 edge 全 0；表格列出來只會讓使用者看到一堆 0
+     而失去意義。地圖上仍會用淡粉白骨架顯示這些 edge，所以路網覆蓋資訊不會遺失。 */
+  const monitorRoads = useMemo(() => {
+    return rawMonitorRoads.filter(r => {
+      const d = r[tableDataKey];
+      if (!d) return false;
+      const v = (x) => x != null && x !== 0;
+      return v(d.spd) || v(d.vol) || v(d.occ);
+    });
+  }, [rawMonitorRoads, tableDataKey]);
   const borderMed='rgba(99,130,200,0.25)';
   const mins=String(Math.floor(countdown/60)).padStart(2,'0');
   const secs=String(countdown%60).padStart(2,'0');
@@ -1221,9 +1290,15 @@ function App() {
           <span aria-hidden="true" style={{fontWeight:700}}>⚠</span> 無法連線到 API 伺服器，顯示的資料可能不是最新。請確認後端是否啟動。
         </div>
       )}
+      {/* 預測資料失敗提示 — 區別於 /api/traffic 失敗，這個只影響 5 分鐘預測 / 優化視圖 */}
+      {forecastError && !apiError && (
+        <div role="alert" style={{background:'rgba(234,179,8,0.10)',borderBottom:'1px solid rgba(234,179,8,0.30)',color:'#fde68a',fontFamily:"'Noto Sans TC','PingFang TC',sans-serif",fontSize:12,padding:'6px 16px',display:'flex',alignItems:'center',gap:8,flexShrink:0}}>
+          <span aria-hidden="true" style={{fontWeight:700}}>⚠</span> 無法取得 5 分鐘預測 / 優化資料（pipeline 可能跳過或尚未產出）。當前車流仍會正常顯示。
+        </div>
+      )}
 
       {/* Metrics */}
-      <MetricsPanel roads={monitorRoads}/>
+      <MetricsPanel roads={monitorRoads} dataKey={tableDataKey}/>
 
       {/* Body */}
       <div style={{flex:1,display:'grid',gridTemplateColumns:activeNav==='dashboard'?'186px 1fr 290px 272px':'186px 1fr',gap:10,padding:'10px 14px 12px',overflow:'hidden',minHeight:0}}>
