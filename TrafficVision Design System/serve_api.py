@@ -36,7 +36,7 @@ from typing import Optional
 
 try:
     from contextlib import asynccontextmanager
-    from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+    from fastapi import FastAPI, Response, WebSocket, WebSocketDisconnect
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import RedirectResponse, FileResponse
     from fastapi.staticfiles import StaticFiles
@@ -159,6 +159,8 @@ def _fetch_taipei_traffic() -> dict:
     with gzip.open(io.BytesIO(resp.content)) as gz:
         root = __import__("xml.etree.ElementTree", fromlist=["ElementTree"]).fromstring(gz.read())
     data: dict = {}
+    # Schema-drift visibility (mirrors tools/fetch_vd_data.py).
+    parse_errors: list = []
     for item in root[2]:
         section_name = ""
         fields: dict = {}
@@ -186,8 +188,13 @@ def _fetch_taipei_traffic() -> dict:
                 "EndLon":    _to_float_or_none(fields.get("EndWgsX")),
                 "EndLat":    _to_float_or_none(fields.get("EndWgsY")),
             }
-        except (ValueError, TypeError):
+        except (ValueError, TypeError) as exc:
+            parse_errors.append((section_name, str(exc)))
             continue
+    if parse_errors:
+        print(f"⚠  _fetch_taipei_traffic: {len(parse_errors)} 筆 NTUT 路段解析失敗（schema 漂移?）")
+        for section, reason in parse_errors[:5]:
+            print(f"     - {section}: {reason}")
     return data
 
 
@@ -455,12 +462,14 @@ def get_status():
 
 
 @app.get("/api/traffic")
-def get_latest_traffic():
+def get_latest_traffic(response: Response):
     """
     最新即時車流數據。
     格式：{ timestamp, data: { "路段名稱": { AvgSpd, TotalVol, AvgOcc, MOELevel, ... } } }
-    優先讀本地快取（10 分鐘內），過期或不存在則直接打台北 API。
+    優先讀本地快取（5 分鐘內，對齊 VD 更新週期），過期或不存在則直接打台北 API。
     """
+    # 阻擋瀏覽器 / 中介層 cache — VD 資料 5 分鐘變動，cache 會讓 dashboard 顯示舊值。
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     raw_data: dict = {}
     timestamp: Optional[str] = None
     source = "unknown"
@@ -468,7 +477,9 @@ def get_latest_traffic():
     f = latest_file(str(TRAFFIC_DIR / "*.json"))
     if f:
         age = (datetime.now() - datetime.fromtimestamp(os.path.getmtime(f))).total_seconds()
-        if age < 600:
+        # 台北 VD API 約 5 分鐘更新一次，本地快取守 < 5 分鐘才當作 fresh。
+        # 過去設 < 10 分鐘會讓 dashboard 拿到 5-9 分鐘前的舊資料，看起來像「不更新」。
+        if age < 300:
             raw = _load_json_cached(f) or {}
             raw_data = raw.get("data", {})
             timestamp = raw.get("timestamp")
@@ -676,6 +687,70 @@ def get_road_forecast():
     return {
         "pred": _aggregate_edges_to_roads(EDGE_HEATMAP_BASELINE_FILE),
         "opt":  _aggregate_edges_to_roads(EDGE_HEATMAP_FILE),
+    }
+
+
+def _moe_from_spd(spd) -> Optional[int]:
+    """Mirror dashboard.html `_moeFromSpd`: <10→2, <30→1, else 0 (None if spd unknown)."""
+    if spd is None or spd <= 0:
+        return None
+    if spd < 10:
+        return 2
+    if spd < 30:
+        return 1
+    return 0
+
+
+def _flatten_heatmap_for_monitor(path: Path) -> list:
+    """Edge-level forecast list shaped for the dashboard monitor table.
+
+    Returns one row per named edge so pred/opt mode can show edge-grained
+    detail instead of the 7-prefix aggregation in /api/roads/forecast.
+    Unnamed edges (internal SUMO link IDs) are skipped — they have no
+    user-meaningful label to display in the table.
+    """
+    data = _load_json_cached(path)
+    if data is None:
+        return []
+    out = []
+    for eid, ed in (data.get("edges") or {}).items():
+        name = (ed.get("name") or "").strip()
+        if not name:
+            continue
+        spd_raw = ed.get("spd", 0) or 0
+        try:
+            spd = float(spd_raw)
+        except (TypeError, ValueError):
+            spd = 0.0
+        try:
+            occ = float(ed.get("occ") or 0)
+        except (TypeError, ValueError):
+            occ = 0.0
+        try:
+            vol = float(ed.get("vol") or ed.get("count") or 0)
+        except (TypeError, ValueError):
+            vol = 0.0
+        out.append({
+            "id":   eid,
+            "name": name,
+            "spd":  round(spd, 1),
+            "vol":  int(round(vol)),
+            "occ":  round(occ, 2),
+            "moe":  _moe_from_spd(spd),
+        })
+    return out
+
+
+@app.get("/api/edges/forecast")
+def get_edge_forecast():
+    """Edge 級預測 / 優化 — 細到 SUMO 每條 named edge。
+
+    補足 /api/roads/forecast 因聚合到 7 條主幹道造成的粒度損失。
+    前端 pred / opt 模式的監控列表用這個 endpoint 直接顯示 ~130 條 named edges。
+    """
+    return {
+        "pred": _flatten_heatmap_for_monitor(EDGE_HEATMAP_BASELINE_FILE),
+        "opt":  _flatten_heatmap_for_monitor(EDGE_HEATMAP_FILE),
     }
 
 
