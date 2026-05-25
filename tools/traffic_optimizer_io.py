@@ -228,12 +228,34 @@ def run_sumo_simulation_with_end_time(config_file, output_csv=None, override_pro
 
         if output_csv:
             actual_end_time = data_buffer[-1][0] if data_buffer else simulation_end_time
+            # Adaptive trim: pair-based model needs >= 15 unique time bins to do
+            # inference. Default policy is leading 60s warmup + trailing 100s
+            # (covers ~80% of normal cases where end_time >= 460s). For low-traffic
+            # nights the sim ends fast (e.g. end_time ~ 260s), and a fixed 100s
+            # tail trim leaves only 8 bins — predict_to_csv then raises.
+            # Strategy: keep the 60s warmup as-is (vehicles entering = unreliable
+            # data), but shrink the tail to whatever's necessary to retain 15
+            # bins. If the sim is so short that even no-trim can't give 15 bins,
+            # we still emit what we have and let the upstream caller decide
+            # (predict will raise; runtime_pipeline catches it).
+            LEADING_WARMUP = 60
+            REQUIRED_BINS = 15
+            BIN_SEC = 20  # SUMO data emit interval
+            DEFAULT_TAIL_TRIM = 100
+            needed_window = REQUIRED_BINS * BIN_SEC  # 300s
+            available_after_warmup = max(0.0, actual_end_time - LEADING_WARMUP)
+            if available_after_warmup >= needed_window + DEFAULT_TAIL_TRIM:
+                tail_trim = DEFAULT_TAIL_TRIM
+            else:
+                # Shrink tail trim to whatever still keeps >= needed_window
+                tail_trim = max(0.0, available_after_warmup - needed_window)
+            cutoff_upper = actual_end_time - tail_trim
             with open(output_csv, "w", encoding="utf-8") as f:
                 f.write("time,edge_id,vehicle_count\n")
                 f.writelines(
                     f"{current_time},{edge},{count}\n"
                     for current_time, edge, count in data_buffer
-                    if 60 <= current_time <= (actual_end_time - 100)
+                    if LEADING_WARMUP <= current_time <= cutoff_upper
                 )
 
         return True, simulation_end_time

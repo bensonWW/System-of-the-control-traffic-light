@@ -167,13 +167,28 @@ def _run_once_locked(model_path=None):
     _log("Step 3/3: 執行預測 + 訊號優化 + 交付輸出")
     prediction_work_dir = os.path.join(run_dir, f"{stem}_predict_dynamic")
     handoff_dir = os.path.join(run_dir, "handoff")
-    pipeline_result = run_full_pipeline(
-        input_csv=input_csv,
-        model_path=model_path,
-        work_dir=prediction_work_dir,
-        handoff_dir=handoff_dir,
-        route_xml_dir=vehicle_data_dir,
-    )
+    pipeline_result = None
+    pipeline_skipped_reason = None
+    try:
+        pipeline_result = run_full_pipeline(
+            input_csv=input_csv,
+            model_path=model_path,
+            work_dir=prediction_work_dir,
+            handoff_dir=handoff_dir,
+            route_xml_dir=vehicle_data_dir,
+        )
+    except ValueError as exc:
+        # predict_to_csv raises ValueError when the simulation CSV has fewer
+        # time bins than the model's input_len. Adaptive trim in
+        # traffic_optimizer_io covers most low-traffic cases, but if the sim
+        # ends extremely fast (e.g. < 360s, no vehicles), even that isn't
+        # enough. Degrade gracefully: log + skip Step 3, still update Step 4
+        # heatmaps from whatever XMLs exist (stale predict/baseline, fresh
+        # current). The dashboard sees the latest reachable data instead of
+        # a hard 500.
+        pipeline_skipped_reason = str(exc)
+        _log(f"Step 3 跳過（資料不足，無法預測）: {pipeline_skipped_reason}")
+        _log("  → 號誌維持現行，僅更新「當前車流」熱力圖；其他兩張保留上輪資料")
 
     _log("Step 4/4: 生成邊道熱力圖 JSON")
     tvds_data_dir = os.path.join(ROOT_DIR, "TrafficVision Design System", "data")
@@ -222,10 +237,14 @@ def _run_once_locked(model_path=None):
         "input_csv": input_csv,
         "route_xml": route_copy,
         "simulation_end_time": end_time,
-        "handoff_dir": pipeline_result["handoff"]["handoff_dir"],
+        "handoff_dir": pipeline_result["handoff"]["handoff_dir"] if pipeline_result else None,
         "edge_heatmap": edge_heatmap_out,
+        "step3_skipped": pipeline_skipped_reason,
     }
-    _log(f"本輪完成: {summary['run_dir']}")
+    if pipeline_skipped_reason:
+        _log(f"本輪完成（Step 3 已跳過）: {summary['run_dir']}")
+    else:
+        _log(f"本輪完成: {summary['run_dir']}")
     return summary
 
 
