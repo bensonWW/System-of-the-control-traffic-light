@@ -1204,6 +1204,80 @@ def _precompute_summary(road_data: dict) -> str:
     return "\n".join(lines)
 
 
+def _pipeline_status_block() -> str:
+    """組裝最近一輪 pipeline 的 metadata 給 LLM 用 —
+    包含上次跑何時、選了什麼策略、composite_score、是否跳 Step 3。
+    讓助理可以回答「為何 opt==pred」「現在優化器選什麼」這類問題。"""
+    m = _latest_run_metric() or {}
+    if not m:
+        return "（pipeline 尚未產生紀錄；請執行 python tools/runtime_pipeline.py --once）"
+    ts = m.get("ts", "?")
+    age_sec = None
+    try:
+        age_sec = int((datetime.now() - datetime.fromisoformat(ts)).total_seconds())
+    except Exception:
+        pass
+    age_label = f"{age_sec // 60} 分 {age_sec % 60} 秒前" if age_sec is not None else "未知"
+    if m.get("error"):
+        return f"上次 pipeline ({ts}, {age_label}) **失敗**：{m['error']}"
+    if m.get("step3_skipped"):
+        return (
+            f"上次 pipeline ({ts}, {age_label}) **跳過 Step 3（預測+優化）**：{m['step3_skipped']}\n"
+            f"  → 本輪沒有 GRU 預測；號誌維持現狀。"
+        )
+    strat = m.get("strategy") or "?"
+    score = m.get("composite_score")
+    score_str = f"{score:.4f}" if isinstance(score, (int, float)) else "?"
+    if strat == "no_control":
+        verdict = "優化器嘗試 5 個策略後，沒有任何方案能在 composite_score 上優於基準（=1.0），所以維持現狀。預測車流與優化車流會顯示相同數值。"
+    else:
+        verdict = f"優化器採用 {strat} 策略，composite_score = {score_str}（< 1 即優於基準）。"
+    return (
+        f"上次 pipeline ({ts}, {age_label})：strategy = {strat}, composite_score = {score_str}\n"
+        f"  → {verdict}"
+    )
+
+
+def _signal_changes_summary(max_rows: int = 5) -> str:
+    """從最近 handoff 的 signal_change_detail.csv 抽前 N 個 phase 調整給 LLM 看。"""
+    handoff = latest_handoff_dir()
+    if not handoff:
+        return "（尚無 handoff 資料）"
+    files = list(handoff.glob("*_signal_change_detail.csv"))
+    if not files:
+        return "（本輪 signal_change_detail.csv 不存在 — 多半因策略選了 no_control，沒做任何調整）"
+    try:
+        df = pd.read_csv(files[-1])
+        if df.empty:
+            return "本輪沒有任何 phase 被調整（no_control）"
+        rows = df.head(max_rows)
+        lines = []
+        for _, r in rows.iterrows():
+            tl = r.get("tl_id", "?")
+            hint = r.get("road_hint", "")
+            old_d = r.get("old_duration", "?")
+            new_d = r.get("new_duration", "?")
+            delta = r.get("delta_duration", "?")
+            label = f"{tl}({hint})" if hint else tl
+            lines.append(f"  - {label} phase #{r.get('phase_index','?')} `{r.get('state','?')}`: {old_d}s → {new_d}s ({delta:+.0f}s)" if isinstance(delta, (int, float)) else f"  - {label}: {old_d}s → {new_d}s")
+        total = len(df)
+        if total > max_rows:
+            lines.append(f"  …共 {total} 個 phase 被調整")
+        return "\n".join(lines)
+    except Exception as exc:
+        return f"（讀 signal_change_detail 失敗: {exc}）"
+
+
+def _predict_freshness_block() -> str:
+    """One-line predict CSV freshness for LLM context."""
+    p = _latest_predict_csv()
+    if p is None or not p.exists():
+        return "尚無 GRU predict.csv（pipeline 還沒跑過或被跳過）"
+    age = (datetime.now() - datetime.fromtimestamp(p.stat().st_mtime)).total_seconds()
+    age_label = f"{int(age // 60)} 分 {int(age % 60)} 秒前"
+    return f"GRU 預測產出於 {age_label}（檔案：{p.name}）"
+
+
 def _build_system_prompt(traffic: dict) -> str:
     """Build a grounded system prompt with pre-computed answers to prevent hallucination."""
     road_data: dict = traffic.get("data", {}) if isinstance(traffic.get("data"), dict) else {}
@@ -1216,21 +1290,35 @@ def _build_system_prompt(traffic: dict) -> str:
 ═══ 鐵則（違反即為錯誤回答）═══
 1. 只能提及以下 {len(road_names)} 個路段，絕對禁止提及清單以外的路段名稱：
    {road_list_str}
-2. 所有數值（車速、佔有率、流量）必須直接抄自「即時交通摘要」，不得自行計算或捏造。
+2. 所有數值（車速、佔有率、流量）必須直接抄自「即時交通摘要」或「系統狀態」，不得自行計算或捏造。
 3. 若問及未監測的路段，回答：「該路段不在本系統監測範圍。目前監測：{road_list_str}」
-4. 若摘要顯示資料缺失，回答「尚無該資料」，不得推測。
+4. 若摘要顯示資料缺失（null 或「尚無」），回答「尚無該資料」，不得推測。
+5. 解釋「為何預測車流和優化車流相同」這類問題時，用「系統狀態」內的策略資訊回答，不要編造。
 
 ═══ 即時交通摘要（伺服器已計算完畢，直接引用）═══
 {summary}
 
+═══ 系統狀態（最近一輪 pipeline）═══
+{_pipeline_status_block()}
+
+預測資料新鮮度：{_predict_freshness_block()}
+
+本輪號誌調整明細（若 no_control 則為空）：
+{_signal_changes_summary(5)}
+
+═══ 資料源對照（避免誤導使用者比較不同單位）═══
+- 「原始車流」(VD) — 真實偵測器 5 分鐘累積通過量，單位：通過車次
+- 「預測車流」(GRU) — 模型輸出，單位：15 步瞬時佔有 snapshot 加總（≈ VD 的 1/6，由 Little's Law）
+- 「優化車流」(SUMO best) — 等於預測 vol（車輛守恆）；只有速度/佔有率會因號誌改善
+- 跨模式比車流量「總數」沒意義；要比的話比相對變化或同模式不同時間
+
 ═══ 其他系統資料 ═══
 SUMO 壅塞 Edge（佔有率排序前 10）：{_top_congested_edges(10)}
 GRU 預測：{_compact(get_prediction())}
-號誌優化：{_compact(get_signal_plan())}
 優化效益：{_compact(get_comparison())}
 
 ═══ 回答格式 ═══
-使用繁體中文。引用數值時標明單位（km/h、%、輛）。簡潔為主，不重複摘要已說明的內容。"""
+使用繁體中文。引用數值時標明單位（km/h、%、輛、秒）。簡潔為主，不重複摘要已說明的內容。"""
 
 
 @app.post("/api/chat")
