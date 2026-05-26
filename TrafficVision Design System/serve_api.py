@@ -225,7 +225,19 @@ def _build_edge_road_map(net_xml: Path) -> dict:
 
 
 # ─── 模擬串流狀態（全域，執行緒共用）────────────────
+# Lazy-init: _edge_road_map is populated by _lifespan() at FastAPI startup but
+# also accessed by sync endpoints called pre-startup (test harness, REPL).
+# _ensure_edge_road_map() guarantees it's built on first use either way.
 _edge_road_map: dict = {}
+
+
+def _ensure_edge_road_map():
+    """Build _edge_road_map on first access if startup hasn't populated it yet."""
+    global _edge_road_map
+    if not _edge_road_map and SUMO_NET_XML.exists():
+        _edge_road_map = _build_edge_road_map(SUMO_NET_XML)
+    return _edge_road_map
+
 _sim_clients: set = set()
 _sim_snapshot: dict = {}
 _sim_running  = threading.Event()
@@ -701,6 +713,60 @@ def get_edge_heatmap_current():
     return data
 
 
+# ─── GRU prediction CSV aggregation ─────────────────────────────────────────
+# 之前 /api/roads/forecast.pred 拿的是 SUMO no_control 模擬輸出（edge_heatmap_baseline.json），
+# 完全沒接到 GRU 預測 CSV — 命名「預測車流」但實際是「模擬車流」，name 不副實。
+# 這層 helper 從最近 handoff 的 *_predict.csv 讀出 pair model 的 15 步 × 20 秒
+# 預測，aggregate 到 road 級 / edge 級，供 forecast endpoints 真正用到 GRU。
+
+def _latest_predict_csv() -> Optional[Path]:
+    """Find the canonical 15-step GRU prediction CSV in the latest handoff dir.
+    Excludes *_predict_full.csv (the unfiltered full-horizon variant)."""
+    handoff = latest_handoff_dir()
+    if not handoff:
+        return None
+    files = [f for f in handoff.glob("*_predict.csv") if "_predict_full" not in f.name]
+    return sorted(files)[-1] if files else None
+
+
+def _gru_predict_by_edge() -> dict:
+    """Sum GRU predicted vehicle_count across all 15 timesteps per edge.
+
+    The pair model emits one row per (time, edge_id) over a 5-min horizon
+    (15 × 20 s). Summing across time gives "predicted total vehicle-snapshots
+    seen on this edge during the next 5 min" — a useful magnitude that scales
+    intuitively with how busy the edge is expected to be.
+
+    Returns {edge_id: float}. Cached against the CSV's mtime via
+    _load_json_cached's mechanism reused — but pandas needs a separate path,
+    so we just re-read each request (the file is small ~100 KB).
+    """
+    csv_path = _latest_predict_csv()
+    if csv_path is None:
+        return {}
+    try:
+        df = pd.read_csv(csv_path)
+        if "vehicle_count" not in df.columns or "edge_id" not in df.columns:
+            return {}
+        return df.groupby("edge_id")["vehicle_count"].sum().to_dict()
+    except Exception as exc:
+        print(f"  ⚠ _gru_predict_by_edge: 解析 predict CSV 失敗 ({exc})")
+        return {}
+
+
+def _gru_predict_by_road() -> dict:
+    """Aggregate edge-level GRU predictions to broad road names via _edge_road_map."""
+    by_edge = _gru_predict_by_edge()
+    road_map = _ensure_edge_road_map()
+    by_road: dict = {}
+    for eid, total in by_edge.items():
+        road = road_map.get(eid)
+        if not road:
+            continue
+        by_road[road] = by_road.get(road, 0.0) + float(total)
+    return {r: round(v, 1) for r, v in by_road.items()}
+
+
 def _aggregate_edges_to_roads(heatmap_file: Path) -> dict:
     """把 edge 級熱力圖依 _edge_road_map 聚合成 { 大分類路名: {spd, vol, occ} }。
 
@@ -741,15 +807,46 @@ def _aggregate_edges_to_roads(heatmap_file: Path) -> dict:
 
 @app.get("/api/roads/forecast")
 def get_road_forecast():
-    """路段級預測 / 優化後車況。
+    """路段級「5 分鐘預測」/ 優化後車況。
 
-    pred ← no_control 基準模擬（edge_heatmap_baseline.json）
-    opt  ← 最佳策略模擬（edge_heatmap.json）
-    皆由 SUMO edgedata 聚合 edge→大分類路名，含真實速度。
+    pred 欄位來源（修正前所有都是 SUMO，前端名稱「預測車流」實際與 GRU 無關）：
+        vol      ← GRU pair model 預測（最近 handoff 的 *_predict.csv，
+                   15 步 × 20 秒 snapshot 合計）— 真正的「預測」
+        spd, occ ← SUMO no_control 基準模擬（GRU 不輸出這兩個物理量）
+        vol_sumo ← 舊版的 SUMO baseline 流量，保留方便對比
+
+    opt 欄位（best strategy 已套用後的模擬輸出，仍是 SUMO，因為 GRU 預測
+    輸入給 traffic_light_optimizer 後產生的是優化動作，最終效果仍要由
+    SUMO 重新模擬）：
+        vol, spd, occ ← SUMO best-strategy 模擬
+
+    meta 欄位明示資料來源，避免再被命名誤導。
     """
+    sumo_baseline = _aggregate_edges_to_roads(EDGE_HEATMAP_BASELINE_FILE)
+    sumo_best     = _aggregate_edges_to_roads(EDGE_HEATMAP_FILE)
+    gru_by_road   = _gru_predict_by_road()
+
+    # Merge: vol from GRU prediction, spd/occ from SUMO baseline physics.
+    # Union of road keys so we don't drop a road just because one side is empty.
+    pred_merged: dict = {}
+    for road in set(sumo_baseline) | set(gru_by_road):
+        sumo_row = sumo_baseline.get(road, {})
+        pred_merged[road] = {
+            "vol":      int(round(gru_by_road.get(road, 0))),
+            "spd":      sumo_row.get("spd", 0.0),
+            "occ":      sumo_row.get("occ", 0.0),
+            "vol_sumo": sumo_row.get("vol", 0),
+        }
+
     return {
-        "pred": _aggregate_edges_to_roads(EDGE_HEATMAP_BASELINE_FILE),
-        "opt":  _aggregate_edges_to_roads(EDGE_HEATMAP_FILE),
+        "pred": pred_merged,
+        "opt":  sumo_best,
+        "meta": {
+            "pred_vol_source":      "GRU pair model 預測（15 步 × 20 秒 snapshot 合計）",
+            "pred_spd_occ_source":  "SUMO no_control 基準模擬",
+            "opt_source":           "SUMO best-strategy 模擬",
+            "predict_csv":          str(_latest_predict_csv() or ""),
+        },
     }
 
 
@@ -806,14 +903,46 @@ def _flatten_heatmap_for_monitor(path: Path) -> list:
 
 @app.get("/api/edges/forecast")
 def get_edge_forecast():
-    """Edge 級預測 / 優化 — 細到 SUMO 每條 named edge。
+    """Edge 級「5 分鐘預測」/ 優化 — 細到 SUMO 每條 named edge。
 
-    補足 /api/roads/forecast 因聚合到 7 條主幹道造成的粒度損失。
+    pred 欄位（同 /api/roads/forecast 的修正）：
+        vol      ← GRU pair model 預測（per-edge 15 步合計）
+        spd, occ ← SUMO no_control 基準模擬
+    opt 欄位：SUMO best-strategy 模擬。
+
     前端 pred / opt 模式的監控列表用這個 endpoint 直接顯示 ~130 條 named edges。
     """
+    # SUMO baseline gives physics (spd/occ) + the named-edge structure we need
+    sumo_baseline_edges = _flatten_heatmap_for_monitor(EDGE_HEATMAP_BASELINE_FILE)
+    gru_by_edge = _gru_predict_by_edge()
+
+    # Overlay GRU vol on top of SUMO baseline rows; keep spd/occ as SUMO physics.
+    # Stash the original SUMO vol as vol_sumo for transparency.
+    pred_edges = []
+    for row in sumo_baseline_edges:
+        eid = row.get("id")
+        gru_vol = gru_by_edge.get(eid)
+        if gru_vol is not None:
+            pred_edges.append({
+                **row,
+                "vol":      int(round(float(gru_vol))),
+                "vol_sumo": row.get("vol", 0),
+            })
+        else:
+            # Edge missing from GRU prediction (junction/internal/unmapped) —
+            # keep SUMO baseline value but flag the source.
+            pred_edges.append({**row, "vol_sumo": row.get("vol", 0)})
+
     return {
-        "pred": _flatten_heatmap_for_monitor(EDGE_HEATMAP_BASELINE_FILE),
+        "pred": pred_edges,
         "opt":  _flatten_heatmap_for_monitor(EDGE_HEATMAP_FILE),
+        "meta": {
+            "pred_vol_source":     "GRU pair model 預測（per-edge 15 步合計）",
+            "pred_spd_occ_source": "SUMO no_control 基準模擬",
+            "opt_source":          "SUMO best-strategy 模擬",
+            "predict_csv":         str(_latest_predict_csv() or ""),
+            "gru_edges_total":     len(gru_by_edge),
+        },
     }
 
 
