@@ -473,6 +473,90 @@ def get_status():
     }
 
 
+@app.get("/api/health")
+def get_health():
+    """深度健康檢查 — 給 dashboard / ops 用。
+
+    回傳每個資料源的「上次更新何時、距現在幾秒」：
+      vd            ← TrafficVision Design System/data/trafficData/*.json
+      predict       ← runtime_pipeline 的 *_predict.csv
+      handoff       ← 整個 handoff/ 目錄
+      pipeline_lock ← runtime_pipeline scheduler 是否在跑
+      ollama        ← 本機 Ollama 是否可連線
+    """
+    now = datetime.now()
+    out = {"server_time": now.isoformat(timespec="seconds")}
+
+    # ── VD freshness (Taipei API 每 5 分鐘自動抓)
+    vd_file = latest_file(str(TRAFFIC_DIR / "*.json"))
+    if vd_file:
+        age = (now - datetime.fromtimestamp(os.path.getmtime(vd_file))).total_seconds()
+        out["vd"] = {
+            "file": os.path.basename(vd_file),
+            "age_sec": int(age),
+            "stale": age > 600,  # > 10 分鐘算 stale
+        }
+    else:
+        out["vd"] = {"file": None, "age_sec": None, "stale": True}
+
+    # ── Predict freshness (runtime_pipeline 跑完才更新)
+    predict_csv = _latest_predict_csv()
+    if predict_csv and predict_csv.exists():
+        age = (now - datetime.fromtimestamp(predict_csv.stat().st_mtime)).total_seconds()
+        out["predict"] = {
+            "file": predict_csv.name,
+            "age_sec": int(age),
+            "stale": age > 600,
+        }
+    else:
+        out["predict"] = {"file": None, "age_sec": None, "stale": True}
+
+    # ── Scheduler liveness (lockfile + last metric)
+    lock_path = BASE_DIR.parent / "data" / "runtime_data" / ".pipeline.lock"
+    last_metric = _latest_run_metric() or {}
+    pipeline_age = None
+    if last_metric.get("ts"):
+        try:
+            pipeline_age = (now - datetime.fromisoformat(last_metric["ts"])).total_seconds()
+        except Exception:
+            pass
+    out["pipeline"] = {
+        "lock_exists": lock_path.exists(),
+        "last_run_ts": last_metric.get("ts"),
+        "last_run_age_sec": int(pipeline_age) if pipeline_age else None,
+        "last_run_success": last_metric.get("success"),
+        "last_run_step3_skipped": last_metric.get("step3_skipped"),
+        "last_strategy": last_metric.get("strategy"),
+        "last_composite_score": last_metric.get("composite_score"),
+        # Scheduler likely alive if a run happened within last 10 min (default interval 5 min)
+        "scheduler_alive_guess": pipeline_age is not None and pipeline_age < 600,
+    }
+
+    # ── Ollama reachability (best-effort, < 1s timeout)
+    try:
+        r = _taipei_session.get(f"{OLLAMA_BASE_URL}/api/tags", timeout=1.0)
+        out["ollama"] = {
+            "reachable": r.ok,
+            "url": OLLAMA_BASE_URL,
+            "model_required": OLLAMA_MODEL,
+        }
+    except Exception as exc:
+        out["ollama"] = {
+            "reachable": False,
+            "url": OLLAMA_BASE_URL,
+            "error": str(exc)[:120],
+        }
+
+    # ── Overall status: ok / degraded / critical
+    if out["vd"]["stale"] or out["pipeline"]["last_run_age_sec"] is None:
+        out["status"] = "critical"
+    elif out["predict"]["stale"] or not out["pipeline"]["scheduler_alive_guess"]:
+        out["status"] = "degraded"
+    else:
+        out["status"] = "ok"
+    return out
+
+
 @app.get("/api/traffic")
 def get_latest_traffic(response: Response):
     """

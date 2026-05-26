@@ -235,19 +235,33 @@ function MetricsPanel({ roads, dataKey = 'cur' }) {
   const free = hasData ? roadsWithData.filter(r=>_d(r).moe===0).length : null;
   const sigCount = signalData.length;
 
+  /* T3: 每張 card 加 tooltip 解釋資料源 + 單位, 依當前 dataKey (cur/pred/opt) 分歧.
+         今天踩過好幾個「為何 X 跟 Y 數字差這麼多」的問題, 把單位明寫在 hover 提示
+         可以避免類似誤會. 用 native HTML title 屬性 (browser tooltip), 不增加 deps. */
+  const _src = {
+    cur:  {vol:'VD 偵測器即時通過量 (TotalVol/3)', spd:'VD 即時平均車速', occ:'VD 即時佔有率'},
+    pred: {vol:'GRU pair model 預測 (15 步 × 20 秒 snapshot Σ vehicle_count) — 單位不同於 VD 通過量,差約 6 倍由 Little\'s Law',
+           spd:'SUMO no_control 基準模擬, 排除 spd=0 死巷後算術平均', occ:'SUMO no_control 基準模擬'},
+    opt:  {vol:'= 預測 vol (車輛數不會因號誌優化而消失)', spd:'SUMO best-strategy 模擬 (顯示優化後速度)', occ:'SUMO best-strategy 模擬'},
+  };
+  const s = _src[dataKey] || _src.cur;
+
   const cards = [
-    { label:'監控路段', value:String(n),                            unit:'條',   accent:'#3b82f6', barW: 1.0, delta:null },
-    { label:'平均車速', value:avgSpd!==null?String(avgSpd):'--',    unit:'km/h', accent:'#f59e0b', barW: avgSpd!==null?avgSpd/60:0, delta:null },
-    { label:'總車流量', value:totalVol!==null?totalVol.toLocaleString():'--', unit:'輛', accent:'#ef4444', barW:totalVol!==null?Math.min(1,totalVol/2000):0, delta:null },
-    { label:'壅塞路段', value:congested!==null?String(congested):'--', unit:'條', accent:'#ef4444', barW:congested!==null&&n>0?congested/n:0, delta:null },
-    { label:'暢通路段', value:free!==null?String(free):'--',        unit:'條',   accent:'#22c55e', barW:free!==null&&n>0?free/n:0, delta:null },
-    { label:'號誌優化', value:String(sigCount),                     unit:'組',   accent:'#3b82f6', barW: sigCount/10, delta:null },
+    { label:'監控路段', value:String(n),                            unit:'條',   accent:'#3b82f6', barW: 1.0, delta:null, tip:`${dataKey==='cur'?'VD 偵測器':'SUMO + GRU'} 覆蓋的路段/邊數` },
+    { label:'平均車速', value:avgSpd!==null?String(avgSpd):'--',    unit:'km/h', accent:'#f59e0b', barW: avgSpd!==null?avgSpd/60:0, delta:null, tip:`${s.spd} (僅含 spd>0 的路段, 排除 SUMO 沒測到速度的邊)` },
+    { label:'總車流量', value:totalVol!==null?totalVol.toLocaleString():'--', unit:'輛', accent:'#ef4444', barW:totalVol!==null?Math.min(1,totalVol/2000):0, delta:null, tip:s.vol },
+    { label:'壅塞路段', value:congested!==null?String(congested):'--', unit:'條', accent:'#ef4444', barW:congested!==null&&n>0?congested/n:0, delta:null, tip:'MOE = 2 的路段數 (車速 < 10 km/h, 或 VD 回報的 MOELevel)' },
+    { label:'暢通路段', value:free!==null?String(free):'--',        unit:'條',   accent:'#22c55e', barW:free!==null&&n>0?free/n:0, delta:null, tip:'MOE = 0 的路段數 (車速 ≥ 30 km/h, 或 VD 回報的 MOELevel)' },
+    { label:'號誌優化', value:String(sigCount),                     unit:'組',   accent:'#3b82f6', barW: sigCount/10, delta:null, tip:'本輪有產出 signal plan 的路口數 (來自 signal_plan_summary.csv)' },
   ];
   return (
     <div style={{ display:'grid',gridTemplateColumns:'repeat(6,1fr)',gap:10,padding:'10px 14px 0',flexShrink:0 }}>
       {cards.map((c,i) => (
-        <div key={i} style={{ background:bgCard,border:`1px solid ${borderMed}`,borderRadius:12,padding:'14px 16px',boxShadow:shadow,display:'flex',flexDirection:'column' }}>
-          <div style={{ fontFamily:body,fontSize:11,fontWeight:500,letterSpacing:'0.06em',textTransform:'uppercase',color:'#4e6080',marginBottom:8 }}>{c.label}</div>
+        <div key={i} title={c.tip || ''} style={{ background:bgCard,border:`1px solid ${borderMed}`,borderRadius:12,padding:'14px 16px',boxShadow:shadow,display:'flex',flexDirection:'column',cursor:c.tip?'help':'default' }}>
+          <div style={{ fontFamily:body,fontSize:11,fontWeight:500,letterSpacing:'0.06em',textTransform:'uppercase',color:'#4e6080',marginBottom:8,display:'flex',alignItems:'center',gap:4 }}>
+            {c.label}
+            {c.tip && <span aria-hidden="true" style={{fontSize:9,opacity:0.5}}>ⓘ</span>}
+          </div>
           <div style={{ display:'flex',alignItems:'baseline',gap:5,marginBottom:19 }}>
             <span style={{ fontFamily:ff,fontSize:28,fontWeight:700,lineHeight:1,letterSpacing:'-0.03em',fontVariantNumeric:'tabular-nums',color:'#f1f5f9' }}>{c.value}</span>
             <span style={{ fontFamily:body,fontSize:12,color:'#94a3b8' }}>{c.unit}</span>
@@ -1074,6 +1088,7 @@ function App() {
   const [chatMsgs, setChatMsgs] = useState(SAMPLE_MSGS);   // 提升到 App，避免切頁丟失對話
   const [apiError, setApiError] = useState(false);          // /api/traffic 連線失敗提示
   const [forecastError, setForecastError] = useState(false); // /api/{roads,edges}/forecast 失敗提示
+  const [healthData, setHealthData] = useState(null);        // /api/health：predict freshness + last strategy
   const [forecastData, setForecastData] = useState({ pred:{}, opt:{} });
   /* Edge 級預測 / 優化（132 條 named edges）— 取代舊版 pred/opt 模式下監控列表
      只能看到 7 條主幹道聚合的問題；資料來自 /api/edges/forecast */
@@ -1130,6 +1145,21 @@ function App() {
       if (sig.status  === 'fulfilled' && Array.isArray(sig.value?.records))  setSignalApiRecords(sig.value.records);
     });
   }, [lastFetch]);
+
+  /* /api/health — 拉 pipeline freshness 給 banner 顯示 (T1+T2)
+     每 30 秒輪詢一次, 比 forecast 的 5 分鐘頻繁, 這樣 scheduler 跑完新一輪
+     使用者能比較快看到「上次預測 X 分前」往下倒數。 */
+  useEffect(() => {
+    const loadHealth = () => {
+      fetch('/api/health', { cache: 'no-store' })
+        .then(r => r.ok ? r.json() : null)
+        .then(d => { if (d) setHealthData(d); })
+        .catch(() => {});
+    };
+    loadHealth();
+    const tid = setInterval(loadHealth, 30000);
+    return () => clearInterval(tid);
+  }, []);
 
   /* Clock */
   useEffect(() => {
@@ -1302,6 +1332,37 @@ function App() {
           <span aria-hidden="true" style={{fontWeight:700}}>⚠</span> 無法取得 5 分鐘預測 / 優化資料（pipeline 可能跳過或尚未產出）。當前車流仍會正常顯示。
         </div>
       )}
+      {/* T1+T2: 預測資料新鮮度 + 本輪策略 (僅 pred/opt 模式顯示, 避免 cur 模式佔位)
+              age < 360s: 綠色 (新鮮), 360-900: 黃色 (略舊), > 900: 紅色 (建議查 scheduler) */}
+      {(mapMode === 'pred' || mapMode === 'opt') && healthData?.predict && (() => {
+        const age = healthData.predict.age_sec ?? 999999;
+        const ageMin = Math.floor(age / 60);
+        const ageSec = age % 60;
+        const ageLabel = age < 60 ? `${age} 秒前` : `${ageMin} 分 ${ageSec} 秒前`;
+        const tone = age < 360 ? {bg:'rgba(34,197,94,0.08)',bd:'rgba(34,197,94,0.30)',fg:'#86efac'}
+                   : age < 900 ? {bg:'rgba(234,179,8,0.10)',bd:'rgba(234,179,8,0.30)',fg:'#fde68a'}
+                   :              {bg:'rgba(239,68,68,0.12)',bd:'rgba(239,68,68,0.35)',fg:'#fca5a5'};
+        const strat = healthData.pipeline?.last_strategy;
+        const score = healthData.pipeline?.last_composite_score;
+        const stratLabel = !strat ? '本輪策略未知'
+                         : strat === 'no_control'
+                           ? '本輪維持現狀（優化器未找到優於基準的方案，score = 1.000）'
+                           : `本輪採用 ${strat}（composite_score = ${typeof score === 'number' ? score.toFixed(4) : '?'}，< 1 即優於基準）`;
+        return (
+          <div style={{background:tone.bg,borderBottom:`1px solid ${tone.bd}`,color:tone.fg,fontFamily:"'Noto Sans TC','PingFang TC',sans-serif",fontSize:12,padding:'6px 16px',display:'flex',alignItems:'center',gap:12,flexShrink:0,flexWrap:'wrap'}}>
+            <span style={{display:'inline-flex',alignItems:'center',gap:5}}>
+              <span aria-hidden="true" style={{fontWeight:700}}>●</span>
+              GRU 預測產出於 <strong style={{fontFamily:"'JetBrains Mono',monospace"}}>{ageLabel}</strong>
+            </span>
+            <span style={{opacity:0.55,fontSize:10}}>·</span>
+            <span>{stratLabel}</span>
+            {healthData.pipeline?.last_run_step3_skipped && (
+              <><span style={{opacity:0.55,fontSize:10}}>·</span>
+                <span style={{color:'#fca5a5'}}>Step 3 已跳過：{healthData.pipeline.last_run_step3_skipped}</span></>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Metrics */}
       <MetricsPanel roads={monitorRoads} dataKey={tableDataKey}/>

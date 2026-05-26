@@ -137,10 +137,88 @@ python tools/export_to_gguf.py             # exports to GGUF for Ollama
 - Output: 15-step sequence (5 min horizon) per edge
 - Loss: weighted MSE that up-weights high-traffic edges (>10 vehicles)
 
+## Data Sources Cheat Sheet — what each dashboard number actually means
+
+The dashboard's three map modes (原始 / 預測 / 優化) and the cards above them
+draw from **different physical quantities and different update cadences**.
+Mixing them up causes long debugging sessions — fields with the same label
+(`平均車速`, `總車流量`) can legitimately differ by 5-10× because the units
+differ. Read this before adding new dashboard logic.
+
+### Update cadence
+
+| Source | Update mechanism | Typical age |
+|--------|------------------|-------------|
+| VD JSON (`trafficData/*.json`) | `_periodic_traffic_refresh` 自動 5-min | < 5 min |
+| `*_predict.csv` (GRU output) | `runtime_pipeline.py` 跑完才更新 | depends on scheduler |
+| `edge_heatmap*.json` | runtime_pipeline Step 4 一起寫 | same as predict |
+| Pipeline scheduler | `python tools/runtime_pipeline.py` (no `--once`) | 預設 5-min interval |
+
+If `*_predict.csv` is hours old, the scheduler isn't running. Start with
+`python tools/runtime_pipeline.py --interval 300` or check `_metrics.jsonl`.
+`/api/health` exposes all of the above ages.
+
+### Numeric semantics (the part everyone gets wrong)
+
+| Field | VD (原始) | GRU predict (預測) | SUMO best (優化) |
+|-------|-----------|--------------------|---------------------|
+| `vol` 物理意義 | 5-min **通過量** (pass-through flow) | Σ vehicle_count over 15 × 20-sec **snapshots** (occupancy sum) | **= 預測 vol** (vehicles preserved through optimization) |
+| `vol` typical magnitude | 1,000-2,000 | 200-300 | same as 預測 |
+| Conversion factor | — | ÷ ~6 by Little's Law (dwell_time/window) | — |
+| `spd` source | VD `AvgSpd` | SUMO `no_control` baseline sim | SUMO `best-strategy` sim |
+| `spd = 0` 意義 | 真實偵測到 0 km/h (極塞) | "SUMO 沒派車到這邊 → 無測量" (now returned as `null`) | same fallback as 預測 |
+| `occ` source | VD `AvgOcc` (%) | SUMO baseline occupancy | SUMO best-strategy occupancy |
+| MOE | VD 直接給 | 從 spd 推算 (`_moe_from_spd`) | same |
+
+**Why 預測 ≠ 優化 only in spd/occ, not in vol**: optimization redistributes
+signal timing, it doesn't make vehicles appear or disappear. `opt.vol` is
+explicitly set to `pred.vol` in `serve_api.py:get_road_forecast` /
+`get_edge_forecast`. The optimization effect shows in spd/occ only.
+
+**Why 預測 and 優化 sometimes show identical values across spd/occ too**:
+when `traffic_light_optimizer` picks `no_control` as the winning strategy
+(`composite_score = 1.0`, no strategy beat baseline), the "best strategy"
+edgedata == baseline edgedata, so they are literally the same file.
+This is correct behavior — the dashboard banner shows the strategy choice.
+
+**Dashboard's `平均車速` filter**: only roads with `spd > 0` are counted
+(commit `d95dd1be5`). Excludes ~19 dead-end edges where SUMO sim had no
+vehicles. Without this filter, pred-mode 平均車速 was diluted from ~41 to
+~32 km/h by those zero entries.
+
+**Dashboard's `總車流量`**: sum of table rows' `vol`. Because the unit
+families differ (VD = pass-through; GRU/SUMO = snapshot sum), comparing
+these totals across modes is misleading — 1,500 vs 250 is the same traffic
+load measured two different ways, not a 6× drop.
+
+### Tunable constants (env vars)
+
+Added in this stabilization round; defaults preserve original behavior.
+
+| Env var | Default | Effect | Where |
+|---------|---------|--------|-------|
+| `TRAFFICVISION_VD_WORKERS` | `min(16, cpu_count())` | SUMO batch sim worker pool | `VehicleData.py` |
+| `TRAFFICVISION_STRATEGY_TIMEOUT` | `300` | Per-strategy SUMO eval budget (s) | `tools/traffic_light_optimizer.py` |
+| `TRAFFICVISION_MIN_YELLOW` | `3.0` | Min yellow phase duration (SUMO physics floor) | `tools/traffic_optimizer_signal.py` |
+| `TRAFFICVISION_MIN_ALL_RED` | `1.0` | Min all-red clearance | same |
+| `TRAFFICVISION_MIN_GREEN` | `5.0` | Min green phase duration | same |
+| `TRAFFICVISION_VOL_DECAY` | `0.75` | OD route flow decay per intermediate edge | `tools/fixRoadData.py` |
+| `TRAFFICVISION_BACKFILL_ALPHA` | `0.35` | Recursive backfill weight for missing edge flow | same |
+| `TRAFFICVISION_TRIP_MAX_EDGES` | `10` | DFS max edges per synthesized trip | same |
+| `TRAFFICVISION_WS_TOKEN` | (unset) | If set, `/ws/simulation` requires bearer token | `serve_api.py` |
+| `FT_MAX_TRAFFIC_FILES` | `200` | Fine-tune dataset: max VD JSON sampled | `tools/generate_finetune_dataset.py` |
+| `FT_MAX_HANDOFF_DIRS` | `30` | Fine-tune dataset: max handoff dirs sampled | same |
+
+### Diagnostic endpoints
+
+- `GET /api/status` — quick: latest VD + handoff file paths
+- `GET /api/health` — deep: VD/predict/scheduler/Ollama ages + `status: ok|degraded|critical`
+- `data/runtime_data/_metrics.jsonl` — one JSON line per `run_once()`, append-only history
+
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **System-of-the-control-traffic-light** (5984 symbols, 8079 relationships, 144 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **System-of-the-control-traffic-light** (7037 symbols, 9623 relationships, 185 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
@@ -178,5 +256,12 @@ This project is indexed by GitNexus as **System-of-the-control-traffic-light** (
 | Rename / extract / split / refactor | `.claude/skills/gitnexus/gitnexus-refactoring/SKILL.md` |
 | Tools, resources, schema reference | `.claude/skills/gitnexus/gitnexus-guide/SKILL.md` |
 | Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md` |
+| Work in the Unsloth_compiled_cache area (382 symbols) | `.claude/skills/generated/unsloth-compiled-cache/SKILL.md` |
+| Work in the Tools area (119 symbols) | `.claude/skills/generated/tools/SKILL.md` |
+| Work in the TrafficVision Design System area (43 symbols) | `.claude/skills/generated/trafficvision-design-system/SKILL.md` |
+| Work in the Cluster_48 area (13 symbols) | `.claude/skills/generated/cluster-48/SKILL.md` |
+| Work in the Cluster_11 area (7 symbols) | `.claude/skills/generated/cluster-11/SKILL.md` |
+| Work in the Cluster_9 area (6 symbols) | `.claude/skills/generated/cluster-9/SKILL.md` |
+| Work in the Cluster_12 area (4 symbols) | `.claude/skills/generated/cluster-12/SKILL.md` |
 
 <!-- gitnexus:end -->
