@@ -4,8 +4,13 @@ services:
   ollama:
     image: ollama/ollama:latest
     container_name: trafficvision-ollama
+    # P6: 11434 bound to loopback only — Ollama has zero auth, exposing on
+    # all interfaces let LAN clients hit the model server directly (prompt
+    # abuse, GPU DoS, model exfiltration). The `api` service still reaches
+    # it via the compose network (hostname: ollama). Override to "11434:11434"
+    # only if you need external Ollama access (then put auth in front).
     ports:
-      - "11434:11434"
+      - "127.0.0.1:11434:11434"
     volumes:
       - ollama_data:/root/.ollama          # 模型檔案持久化
       - ./models/gguf:/models/gguf:ro      # GGUF 模型目錄（唯讀掛載）
@@ -32,11 +37,17 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: trafficvision-api
+    # P6: API server bound to loopback by default — all /api/* endpoints lack
+    # auth (audit H1). For multi-host deployment, set TRAFFICVISION_BIND_HOST
+    # and put a reverse proxy with auth in front.
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
       - OLLAMA_BASE_URL=http://ollama:11434
       - OLLAMA_MODEL=${OLLAMA_MODEL:-trafficvision-gemma4}
+      # Container itself still binds 0.0.0.0 inside the network namespace; the
+      # ports mapping above is what limits external reach.
+      - TRAFFICVISION_BIND_HOST=0.0.0.0
     volumes:
       # 資料目錄：讓 runtime_pipeline 寫入的資料可被 API 讀取
       - ./data:/app/data

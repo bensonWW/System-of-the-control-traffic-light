@@ -36,7 +36,7 @@ from typing import Optional
 
 try:
     from contextlib import asynccontextmanager
-    from fastapi import FastAPI, Response, WebSocket, WebSocketDisconnect
+    from fastapi import FastAPI, Header, Response, WebSocket, WebSocketDisconnect
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import RedirectResponse, FileResponse
     from fastapi.staticfiles import StaticFiles
@@ -157,7 +157,10 @@ def _fetch_taipei_traffic() -> dict:
     resp = _taipei_session.get(_TAIPEI_VD_URL, timeout=30)
     resp.raise_for_status()
     with gzip.open(io.BytesIO(resp.content)) as gz:
-        root = __import__("xml.etree.ElementTree", fromlist=["ElementTree"]).fromstring(gz.read())
+        # P4: defusedxml — Taipei feed is external/untrusted; harden against
+        # billion-laughs / entity-bomb DoS even though HTTPS is in use upstream.
+        from defusedxml.ElementTree import fromstring as _safe_fromstring
+        root = _safe_fromstring(gz.read())
     data: dict = {}
     # Schema-drift visibility (mirrors tools/fetch_vd_data.py).
     parse_errors: list = []
@@ -1199,9 +1202,24 @@ def get_edge_forecast():
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
 OLLAMA_MODEL    = os.environ.get("OLLAMA_MODEL",    "trafficvision-gemma4")
 
+# P3: chat 大小上限,擋 Ollama DoS。預設值:
+#   message  4 KB  — 一般中文問題 < 500 字綽綽有餘
+#   per-turn content 8 KB — 含先前回應的 markdown 表格
+#   history 最多 10 turns (chat() 本來就 [-10:])
+# 操作員可用 env 放寬。違反限制回 422,不灌進 Ollama。
+_CHAT_MAX_MESSAGE_CHARS  = int(os.environ.get("TRAFFICVISION_CHAT_MAX_MESSAGE",      "4096"))
+_CHAT_MAX_TURN_CHARS     = int(os.environ.get("TRAFFICVISION_CHAT_MAX_TURN_CONTENT", "8192"))
+_CHAT_MAX_HISTORY_TURNS  = int(os.environ.get("TRAFFICVISION_CHAT_MAX_HISTORY",      "10"))
+
+
+class ChatTurn(BaseModel):
+    role: str
+    content: str
+
+
 class ChatRequest(BaseModel):
     message: str
-    history: list = []   # [{"role": "user"|"assistant", "content": "..."}]
+    history: list = []   # list of ChatTurn-shaped dicts; validated in handler
 
 def _compact(obj, limit: int = 2000) -> str:
     """提取 data/records/metrics 欄位並序列化，截短至 limit 字元。"""
@@ -1422,14 +1440,21 @@ GRU 預測：{_compact(get_prediction())}
 @app.post("/api/chat")
 async def chat(req: ChatRequest):
     """呼叫本地 Ollama Gemma 4 模型，附帶即時交通 context 回覆問題。"""
+    # P3: enforce input size limits to prevent Ollama DoS via giant payloads.
+    if len(req.message) > _CHAT_MAX_MESSAGE_CHARS:
+        return {"error": "message_too_large",
+                "reply": f"訊息太長（上限 {_CHAT_MAX_MESSAGE_CHARS} 字元，收到 {len(req.message)}）。請拆短再試。"}
+
     loop = asyncio.get_running_loop()
     traffic = await loop.run_in_executor(None, get_latest_traffic)
     system = _build_system_prompt(traffic)
 
     messages = [{"role": "system", "content": system}]
-    for turn in req.history[-10:]:
+    # Cap history depth and per-turn content size.
+    for turn in req.history[-_CHAT_MAX_HISTORY_TURNS:]:
         if isinstance(turn, dict) and turn.get("role") in ("user", "assistant"):
-            messages.append({"role": turn["role"], "content": str(turn.get("content", ""))})
+            content = str(turn.get("content", ""))[:_CHAT_MAX_TURN_CHARS]
+            messages.append({"role": turn["role"], "content": content})
     messages.append({"role": "user", "content": req.message})
 
     try:
@@ -1552,27 +1577,75 @@ async def simulation_ws(websocket: WebSocket):
         _sim_clients.discard(websocket)
 
 
+# P2: simulation control endpoints share the WS_TOKEN gate. Without this,
+# audit C1+C2: anyone could POST cfg=任意路徑 → SUMO 載入任何檔案,parse 錯誤
+# 經 WebSocket 廣播洩漏內容; and unauthenticated SUMO start was a DoS vector.
+# cfg parameter is now whitelisted to a fixed set of safe paths under DATA_DIR.
+def _sim_auth_check(authorization: Optional[str] = None) -> Optional[str]:
+    """Return None if auth passes, otherwise an error message."""
+    if WS_TOKEN is None:
+        return None  # auth not configured — open for backwards compat
+    supplied = None
+    if authorization and authorization.lower().startswith("bearer "):
+        supplied = authorization[7:].strip()
+    if supplied != WS_TOKEN:
+        return "unauthorized"
+    return None
+
+
+def _resolve_safe_cfg(cfg: Optional[str]) -> Optional[Path]:
+    """Resolve a cfg path to an allowed .sumocfg under DATA_DIR or return None.
+
+    Whitelist approach: accept only filenames (no path components) under
+    SUMO_DATA_DIR (== <repo>/data). Rejects:
+      - absolute paths (could read /etc/passwd via SUMO)
+      - paths with .. or / or \\ (traversal)
+      - non-.sumocfg suffixes
+      - files outside SUMO_DATA_DIR after resolve()
+    """
+    if not cfg:
+        return Path(DEFAULT_SUMOCFG)
+    raw = str(cfg).strip()
+    # Strip path components — only allow bare filename
+    name = Path(raw).name
+    if name != raw or not name.endswith(".sumocfg"):
+        return None
+    candidate = (SUMO_DATA_DIR / name).resolve()
+    base = SUMO_DATA_DIR.resolve()
+    try:
+        candidate.relative_to(base)
+    except ValueError:
+        return None
+    if not candidate.exists() or candidate.is_symlink():
+        return None
+    return candidate
+
+
 @app.post("/api/simulation/start")
-def start_simulation(cfg: str = None):
-    """啟動 SUMO 模擬。cfg 可指定 .sumocfg 路徑；不指定則用預設。"""
+def start_simulation(cfg: str = None, authorization: Optional[str] = Header(None)):
+    """啟動 SUMO 模擬。cfg 只接受 SUMO_DATA_DIR 內的 *.sumocfg 檔名（不含路徑分隔）。"""
+    if _sim_auth_check(authorization):
+        return {"status": "error", "message": "unauthorized (TRAFFICVISION_WS_TOKEN required)"}
     global _sim_thread
     if _sim_running.is_set():
         return {"status": "already_running", "sim_time": _sim_snapshot.get("sim_time")}
-    cfg_path = cfg or str(DEFAULT_SUMOCFG)
-    if not Path(cfg_path).exists():
-        return {"status": "error", "message": f"設定檔不存在: {cfg_path}"}
+    safe_cfg = _resolve_safe_cfg(cfg)
+    if safe_cfg is None:
+        return {"status": "error", "message": f"cfg 不在白名單: 只接受 SUMO_DATA_DIR 內的 *.sumocfg 檔名（不含路徑），請求值: {cfg!r}"}
     _sim_snapshot.clear()
     _sim_running.set()
     _sim_thread = threading.Thread(
-        target=_traci_worker, args=(cfg_path, _event_loop), daemon=True
+        target=_traci_worker, args=(str(safe_cfg), _event_loop), daemon=True
     )
     _sim_thread.start()
-    return {"status": "started", "cfg": cfg_path}
+    return {"status": "started", "cfg": safe_cfg.name}
 
 
 @app.post("/api/simulation/stop")
-def stop_simulation():
+def stop_simulation(authorization: Optional[str] = Header(None)):
     """送出停止信號；TraCI 會在目前 step 結束後中斷。"""
+    if _sim_auth_check(authorization):
+        return {"status": "error", "message": "unauthorized (TRAFFICVISION_WS_TOKEN required)"}
     _sim_running.clear()
     return {"status": "stopping"}
 
@@ -1590,9 +1663,16 @@ def simulation_status():
 
 # ─── 啟動 ─────────────────────────────────────────
 if __name__ == "__main__":
+    # P1: default to localhost. Set TRAFFICVISION_BIND_HOST=0.0.0.0 explicitly to
+    # expose on all interfaces. Audit found that 0.0.0.0 default + zero auth on
+    # the data endpoints turns any port-8000 reach into full read access.
+    host = os.environ.get("TRAFFICVISION_BIND_HOST", "127.0.0.1")
+    port = int(os.environ.get("TRAFFICVISION_BIND_PORT", "8000"))
     print("=" * 50)
     print("TrafficVision API Server")
     print(f"數據目錄: {DATA_DIR}")
-    print("文件: http://localhost:8000/docs")
+    print(f"文件: http://{host}:{port}/docs")
+    if host == "0.0.0.0":
+        print("⚠  bind 0.0.0.0 — 所有 API endpoint 預設無認證,建議僅在 trusted network 內使用,或設 TRAFFICVISION_WS_TOKEN 後加 reverse proxy")
     print("=" * 50)
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host=host, port=port)
