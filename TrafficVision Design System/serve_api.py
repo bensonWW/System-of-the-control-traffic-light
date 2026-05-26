@@ -754,6 +754,24 @@ def _gru_predict_by_edge() -> dict:
         return {}
 
 
+def _spd_by_edge(heatmap_path: Path) -> dict:
+    """Return {edge_id: spd} from a SUMO edge heatmap JSON. Used to build a
+    fallback map for edges where the primary source (baseline) has spd=0
+    because that strategy's SUMO sim didn't route vehicles through them."""
+    data = _load_json_cached(heatmap_path)
+    if data is None:
+        return {}
+    out = {}
+    for eid, ed in (data.get("edges") or {}).items():
+        try:
+            s = float(ed.get("spd") or 0)
+        except (TypeError, ValueError):
+            s = 0.0
+        if s > 0:
+            out[eid] = round(s, 1)
+    return out
+
+
 def _gru_predict_by_road() -> dict:
     """Aggregate edge-level GRU predictions to broad road names via _edge_road_map."""
     by_edge = _gru_predict_by_edge()
@@ -935,33 +953,47 @@ def get_edge_forecast():
     sumo_baseline_edges = _flatten_heatmap_for_monitor(EDGE_HEATMAP_BASELINE_FILE)
     gru_by_edge = _gru_predict_by_edge()
 
+    # spd fallback chain for edges where the baseline strategy's SUMO sim
+    # didn't route vehicles (spd=0 = "no measurement", not "stopped"):
+    #   primary: edgedata_baseline.xml (no_control strategy sim)
+    #   fallback 1: edgedata_current.xml (Step 2 current-demand sim)
+    #   final: null  (so dashboard renders "---" instead of fake "0 km/h")
+    spd_fallback_current = _spd_by_edge(EDGE_HEATMAP_CURRENT_FILE)
+
+    def _resolved_spd(eid, primary_spd):
+        if primary_spd and primary_spd > 0:
+            return primary_spd
+        fb = spd_fallback_current.get(eid)
+        return fb if fb and fb > 0 else None
+
     # pred.vol is the GRU's raw per-edge 15-step snapshot sum — the model's
     # native output. Deliberately NOT scaled to match VD TotalVol: by Little's
     # Law the two quantities legitimately differ by ~dwell_time/window (~1/6).
-    # A multiplier would fabricate magnitude the model cannot actually predict.
     pred_edges = []
     for row in sumo_baseline_edges:
         eid = row.get("id")
         gru_vol = gru_by_edge.get(eid)
+        resolved_spd = _resolved_spd(eid, row.get("spd"))
+        # MOE only meaningful when we have a real speed
+        moe = _moe_from_spd(resolved_spd) if resolved_spd is not None else None
+        base = {**row, "spd": resolved_spd, "moe": moe, "vol_sumo": row.get("vol", 0)}
         if gru_vol is not None:
-            pred_edges.append({
-                **row,
-                "vol":      int(round(float(gru_vol))),
-                "vol_sumo": row.get("vol", 0),
-            })
-        else:
-            # Edge missing from GRU prediction (junction/internal/unmapped) —
-            # fall through with the SUMO baseline value.
-            pred_edges.append({**row, "vol_sumo": row.get("vol", 0)})
+            base["vol"] = int(round(float(gru_vol)))
+        pred_edges.append(base)
 
-    # Opt edges: vol = pred.vol (vehicles preserved), spd/occ from SUMO best.
+    # Opt edges: vol = pred.vol (vehicles preserved), spd/occ from SUMO best
+    # with same fallback chain so the table doesn't show fake 0 km/h.
     pred_by_id = {r["id"]: r for r in pred_edges}
     opt_edges = []
     for row in _flatten_heatmap_for_monitor(EDGE_HEATMAP_FILE):
         eid = row.get("id")
         pred_row = pred_by_id.get(eid, {})
+        resolved_spd = _resolved_spd(eid, row.get("spd"))
+        moe = _moe_from_spd(resolved_spd) if resolved_spd is not None else None
         opt_edges.append({
             **row,
+            "spd":      resolved_spd,
+            "moe":      moe,
             "vol":      pred_row.get("vol", row.get("vol", 0)),  # carry pred.vol forward
             "vol_sumo": row.get("vol", 0),
         })
@@ -971,9 +1003,9 @@ def get_edge_forecast():
         "opt":  opt_edges,
         "meta": {
             "pred_vol_unit":       "vehicle-snapshots (GRU pair model: Σ vehicle_count over 15 × 20-sec timesteps per edge)",
-            "pred_spd_occ_source": "SUMO no_control 基準模擬",
+            "pred_spd_occ_source": "SUMO no_control 基準模擬（spd=0 時 fallback 取 current sim，仍 0 則回傳 null）",
             "opt_vol_source":      "= pred.vol（優化改變流速，不改變車輛數）",
-            "opt_spd_occ_source":  "SUMO best-strategy 模擬（顯示優化後的速度/佔有率）",
+            "opt_spd_occ_source":  "SUMO best-strategy 模擬（同 spd fallback chain）",
             "vs_vd_note":          "NOT directly comparable to VD TotalVol (5-min pass-through flow). Ratio ~1/6 by Little's Law.",
             "predict_csv":         str(_latest_predict_csv() or ""),
             "gru_edges_total":     len(gru_by_edge),
