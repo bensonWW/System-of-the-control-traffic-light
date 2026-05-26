@@ -473,6 +473,104 @@ def get_status():
     }
 
 
+@app.get("/api/metrics/trends")
+def get_metrics_trends(limit: int = 200):
+    """Aggregate stats over the last `limit` runs from data/runtime_data/_metrics.jsonl.
+
+    Returns success rate, duration percentiles, strategy distribution, and a
+    rolling list of recent runs. Useful for spotting "scheduler keeps skipping
+    Step 3" or "composite_score creeping toward 1.0" trends.
+    """
+    if not _METRICS_PATH.exists():
+        return {"error": "no metrics yet", "hint": "run tools/runtime_pipeline.py"}
+
+    # Tail-read last N lines (keep memory bounded even with months of data)
+    try:
+        with open(_METRICS_PATH, "r", encoding="utf-8") as fp:
+            all_lines = fp.readlines()
+    except OSError as exc:
+        return {"error": f"read failed: {exc}"}
+    lines = all_lines[-max(1, min(int(limit), 5000)):]
+
+    records = []
+    for ln in lines:
+        try:
+            records.append(json.loads(ln))
+        except Exception:
+            continue
+    if not records:
+        return {"error": "no parseable records"}
+
+    total = len(records)
+    success = sum(1 for r in records if r.get("success"))
+    skipped = sum(1 for r in records if r.get("success") and r.get("step3_skipped"))
+    failed  = sum(1 for r in records if not r.get("success"))
+
+    # Duration stats (only successful runs)
+    durations = sorted(
+        [r["duration_sec"] for r in records
+         if r.get("success") and isinstance(r.get("duration_sec"), (int, float))]
+    )
+
+    def _percentile(arr, p):
+        if not arr:
+            return None
+        idx = int(len(arr) * p / 100)
+        return round(arr[min(idx, len(arr) - 1)], 2)
+
+    # Strategy distribution + per-strategy avg composite
+    by_strategy: dict = {}
+    for r in records:
+        if not r.get("success") or r.get("step3_skipped"):
+            continue
+        s = r.get("strategy") or "unknown"
+        bucket = by_strategy.setdefault(s, {"count": 0, "scores": []})
+        bucket["count"] += 1
+        cs = r.get("composite_score")
+        if isinstance(cs, (int, float)):
+            bucket["scores"].append(cs)
+    strategy_stats = {
+        s: {
+            "count": b["count"],
+            "share_pct": round(b["count"] / total * 100, 1),
+            "avg_composite_score": round(sum(b["scores"]) / len(b["scores"]), 4) if b["scores"] else None,
+            "best_composite_score": round(min(b["scores"]), 4) if b["scores"] else None,
+        }
+        for s, b in sorted(by_strategy.items(), key=lambda x: -x[1]["count"])
+    }
+
+    # Recent N runs (most recent first) as a tight summary list
+    recent = [
+        {
+            "ts": r.get("ts"),
+            "duration_sec": r.get("duration_sec"),
+            "strategy": r.get("strategy"),
+            "composite_score": r.get("composite_score"),
+            "step3_skipped": bool(r.get("step3_skipped")),
+            "success": bool(r.get("success")),
+        }
+        for r in records[-20:][::-1]
+    ]
+
+    return {
+        "window": {"total_runs": total, "first_ts": records[0].get("ts"), "last_ts": records[-1].get("ts")},
+        "summary": {
+            "success_pct":       round(success / total * 100, 1),
+            "step3_skipped_pct": round(skipped / total * 100, 1) if success else 0,
+            "failed_pct":        round(failed / total * 100, 1),
+        },
+        "duration_sec": {
+            "p50":  _percentile(durations, 50),
+            "p95":  _percentile(durations, 95),
+            "max":  durations[-1] if durations else None,
+            "mean": round(sum(durations) / len(durations), 2) if durations else None,
+            "n":    len(durations),
+        },
+        "strategy_distribution": strategy_stats,
+        "recent_runs": recent,
+    }
+
+
 @app.get("/api/health")
 def get_health():
     """深度健康檢查 — 給 dashboard / ops 用。
