@@ -223,7 +223,13 @@ function MetricsPanel({ roads, dataKey = 'cur' }) {
   const _d = (r) => r[dataKey] || r.cur || {};
   const roadsWithData = roads.filter(r => _d(r).spd != null);
   const hasData = roadsWithData.length > 0;
-  const avgSpd = hasData ? +(roadsWithData.reduce((s,r)=>s+_d(r).spd,0)/roadsWithData.length).toFixed(1) : null;
+  /* avgSpd 用 spd > 0 的子集計算：dashboard 監控列表會包含 SUMO 路網中
+     沒車經過的死巷邊 (spd 紀錄為 0 但非 null)，把它們算進平均會把整體車速
+     往下拉 (pred 模式 32.9 vs 排除後 41 km/h)。物理意義也對：「平均車速」
+     應該是「實際在動的路段平均速度」。其他統計 (totalVol/congested/free)
+     仍用 roadsWithData，因為 vol/moe 對 spd=0 的邊仍有意義 */
+  const movingRoads = roadsWithData.filter(r => _d(r).spd > 0);
+  const avgSpd = movingRoads.length ? +(movingRoads.reduce((s,r)=>s+_d(r).spd,0)/movingRoads.length).toFixed(1) : null;
   const totalVol = hasData ? roadsWithData.reduce((s,r)=>s+(_d(r).vol||0),0) : null;
   const congested = hasData ? roadsWithData.filter(r=>_d(r).moe===2).length : null;
   const free = hasData ? roadsWithData.filter(r=>_d(r).moe===0).length : null;
