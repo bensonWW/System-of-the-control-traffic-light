@@ -754,69 +754,6 @@ def _gru_predict_by_edge() -> dict:
         return {}
 
 
-# Dashboard 內部把 VD TotalVol /3 顯示（dashboard.html:1132,1140），
-# 推測 Taipei VD 回報 ~15 分鐘累積、夾出來除以 3 得到「5 分鐘平均車流量」。
-# 校正係數要對齊 dashboard 顯示值，否則前端 原始/預測 對不上量級。
-_VD_DASHBOARD_DIVISOR = 3
-
-
-def _vd_total_now() -> int:
-    """Sum TotalVol across all NTUT VD sections, normalized to dashboard scale.
-
-    The dashboard displays each VD section's vol as Math.round(TotalVol / 3)
-    (see dashboard.html:1132). To make the calibrated 預測 / 優化 totals match
-    the dashboard's 原始 total, we apply the same /3 here.
-    """
-    f = latest_file(str(TRAFFIC_DIR / "*.json"))
-    if not f:
-        return 0
-    try:
-        raw = _load_json_cached(f) or {}
-    except Exception:
-        return 0
-    raw_sum = sum(int(d.get("TotalVol") or 0) for d in raw.get("data", {}).values())
-    return raw_sum // _VD_DASHBOARD_DIVISOR
-
-
-def _sumo_heatmap_total_vol(path: Path) -> float:
-    """Sum the SUMO-side vol field across all edges in a heatmap JSON."""
-    data = _load_json_cached(path)
-    if data is None:
-        return 0.0
-    total = 0.0
-    for ed in (data.get("edges") or {}).values():
-        try:
-            total += float(ed.get("vol") or ed.get("count") or 0)
-        except (TypeError, ValueError):
-            pass
-    return total
-
-
-def _vd_calibration_factor() -> float:
-    """Multiplier that brings SUMO-scale predictions into VD-scale comparison.
-
-    Why this is needed: GRU was trained on SUMO simulation data, which uses a
-    much smaller synthetic vehicle population than the real Taipei VD feed.
-    Raw GRU sum across 15 timesteps yields a few hundred vehicles for the NTUT
-    region, while VD reports thousands — pure sim-vs-real scale gap (not a
-    model accuracy issue). Multiplying by this factor brings both into the
-    same unit family so users can compare 原始 vs 預測 vs 優化 totals meaningfully.
-
-    Computed from VD current 5-min flow ÷ raw GRU 15-step snapshot sum (both
-    summed across NTUT region). This puts pred_total ≈ VD_total — a stability
-    assumption that says "if traffic stays similar, predicted total ≈ current
-    total". Per-road allocations preserve the GRU model's relative predictions
-    (which road is busier than which).
-
-    Falls back to 1.0 (no scaling) if either side is empty.
-    """
-    vd_total = _vd_total_now()
-    gru_total = sum(_gru_predict_by_edge().values())
-    if vd_total > 0 and gru_total > 0:
-        return vd_total / gru_total
-    return 1.0
-
-
 def _gru_predict_by_road() -> dict:
     """Aggregate edge-level GRU predictions to broad road names via _edge_road_map."""
     by_edge = _gru_predict_by_edge()
@@ -889,55 +826,45 @@ def get_road_forecast():
     sumo_best     = _aggregate_edges_to_roads(EDGE_HEATMAP_FILE)
     gru_by_road   = _gru_predict_by_road()
 
-    # VD-scale calibration: see _vd_calibration_factor() docstring. Brings
-    # SUMO-scale GRU sums (~234 輛) and SUMO best-strategy edgedata totals
-    # (~50 輛) up to VD-scale (~1508 輛) so 原始 vs 預測 vs 優化 totals are
-    # comparable on the dashboard cards.
-    scale = _vd_calibration_factor()
-
-    # Merge: vol from GRU prediction (scaled), spd/occ from SUMO baseline physics.
-    # Union of road keys so we don't drop a road just because one side is empty.
+    # pred.vol is the GRU model's raw output unit: sum of vehicle_count across
+    # 15 × 20-sec snapshots per edge, then aggregated by road. This is NOT the
+    # same physical quantity as VD's TotalVol (5-min pass-through flow) — by
+    # Little's Law the two differ by a factor of ~dwell_time/window ≈ 1/6.
+    # We deliberately do NOT scale: a multiplier would invent absolute magnitude
+    # the model can't actually predict. The meta block tells consumers the unit.
     pred_merged: dict = {}
     for road in set(sumo_baseline) | set(gru_by_road):
         sumo_row = sumo_baseline.get(road, {})
         gru_raw = gru_by_road.get(road, 0)
         pred_merged[road] = {
-            "vol":          int(round(gru_raw * scale)),
-            "vol_gru_raw":  int(round(gru_raw)),
-            "spd":          sumo_row.get("spd", 0.0),
-            "occ":          sumo_row.get("occ", 0.0),
-            "vol_sumo":     sumo_row.get("vol", 0),
+            "vol": int(round(gru_raw)),
+            "spd": sumo_row.get("spd", 0.0),
+            "occ": sumo_row.get("occ", 0.0),
         }
 
-    # Opt scenario: physically, optimization redistributes signal timing — it
-    # doesn't make vehicles appear or disappear. So opt.vol should equal
-    # pred.vol (same predicted vehicle count). The OPTIMIZATION shows up in
-    # spd/occ (vehicles move faster, occupy edges for less time), not in vol.
-    # SUMO best-strategy gives us the improved spd/occ; we reuse pred.vol for
-    # the count because the GRU only predicts a single "no-control" baseline.
+    # Opt scenario: physically, signal optimization redistributes timing — it
+    # doesn't make vehicles appear or disappear. So opt.vol = pred.vol; the
+    # optimization shows up in spd/occ (faster speed, lower occupancy), not vol.
     opt_merged: dict = {}
     for road in set(pred_merged) | set(sumo_best):
         pred_row = pred_merged.get(road, {})
         sumo_row = sumo_best.get(road, {})
         opt_merged[road] = {
-            "vol": pred_row.get("vol", 0),                 # same as pred — vehicles preserved
-            "spd": sumo_row.get("spd", pred_row.get("spd", 0.0)),  # improved by optimizer
-            "occ": sumo_row.get("occ", pred_row.get("occ", 0.0)),  # improved by optimizer
-            "vol_gru_raw": pred_row.get("vol_gru_raw", 0),
-            "vol_sumo":    sumo_row.get("vol", 0),         # original SUMO best edgedata, transparency
+            "vol": pred_row.get("vol", 0),  # vehicles preserved
+            "spd": sumo_row.get("spd", pred_row.get("spd", 0.0)),
+            "occ": sumo_row.get("occ", pred_row.get("occ", 0.0)),
         }
 
     return {
         "pred": pred_merged,
         "opt":  opt_merged,
         "meta": {
-            "pred_vol_source":      "GRU pair model 預測（15 步 × 20 秒 snapshot 合計）× VD 校正係數",
-            "pred_spd_occ_source":  "SUMO no_control 基準模擬",
-            "opt_vol_source":       "= pred.vol（優化改變流速，不改變車輛數）",
-            "opt_spd_occ_source":   "SUMO best-strategy 模擬（顯示優化後的速度/佔有率）",
-            "vd_calibration_factor": round(scale, 3),
-            "vd_calibration_basis": f"VD 當前 5 分鐘累積流量 / GRU 15 步 snapshot 總和 = {_vd_total_now()} / {int(sum(_gru_predict_by_edge().values())) or 'N/A'}",
-            "predict_csv":          str(_latest_predict_csv() or ""),
+            "pred_vol_unit":         "vehicle-snapshots (GRU pair model: Σ vehicle_count over 15 × 20-sec timesteps per edge)",
+            "pred_spd_occ_source":   "SUMO no_control 基準模擬",
+            "opt_vol_source":        "= pred.vol（優化改變流速，不改變車輛數）",
+            "opt_spd_occ_source":    "SUMO best-strategy 模擬（顯示優化後的速度/佔有率）",
+            "vs_vd_note":            "NOT directly comparable to VD TotalVol (which is 5-min pass-through flow). Ratio ~1/6 by Little's Law (dwell_time/window).",
+            "predict_csv":           str(_latest_predict_csv() or ""),
         },
     }
 
@@ -1007,9 +934,11 @@ def get_edge_forecast():
     # SUMO baseline gives physics (spd/occ) + the named-edge structure we need
     sumo_baseline_edges = _flatten_heatmap_for_monitor(EDGE_HEATMAP_BASELINE_FILE)
     gru_by_edge = _gru_predict_by_edge()
-    scale = _vd_calibration_factor()
 
-    # Overlay GRU vol (scaled to VD units) on top of SUMO baseline rows.
+    # pred.vol is the GRU's raw per-edge 15-step snapshot sum — the model's
+    # native output. Deliberately NOT scaled to match VD TotalVol: by Little's
+    # Law the two quantities legitimately differ by ~dwell_time/window (~1/6).
+    # A multiplier would fabricate magnitude the model cannot actually predict.
     pred_edges = []
     for row in sumo_baseline_edges:
         eid = row.get("id")
@@ -1017,23 +946,15 @@ def get_edge_forecast():
         if gru_vol is not None:
             pred_edges.append({
                 **row,
-                "vol":         int(round(float(gru_vol) * scale)),
-                "vol_gru_raw": int(round(float(gru_vol))),
-                "vol_sumo":    row.get("vol", 0),
+                "vol":      int(round(float(gru_vol))),
+                "vol_sumo": row.get("vol", 0),
             })
         else:
             # Edge missing from GRU prediction (junction/internal/unmapped) —
-            # scale the SUMO baseline value so it's still VD-comparable.
-            sumo_raw = row.get("vol", 0)
-            pred_edges.append({
-                **row,
-                "vol":      int(round(float(sumo_raw) * scale)),
-                "vol_sumo": sumo_raw,
-            })
+            # fall through with the SUMO baseline value.
+            pred_edges.append({**row, "vol_sumo": row.get("vol", 0)})
 
     # Opt edges: vol = pred.vol (vehicles preserved), spd/occ from SUMO best.
-    # Build a lookup by edge id from pred_edges so opt rows can borrow the
-    # already-calibrated GRU vol per edge.
     pred_by_id = {r["id"]: r for r in pred_edges}
     opt_edges = []
     for row in _flatten_heatmap_for_monitor(EDGE_HEATMAP_FILE):
@@ -1041,20 +962,19 @@ def get_edge_forecast():
         pred_row = pred_by_id.get(eid, {})
         opt_edges.append({
             **row,
-            "vol":          pred_row.get("vol", row.get("vol", 0)),  # carry pred.vol forward
-            "vol_gru_raw":  pred_row.get("vol_gru_raw", 0),
-            "vol_sumo":     row.get("vol", 0),  # original SUMO best edgedata
+            "vol":      pred_row.get("vol", row.get("vol", 0)),  # carry pred.vol forward
+            "vol_sumo": row.get("vol", 0),
         })
 
     return {
         "pred": pred_edges,
         "opt":  opt_edges,
         "meta": {
-            "pred_vol_source":     "GRU pair model 預測（per-edge 15 步合計）× VD 校正係數",
+            "pred_vol_unit":       "vehicle-snapshots (GRU pair model: Σ vehicle_count over 15 × 20-sec timesteps per edge)",
             "pred_spd_occ_source": "SUMO no_control 基準模擬",
             "opt_vol_source":      "= pred.vol（優化改變流速，不改變車輛數）",
             "opt_spd_occ_source":  "SUMO best-strategy 模擬（顯示優化後的速度/佔有率）",
-            "vd_calibration_factor": round(scale, 3),
+            "vs_vd_note":          "NOT directly comparable to VD TotalVol (5-min pass-through flow). Ratio ~1/6 by Little's Law.",
             "predict_csv":         str(_latest_predict_csv() or ""),
             "gru_edges_total":     len(gru_by_edge),
         },
