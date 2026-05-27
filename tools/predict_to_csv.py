@@ -133,17 +133,43 @@ def load_model(model_path, device):
         )
 
     register_legacy_checkpoint_classes()
+    # P5: torch.load weights_only behavior — audit H2 flagged weights_only=False
+    # as an RCE vector for USB-distributed .pth files. Two realities tension:
+    #   1. Existing checkpoints pickled custom classes (Log1pScaler, GRUSequence)
+    #      against __main__ at training time, so weights_only=True rejects them
+    #      with "Unsupported global: GLOBAL __main__.Log1pScaler" even when we
+    #      call add_safe_globals — PyTorch matches on cls.__module__, and our
+    #      classes live in predict_to_csv, not __main__.
+    #   2. We can't break production model loading.
+    # Strategy: try weights_only=True (best — fully safe; will succeed for
+    # re-trained checkpoints whose classes were saved with the right module
+    # path). On failure, fall back to weights_only=False but print a loud
+    # warning. Set TRAFFICVISION_REFUSE_UNSAFE_LOAD=1 to make the failure hard.
     try:
-        checkpoint = torch.load(
-            model_path,
-            map_location=device,
-            weights_only=False,
-        )
-    except Exception as exc:
-        raise RuntimeError(
-            f"無法載入模型 {model_path}（torch.load 失敗）：{exc}\n"
-            f"可能原因：檔案損毀、PyTorch 版本不相容、或 pickle 內含的類別在當前環境找不到。"
-        ) from exc
+        torch.serialization.add_safe_globals([Log1pScaler, GRUSequence])
+    except Exception:
+        pass  # older torch lacks add_safe_globals
+    refuse_unsafe = os.environ.get("TRAFFICVISION_REFUSE_UNSAFE_LOAD", "0") == "1"
+    try:
+        checkpoint = torch.load(model_path, map_location=device, weights_only=True)
+    except Exception as safe_exc:
+        if refuse_unsafe:
+            raise RuntimeError(
+                f"weights_only=True 載入失敗且 TRAFFICVISION_REFUSE_UNSAFE_LOAD=1：{safe_exc}\n"
+                f"請用 add_safe_globals 註冊正確模組路徑的類別，或重新訓練模型。"
+            ) from safe_exc
+        try:
+            checkpoint = torch.load(model_path, map_location=device, weights_only=False)
+            print(
+                f"  ⚠ {os.path.basename(model_path)} 用 weights_only=False 載入（pickle 含 __main__ 引用的類別）。\n"
+                f"    這對「不信任來源的 .pth 檔」有 RCE 風險。production 環境請確保模型來自可信流程。\n"
+                f"    要強制拒絕：export TRAFFICVISION_REFUSE_UNSAFE_LOAD=1"
+            )
+        except Exception as exc:
+            raise RuntimeError(
+                f"無法載入模型 {model_path}（torch.load 兩種模式都失敗）：{exc}\n"
+                f"可能原因：檔案損毀、PyTorch 版本不相容、或 pickle 內含的類別在當前環境找不到。"
+            ) from exc
 
     # Required keys — checkpoints saved by train_model.py always have these
     required_keys = ("model_state_dict",)

@@ -23,6 +23,15 @@ RUN mkdir -p \
     "TrafficVision Design System/data" \
     data
 
+# P7: drop root inside the container — audit L1. With ./data bind-mounted,
+# anything writing as root inside leaves root-owned files on the host that
+# the host user can't clean up without sudo. UID 1000 matches the typical
+# first non-root host user.
+RUN useradd -m -u 1000 trafficvision && \
+    chown -R trafficvision:trafficvision /app
+
+USER trafficvision
+
 EXPOSE 8000
 
 # health check（依賴 /api/status 端點）

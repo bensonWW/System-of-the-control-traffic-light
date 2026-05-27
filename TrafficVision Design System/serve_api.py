@@ -36,7 +36,7 @@ from typing import Optional
 
 try:
     from contextlib import asynccontextmanager
-    from fastapi import FastAPI, Response, WebSocket, WebSocketDisconnect
+    from fastapi import FastAPI, Header, Response, WebSocket, WebSocketDisconnect
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import RedirectResponse, FileResponse
     from fastapi.staticfiles import StaticFiles
@@ -157,7 +157,10 @@ def _fetch_taipei_traffic() -> dict:
     resp = _taipei_session.get(_TAIPEI_VD_URL, timeout=30)
     resp.raise_for_status()
     with gzip.open(io.BytesIO(resp.content)) as gz:
-        root = __import__("xml.etree.ElementTree", fromlist=["ElementTree"]).fromstring(gz.read())
+        # P4: defusedxml — Taipei feed is external/untrusted; harden against
+        # billion-laughs / entity-bomb DoS even though HTTPS is in use upstream.
+        from defusedxml.ElementTree import fromstring as _safe_fromstring
+        root = _safe_fromstring(gz.read())
     data: dict = {}
     # Schema-drift visibility (mirrors tools/fetch_vd_data.py).
     parse_errors: list = []
@@ -471,6 +474,188 @@ def get_status():
         "traffic_data_exists": latest_traffic is not None,
         "handoff_exists": handoff is not None,
     }
+
+
+@app.get("/api/metrics/trends")
+def get_metrics_trends(limit: int = 200):
+    """Aggregate stats over the last `limit` runs from data/runtime_data/_metrics.jsonl.
+
+    Returns success rate, duration percentiles, strategy distribution, and a
+    rolling list of recent runs. Useful for spotting "scheduler keeps skipping
+    Step 3" or "composite_score creeping toward 1.0" trends.
+    """
+    if not _METRICS_PATH.exists():
+        return {"error": "no metrics yet", "hint": "run tools/runtime_pipeline.py"}
+
+    # Tail-read last N lines (keep memory bounded even with months of data)
+    try:
+        with open(_METRICS_PATH, "r", encoding="utf-8") as fp:
+            all_lines = fp.readlines()
+    except OSError as exc:
+        return {"error": f"read failed: {exc}"}
+    lines = all_lines[-max(1, min(int(limit), 5000)):]
+
+    records = []
+    for ln in lines:
+        try:
+            records.append(json.loads(ln))
+        except Exception:
+            continue
+    if not records:
+        return {"error": "no parseable records"}
+
+    total = len(records)
+    success = sum(1 for r in records if r.get("success"))
+    skipped = sum(1 for r in records if r.get("success") and r.get("step3_skipped"))
+    failed  = sum(1 for r in records if not r.get("success"))
+
+    # Duration stats (only successful runs)
+    durations = sorted(
+        [r["duration_sec"] for r in records
+         if r.get("success") and isinstance(r.get("duration_sec"), (int, float))]
+    )
+
+    def _percentile(arr, p):
+        if not arr:
+            return None
+        idx = int(len(arr) * p / 100)
+        return round(arr[min(idx, len(arr) - 1)], 2)
+
+    # Strategy distribution + per-strategy avg composite
+    by_strategy: dict = {}
+    for r in records:
+        if not r.get("success") or r.get("step3_skipped"):
+            continue
+        s = r.get("strategy") or "unknown"
+        bucket = by_strategy.setdefault(s, {"count": 0, "scores": []})
+        bucket["count"] += 1
+        cs = r.get("composite_score")
+        if isinstance(cs, (int, float)):
+            bucket["scores"].append(cs)
+    strategy_stats = {
+        s: {
+            "count": b["count"],
+            "share_pct": round(b["count"] / total * 100, 1),
+            "avg_composite_score": round(sum(b["scores"]) / len(b["scores"]), 4) if b["scores"] else None,
+            "best_composite_score": round(min(b["scores"]), 4) if b["scores"] else None,
+        }
+        for s, b in sorted(by_strategy.items(), key=lambda x: -x[1]["count"])
+    }
+
+    # Recent N runs (most recent first) as a tight summary list
+    recent = [
+        {
+            "ts": r.get("ts"),
+            "duration_sec": r.get("duration_sec"),
+            "strategy": r.get("strategy"),
+            "composite_score": r.get("composite_score"),
+            "step3_skipped": bool(r.get("step3_skipped")),
+            "success": bool(r.get("success")),
+        }
+        for r in records[-20:][::-1]
+    ]
+
+    return {
+        "window": {"total_runs": total, "first_ts": records[0].get("ts"), "last_ts": records[-1].get("ts")},
+        "summary": {
+            "success_pct":       round(success / total * 100, 1),
+            "step3_skipped_pct": round(skipped / total * 100, 1) if success else 0,
+            "failed_pct":        round(failed / total * 100, 1),
+        },
+        "duration_sec": {
+            "p50":  _percentile(durations, 50),
+            "p95":  _percentile(durations, 95),
+            "max":  durations[-1] if durations else None,
+            "mean": round(sum(durations) / len(durations), 2) if durations else None,
+            "n":    len(durations),
+        },
+        "strategy_distribution": strategy_stats,
+        "recent_runs": recent,
+    }
+
+
+@app.get("/api/health")
+def get_health():
+    """深度健康檢查 — 給 dashboard / ops 用。
+
+    回傳每個資料源的「上次更新何時、距現在幾秒」：
+      vd            ← TrafficVision Design System/data/trafficData/*.json
+      predict       ← runtime_pipeline 的 *_predict.csv
+      handoff       ← 整個 handoff/ 目錄
+      pipeline_lock ← runtime_pipeline scheduler 是否在跑
+      ollama        ← 本機 Ollama 是否可連線
+    """
+    now = datetime.now()
+    out = {"server_time": now.isoformat(timespec="seconds")}
+
+    # ── VD freshness (Taipei API 每 5 分鐘自動抓)
+    vd_file = latest_file(str(TRAFFIC_DIR / "*.json"))
+    if vd_file:
+        age = (now - datetime.fromtimestamp(os.path.getmtime(vd_file))).total_seconds()
+        out["vd"] = {
+            "file": os.path.basename(vd_file),
+            "age_sec": int(age),
+            "stale": age > 600,  # > 10 分鐘算 stale
+        }
+    else:
+        out["vd"] = {"file": None, "age_sec": None, "stale": True}
+
+    # ── Predict freshness (runtime_pipeline 跑完才更新)
+    predict_csv = _latest_predict_csv()
+    if predict_csv and predict_csv.exists():
+        age = (now - datetime.fromtimestamp(predict_csv.stat().st_mtime)).total_seconds()
+        out["predict"] = {
+            "file": predict_csv.name,
+            "age_sec": int(age),
+            "stale": age > 600,
+        }
+    else:
+        out["predict"] = {"file": None, "age_sec": None, "stale": True}
+
+    # ── Scheduler liveness (lockfile + last metric)
+    lock_path = BASE_DIR.parent / "data" / "runtime_data" / ".pipeline.lock"
+    last_metric = _latest_run_metric() or {}
+    pipeline_age = None
+    if last_metric.get("ts"):
+        try:
+            pipeline_age = (now - datetime.fromisoformat(last_metric["ts"])).total_seconds()
+        except Exception:
+            pass
+    out["pipeline"] = {
+        "lock_exists": lock_path.exists(),
+        "last_run_ts": last_metric.get("ts"),
+        "last_run_age_sec": int(pipeline_age) if pipeline_age else None,
+        "last_run_success": last_metric.get("success"),
+        "last_run_step3_skipped": last_metric.get("step3_skipped"),
+        "last_strategy": last_metric.get("strategy"),
+        "last_composite_score": last_metric.get("composite_score"),
+        # Scheduler likely alive if a run happened within last 10 min (default interval 5 min)
+        "scheduler_alive_guess": pipeline_age is not None and pipeline_age < 600,
+    }
+
+    # ── Ollama reachability (best-effort, < 1s timeout)
+    try:
+        r = _taipei_session.get(f"{OLLAMA_BASE_URL}/api/tags", timeout=1.0)
+        out["ollama"] = {
+            "reachable": r.ok,
+            "url": OLLAMA_BASE_URL,
+            "model_required": OLLAMA_MODEL,
+        }
+    except Exception as exc:
+        out["ollama"] = {
+            "reachable": False,
+            "url": OLLAMA_BASE_URL,
+            "error": str(exc)[:120],
+        }
+
+    # ── Overall status: ok / degraded / critical
+    if out["vd"]["stale"] or out["pipeline"]["last_run_age_sec"] is None:
+        out["status"] = "critical"
+    elif out["predict"]["stale"] or not out["pipeline"]["scheduler_alive_guess"]:
+        out["status"] = "degraded"
+    else:
+        out["status"] = "ok"
+    return out
 
 
 @app.get("/api/traffic")
@@ -1017,9 +1202,24 @@ def get_edge_forecast():
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
 OLLAMA_MODEL    = os.environ.get("OLLAMA_MODEL",    "trafficvision-gemma4")
 
+# P3: chat 大小上限,擋 Ollama DoS。預設值:
+#   message  4 KB  — 一般中文問題 < 500 字綽綽有餘
+#   per-turn content 8 KB — 含先前回應的 markdown 表格
+#   history 最多 10 turns (chat() 本來就 [-10:])
+# 操作員可用 env 放寬。違反限制回 422,不灌進 Ollama。
+_CHAT_MAX_MESSAGE_CHARS  = int(os.environ.get("TRAFFICVISION_CHAT_MAX_MESSAGE",      "4096"))
+_CHAT_MAX_TURN_CHARS     = int(os.environ.get("TRAFFICVISION_CHAT_MAX_TURN_CONTENT", "8192"))
+_CHAT_MAX_HISTORY_TURNS  = int(os.environ.get("TRAFFICVISION_CHAT_MAX_HISTORY",      "10"))
+
+
+class ChatTurn(BaseModel):
+    role: str
+    content: str
+
+
 class ChatRequest(BaseModel):
     message: str
-    history: list = []   # [{"role": "user"|"assistant", "content": "..."}]
+    history: list = []   # list of ChatTurn-shaped dicts; validated in handler
 
 def _compact(obj, limit: int = 2000) -> str:
     """提取 data/records/metrics 欄位並序列化，截短至 limit 字元。"""
@@ -1120,6 +1320,80 @@ def _precompute_summary(road_data: dict) -> str:
     return "\n".join(lines)
 
 
+def _pipeline_status_block() -> str:
+    """組裝最近一輪 pipeline 的 metadata 給 LLM 用 —
+    包含上次跑何時、選了什麼策略、composite_score、是否跳 Step 3。
+    讓助理可以回答「為何 opt==pred」「現在優化器選什麼」這類問題。"""
+    m = _latest_run_metric() or {}
+    if not m:
+        return "（pipeline 尚未產生紀錄；請執行 python tools/runtime_pipeline.py --once）"
+    ts = m.get("ts", "?")
+    age_sec = None
+    try:
+        age_sec = int((datetime.now() - datetime.fromisoformat(ts)).total_seconds())
+    except Exception:
+        pass
+    age_label = f"{age_sec // 60} 分 {age_sec % 60} 秒前" if age_sec is not None else "未知"
+    if m.get("error"):
+        return f"上次 pipeline ({ts}, {age_label}) **失敗**：{m['error']}"
+    if m.get("step3_skipped"):
+        return (
+            f"上次 pipeline ({ts}, {age_label}) **跳過 Step 3（預測+優化）**：{m['step3_skipped']}\n"
+            f"  → 本輪沒有 GRU 預測；號誌維持現狀。"
+        )
+    strat = m.get("strategy") or "?"
+    score = m.get("composite_score")
+    score_str = f"{score:.4f}" if isinstance(score, (int, float)) else "?"
+    if strat == "no_control":
+        verdict = "優化器嘗試 5 個策略後，沒有任何方案能在 composite_score 上優於基準（=1.0），所以維持現狀。預測車流與優化車流會顯示相同數值。"
+    else:
+        verdict = f"優化器採用 {strat} 策略，composite_score = {score_str}（< 1 即優於基準）。"
+    return (
+        f"上次 pipeline ({ts}, {age_label})：strategy = {strat}, composite_score = {score_str}\n"
+        f"  → {verdict}"
+    )
+
+
+def _signal_changes_summary(max_rows: int = 5) -> str:
+    """從最近 handoff 的 signal_change_detail.csv 抽前 N 個 phase 調整給 LLM 看。"""
+    handoff = latest_handoff_dir()
+    if not handoff:
+        return "（尚無 handoff 資料）"
+    files = list(handoff.glob("*_signal_change_detail.csv"))
+    if not files:
+        return "（本輪 signal_change_detail.csv 不存在 — 多半因策略選了 no_control，沒做任何調整）"
+    try:
+        df = pd.read_csv(files[-1])
+        if df.empty:
+            return "本輪沒有任何 phase 被調整（no_control）"
+        rows = df.head(max_rows)
+        lines = []
+        for _, r in rows.iterrows():
+            tl = r.get("tl_id", "?")
+            hint = r.get("road_hint", "")
+            old_d = r.get("old_duration", "?")
+            new_d = r.get("new_duration", "?")
+            delta = r.get("delta_duration", "?")
+            label = f"{tl}({hint})" if hint else tl
+            lines.append(f"  - {label} phase #{r.get('phase_index','?')} `{r.get('state','?')}`: {old_d}s → {new_d}s ({delta:+.0f}s)" if isinstance(delta, (int, float)) else f"  - {label}: {old_d}s → {new_d}s")
+        total = len(df)
+        if total > max_rows:
+            lines.append(f"  …共 {total} 個 phase 被調整")
+        return "\n".join(lines)
+    except Exception as exc:
+        return f"（讀 signal_change_detail 失敗: {exc}）"
+
+
+def _predict_freshness_block() -> str:
+    """One-line predict CSV freshness for LLM context."""
+    p = _latest_predict_csv()
+    if p is None or not p.exists():
+        return "尚無 GRU predict.csv（pipeline 還沒跑過或被跳過）"
+    age = (datetime.now() - datetime.fromtimestamp(p.stat().st_mtime)).total_seconds()
+    age_label = f"{int(age // 60)} 分 {int(age % 60)} 秒前"
+    return f"GRU 預測產出於 {age_label}（檔案：{p.name}）"
+
+
 def _build_system_prompt(traffic: dict) -> str:
     """Build a grounded system prompt with pre-computed answers to prevent hallucination."""
     road_data: dict = traffic.get("data", {}) if isinstance(traffic.get("data"), dict) else {}
@@ -1132,34 +1406,55 @@ def _build_system_prompt(traffic: dict) -> str:
 ═══ 鐵則（違反即為錯誤回答）═══
 1. 只能提及以下 {len(road_names)} 個路段，絕對禁止提及清單以外的路段名稱：
    {road_list_str}
-2. 所有數值（車速、佔有率、流量）必須直接抄自「即時交通摘要」，不得自行計算或捏造。
+2. 所有數值（車速、佔有率、流量）必須直接抄自「即時交通摘要」或「系統狀態」，不得自行計算或捏造。
 3. 若問及未監測的路段，回答：「該路段不在本系統監測範圍。目前監測：{road_list_str}」
-4. 若摘要顯示資料缺失，回答「尚無該資料」，不得推測。
+4. 若摘要顯示資料缺失（null 或「尚無」），回答「尚無該資料」，不得推測。
+5. 解釋「為何預測車流和優化車流相同」這類問題時，用「系統狀態」內的策略資訊回答，不要編造。
 
 ═══ 即時交通摘要（伺服器已計算完畢，直接引用）═══
 {summary}
 
+═══ 系統狀態（最近一輪 pipeline）═══
+{_pipeline_status_block()}
+
+預測資料新鮮度：{_predict_freshness_block()}
+
+本輪號誌調整明細（若 no_control 則為空）：
+{_signal_changes_summary(5)}
+
+═══ 資料源對照（避免誤導使用者比較不同單位）═══
+- 「原始車流」(VD) — 真實偵測器 5 分鐘累積通過量，單位：通過車次
+- 「預測車流」(GRU) — 模型輸出，單位：15 步瞬時佔有 snapshot 加總（≈ VD 的 1/6，由 Little's Law）
+- 「優化車流」(SUMO best) — 等於預測 vol（車輛守恆）；只有速度/佔有率會因號誌改善
+- 跨模式比車流量「總數」沒意義；要比的話比相對變化或同模式不同時間
+
 ═══ 其他系統資料 ═══
 SUMO 壅塞 Edge（佔有率排序前 10）：{_top_congested_edges(10)}
 GRU 預測：{_compact(get_prediction())}
-號誌優化：{_compact(get_signal_plan())}
 優化效益：{_compact(get_comparison())}
 
 ═══ 回答格式 ═══
-使用繁體中文。引用數值時標明單位（km/h、%、輛）。簡潔為主，不重複摘要已說明的內容。"""
+使用繁體中文。引用數值時標明單位（km/h、%、輛、秒）。簡潔為主，不重複摘要已說明的內容。"""
 
 
 @app.post("/api/chat")
 async def chat(req: ChatRequest):
     """呼叫本地 Ollama Gemma 4 模型，附帶即時交通 context 回覆問題。"""
+    # P3: enforce input size limits to prevent Ollama DoS via giant payloads.
+    if len(req.message) > _CHAT_MAX_MESSAGE_CHARS:
+        return {"error": "message_too_large",
+                "reply": f"訊息太長（上限 {_CHAT_MAX_MESSAGE_CHARS} 字元，收到 {len(req.message)}）。請拆短再試。"}
+
     loop = asyncio.get_running_loop()
     traffic = await loop.run_in_executor(None, get_latest_traffic)
     system = _build_system_prompt(traffic)
 
     messages = [{"role": "system", "content": system}]
-    for turn in req.history[-10:]:
+    # Cap history depth and per-turn content size.
+    for turn in req.history[-_CHAT_MAX_HISTORY_TURNS:]:
         if isinstance(turn, dict) and turn.get("role") in ("user", "assistant"):
-            messages.append({"role": turn["role"], "content": str(turn.get("content", ""))})
+            content = str(turn.get("content", ""))[:_CHAT_MAX_TURN_CHARS]
+            messages.append({"role": turn["role"], "content": content})
     messages.append({"role": "user", "content": req.message})
 
     try:
@@ -1282,27 +1577,75 @@ async def simulation_ws(websocket: WebSocket):
         _sim_clients.discard(websocket)
 
 
+# P2: simulation control endpoints share the WS_TOKEN gate. Without this,
+# audit C1+C2: anyone could POST cfg=任意路徑 → SUMO 載入任何檔案,parse 錯誤
+# 經 WebSocket 廣播洩漏內容; and unauthenticated SUMO start was a DoS vector.
+# cfg parameter is now whitelisted to a fixed set of safe paths under DATA_DIR.
+def _sim_auth_check(authorization: Optional[str] = None) -> Optional[str]:
+    """Return None if auth passes, otherwise an error message."""
+    if WS_TOKEN is None:
+        return None  # auth not configured — open for backwards compat
+    supplied = None
+    if authorization and authorization.lower().startswith("bearer "):
+        supplied = authorization[7:].strip()
+    if supplied != WS_TOKEN:
+        return "unauthorized"
+    return None
+
+
+def _resolve_safe_cfg(cfg: Optional[str]) -> Optional[Path]:
+    """Resolve a cfg path to an allowed .sumocfg under DATA_DIR or return None.
+
+    Whitelist approach: accept only filenames (no path components) under
+    SUMO_DATA_DIR (== <repo>/data). Rejects:
+      - absolute paths (could read /etc/passwd via SUMO)
+      - paths with .. or / or \\ (traversal)
+      - non-.sumocfg suffixes
+      - files outside SUMO_DATA_DIR after resolve()
+    """
+    if not cfg:
+        return Path(DEFAULT_SUMOCFG)
+    raw = str(cfg).strip()
+    # Strip path components — only allow bare filename
+    name = Path(raw).name
+    if name != raw or not name.endswith(".sumocfg"):
+        return None
+    candidate = (SUMO_DATA_DIR / name).resolve()
+    base = SUMO_DATA_DIR.resolve()
+    try:
+        candidate.relative_to(base)
+    except ValueError:
+        return None
+    if not candidate.exists() or candidate.is_symlink():
+        return None
+    return candidate
+
+
 @app.post("/api/simulation/start")
-def start_simulation(cfg: str = None):
-    """啟動 SUMO 模擬。cfg 可指定 .sumocfg 路徑；不指定則用預設。"""
+def start_simulation(cfg: str = None, authorization: Optional[str] = Header(None)):
+    """啟動 SUMO 模擬。cfg 只接受 SUMO_DATA_DIR 內的 *.sumocfg 檔名（不含路徑分隔）。"""
+    if _sim_auth_check(authorization):
+        return {"status": "error", "message": "unauthorized (TRAFFICVISION_WS_TOKEN required)"}
     global _sim_thread
     if _sim_running.is_set():
         return {"status": "already_running", "sim_time": _sim_snapshot.get("sim_time")}
-    cfg_path = cfg or str(DEFAULT_SUMOCFG)
-    if not Path(cfg_path).exists():
-        return {"status": "error", "message": f"設定檔不存在: {cfg_path}"}
+    safe_cfg = _resolve_safe_cfg(cfg)
+    if safe_cfg is None:
+        return {"status": "error", "message": f"cfg 不在白名單: 只接受 SUMO_DATA_DIR 內的 *.sumocfg 檔名（不含路徑），請求值: {cfg!r}"}
     _sim_snapshot.clear()
     _sim_running.set()
     _sim_thread = threading.Thread(
-        target=_traci_worker, args=(cfg_path, _event_loop), daemon=True
+        target=_traci_worker, args=(str(safe_cfg), _event_loop), daemon=True
     )
     _sim_thread.start()
-    return {"status": "started", "cfg": cfg_path}
+    return {"status": "started", "cfg": safe_cfg.name}
 
 
 @app.post("/api/simulation/stop")
-def stop_simulation():
+def stop_simulation(authorization: Optional[str] = Header(None)):
     """送出停止信號；TraCI 會在目前 step 結束後中斷。"""
+    if _sim_auth_check(authorization):
+        return {"status": "error", "message": "unauthorized (TRAFFICVISION_WS_TOKEN required)"}
     _sim_running.clear()
     return {"status": "stopping"}
 
@@ -1320,9 +1663,16 @@ def simulation_status():
 
 # ─── 啟動 ─────────────────────────────────────────
 if __name__ == "__main__":
+    # P1: default to localhost. Set TRAFFICVISION_BIND_HOST=0.0.0.0 explicitly to
+    # expose on all interfaces. Audit found that 0.0.0.0 default + zero auth on
+    # the data endpoints turns any port-8000 reach into full read access.
+    host = os.environ.get("TRAFFICVISION_BIND_HOST", "127.0.0.1")
+    port = int(os.environ.get("TRAFFICVISION_BIND_PORT", "8000"))
     print("=" * 50)
     print("TrafficVision API Server")
     print(f"數據目錄: {DATA_DIR}")
-    print("文件: http://localhost:8000/docs")
+    print(f"文件: http://{host}:{port}/docs")
+    if host == "0.0.0.0":
+        print("⚠  bind 0.0.0.0 — 所有 API endpoint 預設無認證,建議僅在 trusted network 內使用,或設 TRAFFICVISION_WS_TOKEN 後加 reverse proxy")
     print("=" * 50)
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host=host, port=port)

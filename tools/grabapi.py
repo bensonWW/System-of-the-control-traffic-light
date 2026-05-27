@@ -1,5 +1,7 @@
 import requests
-import xml.etree.ElementTree as ET
+# P4: defusedxml on untrusted external XML (Taipei VD feed). Same API as
+# xml.etree.ElementTree but blocks billion-laughs / external-entity attacks.
+from defusedxml.ElementTree import parse as _safe_parse
 import gzip
 import shutil
 import os
@@ -42,7 +44,7 @@ def getData():
             with open(xml_path, "wb") as f_out:
                 shutil.copyfileobj(f_in, f_out)
 
-        tree = ET.parse(xml_path)
+        tree = _safe_parse(xml_path)
         root = tree.getroot()
         roadInfo = {}
         for child1 in root[2]:

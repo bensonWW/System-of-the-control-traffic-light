@@ -4,7 +4,9 @@ import os
 import requests, gzip, io, json
 from datetime import datetime
 from pathlib import Path
-import xml.etree.ElementTree as ET
+# P4: defusedxml on untrusted external input (Taipei VD feed). Functionally
+# equivalent API to xml.etree.ElementTree but blocks entity-bomb/DoS payloads.
+from defusedxml.ElementTree import fromstring as _safe_fromstring
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
@@ -50,7 +52,7 @@ resp = _retrying_session().get(
 resp.raise_for_status()
 
 with gzip.open(io.BytesIO(resp.content)) as gz:
-    root = ET.fromstring(gz.read())
+    root = _safe_fromstring(gz.read())
 
 data = {}
 # Visibility counters for upstream API schema drift / bad rows.
