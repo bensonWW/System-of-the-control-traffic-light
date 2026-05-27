@@ -108,33 +108,39 @@ def run_simulation(config_file, output_csv):
         traci.start(cmd, port=port, label=label, numRetries=10)
         traci.switch(label)
         data_buffer = []  # Buffer to store data for filtering later
-        
+
         while traci.simulation.getMinExpectedNumber() > 0:
             traci.simulationStep()
             current_time = traci.simulation.getTime()
-            
+
             # Record data every 20 seconds
             if current_time % 20 == 0:
                 for edge in traci.edge.getIDList():
                     count = traci.edge.getLastStepVehicleNumber(edge)
                     if count > 0:
-                        data_buffer.append((current_time, edge, count))
-        
+                        # 取該 edge 上所有車輛的平均速度 (TraCI 回 m/s) → 轉成 km/h
+                        # 只在 count > 0 時取,避免 TraCI 對空 edge 回傳特殊值 (-1001 等)
+                        mean_speed_ms = traci.edge.getLastStepMeanSpeed(edge)
+                        avg_speed_kmh = mean_speed_ms * 3.6
+                        data_buffer.append((current_time, edge, count, avg_speed_kmh))
+
         if not data_buffer:
             return True # No data, but simulation finished
-            
+
         actual_end_time = data_buffer[-1][0]
-        
+
         # Write filtered data to CSV
+        # 新增 avg_speed_kmh 欄位; 下游 (train_model / predict_to_csv / traffic_light_optimizer)
+        # 都用具名欄位讀 vehicle_count,多一欄不影響既有功能。
         with open(output_csv, "w", encoding="utf-8") as f:
-            f.write("time,edge_id,vehicle_count\n")
+            f.write("time,edge_id,vehicle_count,avg_speed_kmh\n")
             lines = []
             # Skip first 60s and last 100s
-            for t, edge, count in data_buffer:
+            for t, edge, count, speed in data_buffer:
                 if 60 <= t <= (actual_end_time - 100):
-                    lines.append(f"{t},{edge},{count}\n")
+                    lines.append(f"{t},{edge},{count},{speed:.2f}\n")
             f.writelines(lines)
-            
+
         return True
     except Exception as e:
         print(f"Sim error {config_file}: {e}")
@@ -215,7 +221,7 @@ def main():
     # dev box, 16 workers is right at the edge of OOM. Use CPU count as a
     # ceiling (caller can override via env if they know what they're doing).
     # Cap at 16 to preserve the existing tuned upper bound for large servers.
-    DEFAULT_WORKERS = min(16, multiprocessing.cpu_count() or 1)
+    DEFAULT_WORKERS = min(20, multiprocessing.cpu_count() or 1)
     workers = int(os.environ.get("TRAFFICVISION_VD_WORKERS", DEFAULT_WORKERS))
     workers = max(1, min(workers, len(files) or 1))
     print(f"Found {len(files)} files. Starting pool of {workers} processes "

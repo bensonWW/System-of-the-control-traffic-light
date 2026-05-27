@@ -8,9 +8,10 @@ from traffic_light_optimizer import run_prediction_driven_strategy
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(BASE_DIR)
 TRAFFIC_LIGHT_DEMO_DIR = os.path.join(ROOT_DIR, "data", "traffic_light_demo")
-# 預設用 pair-based 模型 (gap_feature=True, model_type=gru_pair_log1p_v1)
-# Rollback: 改回 "gru_traffic_model.pth" 即可
-MODEL_PATH = os.path.join(ROOT_DIR, "gru_traffic_model_pair.pth")
+# 預設用 v2 pair-based 模型 (model_type=gru_pair_log1p_v2, output_channels=2)
+# v2 同時預測車流量 + 速度,signal optimizer 仍然只用 count,但 prediction CSV 會多 avg_speed_kmh 欄。
+# Rollback: 改回 "gru_traffic_model_pair.pth" (v1) 或 "gru_traffic_model.pth" (sliding)
+MODEL_PATH = os.path.join(ROOT_DIR, "gru_traffic_model_pair_v2.pth")
 
 
 def find_demo_input_csv():

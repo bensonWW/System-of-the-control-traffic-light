@@ -59,7 +59,7 @@ from train_model import (
 
 DEFAULT_TEST_DIR = os.path.join(BASE_DIR, "data", "simulation_data_check")
 DEFAULT_TRAIN_DIR = os.path.join(BASE_DIR, "data", "simulation_data")
-DEFAULT_MODEL_PATH = os.path.join(BASE_DIR, "gru_traffic_model_pair.pth")
+DEFAULT_MODEL_PATH = os.path.join(BASE_DIR, "gru_traffic_model_pair_v2.pth")
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
@@ -178,6 +178,9 @@ def main():
     num_edges = len(edge_ids)
     input_len = config.get("input_len", INPUT_LEN)
     pred_horizon = config.get("pred_horizon", PRED_HORIZON)
+    output_channels = config.get("output_channels", 1)
+    is_v2 = output_channels == 2
+    print(f"  output_channels={output_channels}  ({'v2 含速度' if is_v2 else 'v1 僅車輛數'})")
     print()
 
     # ─── 找 pair ───
@@ -218,8 +221,10 @@ def main():
 
     for pa, pb, gap in tqdm(pairs, desc="Holdout test"):
         try:
-            res_a = load_csv_first_n_steps(pa, edge_ids, input_len)
-            res_b = load_csv_first_n_steps(pb, edge_ids, pred_horizon)
+            res_a = load_csv_first_n_steps(pa, edge_ids, input_len,
+                                           output_channels=output_channels)
+            res_b = load_csv_first_n_steps(pb, edge_ids, pred_horizon,
+                                           output_channels=output_channels)
             if res_a is None or res_b is None:
                 n_fail += 1
                 continue
@@ -227,28 +232,44 @@ def main():
             arr_b, _ = res_b
 
             pred_m = predict_with_model(model, scaler, config, arr_a, fname_a, gap)
-            pred_z = predict_zero(pred_horizon, num_edges)
+            # v2 時 num_edges 維度需 ×2 才能配對輸出 shape
+            zero_dim = num_edges * output_channels
+            pred_z = predict_zero(pred_horizon, zero_dim)
             pred_p = predict_persist(arr_a, pred_horizon)
 
             err_m = np.abs(pred_m - arr_b)
             err_z = np.abs(pred_z - arr_b)
             err_p = np.abs(pred_p - arr_b)
 
-            model_maes.append(float(err_m.mean()))
-            zero_maes.append(float(err_z.mean()))
-            persist_maes.append(float(err_p.mean()))
-            model_rmses.append(float(np.sqrt(((pred_m - arr_b) ** 2).mean())))
+            # v1: 直接全矩陣;  v2: 只取 count 部分 (前 num_edges 欄) 比對主指標
+            if is_v2:
+                err_m_main = err_m[:, :num_edges]
+                err_z_main = err_z[:, :num_edges]
+                err_p_main = err_p[:, :num_edges]
+                arr_b_main = arr_b[:, :num_edges]
+            else:
+                err_m_main = err_m
+                err_z_main = err_z
+                err_p_main = err_p
+                arr_b_main = arr_b
 
-            model_step_acc += err_m.mean(axis=1)
-            zero_step_acc += err_z.mean(axis=1)
-            persist_step_acc += err_p.mean(axis=1)
+            model_maes.append(float(err_m_main.mean()))
+            zero_maes.append(float(err_z_main.mean()))
+            persist_maes.append(float(err_p_main.mean()))
+            model_rmses.append(float(np.sqrt(((pred_m[:, :num_edges] if is_v2 else pred_m) -
+                                              arr_b_main) ** 2).mean()))
 
-            hi_mask = arr_b > 10
+            model_step_acc += err_m_main.mean(axis=1)
+            zero_step_acc += err_z_main.mean(axis=1)
+            persist_step_acc += err_p_main.mean(axis=1)
+
+            hi_mask = arr_b_main > 10
             if hi_mask.any():
-                model_hi_maes.append(float(err_m[hi_mask].mean()))
-                persist_hi_maes.append(float(err_p[hi_mask].mean()))
+                # 高流量統計只看 count 部分,維度跟 hi_mask 對齊
+                model_hi_maes.append(float(err_m_main[hi_mask].mean()))
+                persist_hi_maes.append(float(err_p_main[hi_mask].mean()))
 
-            gap_bucket_maes[bucket_idx(gap)].append(float(err_m.mean()))
+            gap_bucket_maes[bucket_idx(gap)].append(float(err_m_main.mean()))
 
             n_success += 1
         except Exception:

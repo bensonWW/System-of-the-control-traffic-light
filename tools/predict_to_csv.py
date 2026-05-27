@@ -24,17 +24,23 @@ class Log1pScaler:
 
 class GRUSequence(nn.Module):
     def __init__(self, num_edges, hidden_dim, num_layers, horizon, dropout=0.2,
-                 input_extra_features=2):
+                 input_extra_features=2, output_channels=1):
         """
         input_extra_features:
             新版 pair model    : 3 (sin/cos/gap)
             舊版 sliding model : 2 (sin/cos)
+
+        output_channels:
+            1 (v1)             : 只預測 vehicle_count
+            2 (v2)             : 預測 vehicle_count + avg_speed_kmh
+                                  前 num_edges 欄是 count, 後 num_edges 欄是 speed
         """
         super().__init__()
         self.horizon = horizon
         self.num_edges = num_edges
+        self.output_channels = output_channels
         self.gru = nn.GRU(
-            input_size=num_edges + input_extra_features,
+            input_size=num_edges * output_channels + input_extra_features,
             hidden_size=hidden_dim,
             num_layers=num_layers,
             batch_first=True,
@@ -46,7 +52,7 @@ class GRUSequence(nn.Module):
             nn.Linear(hidden_dim, mid),
             nn.ReLU(),
             nn.Dropout(dropout),
-            nn.Linear(mid, num_edges * horizon),
+            nn.Linear(mid, num_edges * horizon * output_channels),
         )
 
     def forward(self, x):
@@ -54,7 +60,8 @@ class GRUSequence(nn.Module):
         attn_w = torch.softmax(self.attn(out), dim=1)  # (B, T, 1)
         context = (attn_w * out).sum(dim=1)            # (B, H)
         pred_flat = self.decoder(context)
-        pred_seq = pred_flat.view(-1, self.horizon, self.num_edges)
+        pred_seq = pred_flat.view(-1, self.horizon,
+                                  self.num_edges * self.output_channels)
         return pred_seq
 
 
@@ -63,9 +70,12 @@ ROOT_DIR = os.path.dirname(BASE_DIR)
 
 
 TRAFFIC_LIGHT_DEMO_DIR = os.path.join(ROOT_DIR, "data", "traffic_light_demo")
-# 預設用 pair-based 模型 (gap_feature=True, model_type=gru_pair_log1p_v1)
-# 若要切回舊 sliding 模型,改成 "gru_traffic_model.pth" (INTEGRATION Step 6 rollback)
-DEFAULT_MODEL_PATH = os.path.join(ROOT_DIR, "gru_traffic_model_pair.pth")
+# 預設用 v2 pair-based 模型 (gap_feature=True, model_type=gru_pair_log1p_v2,
+# output_channels=2 含速度預測)。Inference 只取 count 部分,speed 由前端另一台機器處理。
+# Rollback 路徑:
+#   v2 → v1 (count only): gru_traffic_model_pair.pth
+#   v2 → 舊 sliding     : gru_traffic_model.pth
+DEFAULT_MODEL_PATH = os.path.join(ROOT_DIR, "gru_traffic_model_pair_v2.pth")
 PREDICTION_MIN_THRESHOLD = 0.02
 PREDICTION_TOP_K_PER_STEP = 40
 PREDICTION_FUSION_LAST_WINDOWS = 10
@@ -167,18 +177,20 @@ def load_model(model_path, device):
     hidden_dim = config.get("hidden_dim", 256)
     num_layers = config.get("num_layers", 2)
     gap_feature = bool(config.get("gap_feature", False))
+    output_channels = int(config.get("output_channels", 1))   # v2: 2, v1/legacy: 1
 
-    # Sanity check: weight shape matches declared num_edges + extras
+    # Sanity check: weight shape matches declared num_edges × output_channels + extras
     state = checkpoint["model_state_dict"]
     gru_weight = state.get("gru.weight_ih_l0")
     if gru_weight is not None:
-        expected_input = num_edges + (3 if gap_feature else 2)
+        expected_input = num_edges * output_channels + (3 if gap_feature else 2)
         actual_input = gru_weight.shape[1]
         if actual_input != expected_input:
             raise ValueError(
                 f"模型維度不一致：state_dict 的 GRU input = {actual_input}，"
-                f"但 edge_ids({num_edges}) + features({3 if gap_feature else 2}) = {expected_input}。\n"
-                f"可能原因：checkpoint 是用不同的 gap_feature 設定訓練的，"
+                f"但 edge_ids({num_edges}) × output_channels({output_channels}) + "
+                f"features({3 if gap_feature else 2}) = {expected_input}。\n"
+                f"可能原因：checkpoint 是用不同的 output_channels / gap_feature 設定訓練的，"
                 f"或 edge_ids 在訓練後被人手動改過。"
             )
 
@@ -187,15 +199,18 @@ def load_model(model_path, device):
         scaler = Log1pScaler()
 
     model_type = config.get("model_type", "gru_sequence_log1p")
-    gap_feature = config.get("gap_feature", False)
     input_extra = 3 if gap_feature else 2
 
     print(f"Config: input_len={input_len}, horizon={pred_horizon}, hidden={hidden_dim}")
-    print(f"  model_type={model_type}, gap_feature={gap_feature}, input_extra={input_extra}")
+    print(f"  model_type={model_type}, gap_feature={gap_feature}, "
+          f"input_extra={input_extra}, output_channels={output_channels}")
+    if output_channels == 2:
+        print(f"  → v2 模型: 預測 vehicle_count + speed,inference 只取 count")
     print(f"Scaler: {type(scaler)}")
 
     model = GRUSequence(num_edges, hidden_dim, num_layers, pred_horizon,
-                        input_extra_features=input_extra).to(device)
+                        input_extra_features=input_extra,
+                        output_channels=output_channels).to(device)
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
     return model, scaler, edge_ids, input_len, pred_horizon, config
@@ -223,17 +238,50 @@ def find_demo_input_csv():
     return csv_files[0]
 
 
-def load_demo_csv(file_path, edge_ids):
+def load_demo_csv(file_path, edge_ids, output_channels=1):
+    """
+    讀 CSV → pivot → 對齊 edge_ids。
+
+    output_channels=1 (v1):  回傳 DataFrame shape = (T, num_edges) 只含 vehicle_count
+    output_channels=2 (v2):  回傳 DataFrame shape = (T, num_edges*2),
+                              前 num_edges 欄是 count, 後 num_edges 欄是 speed
+                              若 CSV 缺 avg_speed_kmh 欄,speed 部分填 0 並印警告
+    """
     df = pd.read_csv(file_path)
     if "時間" in df.columns:
         df = df.rename(
             columns={"時間": "time", "路段ID": "edge_id", "車輛數": "vehicle_count"}
         )
 
-    pivot = df.pivot(index="time", columns="edge_id", values="vehicle_count").fillna(0)
-    pivot = pivot.sort_index()
-    pivot = pivot.reindex(columns=edge_ids, fill_value=0)
-    return pivot
+    pivot_count = df.pivot(index="time", columns="edge_id", values="vehicle_count").fillna(0)
+    pivot_count = pivot_count.sort_index().reindex(columns=edge_ids, fill_value=0)
+
+    if output_channels == 1:
+        return pivot_count
+
+    # v2: 也要 speed
+    if "avg_speed_kmh" in df.columns:
+        pivot_speed = df.pivot(index="time", columns="edge_id", values="avg_speed_kmh").fillna(0)
+        pivot_speed = pivot_speed.sort_index().reindex(columns=edge_ids, fill_value=0)
+        # 對齊 time index (理論上 count 和 speed 是同一 CSV 同 time bins,但保險起見)
+        common_idx = pivot_count.index.intersection(pivot_speed.index)
+        pivot_count = pivot_count.loc[common_idx]
+        pivot_speed = pivot_speed.loc[common_idx]
+        speed_values = pivot_speed.values
+    else:
+        print(f"  ⚠ CSV 缺 avg_speed_kmh 欄,v2 模型將以 speed=0 推論 (建議升級 runtime "
+              f"或 traffic_optimizer_io 也寫 speed)")
+        speed_values = np.zeros_like(pivot_count.values)
+
+    # 包回 DataFrame: 列保持 time index, 欄 = [count edges..., speed edges (重複名稱加前綴)...]
+    combined = np.concatenate([pivot_count.values, speed_values], axis=1)
+    speed_col_labels = [f"__speed__{e}" for e in edge_ids]
+    combined_df = pd.DataFrame(
+        combined,
+        index=pivot_count.index,
+        columns=list(edge_ids) + speed_col_labels,
+    )
+    return combined_df
 
 
 def build_time_features(file_name, num_steps, gap_minutes=None):
@@ -384,7 +432,10 @@ def export_prediction_csv(input_csv, model_path=DEFAULT_MODEL_PATH, output_root=
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model, scaler, edge_ids, input_len, pred_horizon, config = load_model(model_path, device)
 
-    pivot = load_demo_csv(input_csv, edge_ids)
+    num_edges = len(edge_ids)
+    output_channels = int(config.get("output_channels", 1))
+
+    pivot = load_demo_csv(input_csv, edge_ids, output_channels=output_channels)
     if len(pivot) < input_len:
         # Use typed exception so runtime_pipeline can skip Step 3 gracefully
         # without confusing it with model-loading errors or genuine code bugs.
@@ -399,7 +450,8 @@ def export_prediction_csv(input_csv, model_path=DEFAULT_MODEL_PATH, output_root=
     # 舊模型 (gap_feature=False) 用 None,build_time_features 會回 2 欄;
     # 新模型 (gap_feature=True)  用 5.0,回 3 欄。
     gap_for_inference = 5.0 if config.get("gap_feature", False) else None
-    is_pair_model = config.get("model_type") == "gru_pair_log1p_v1"
+    # pair model 涵蓋 v1 (gru_pair_log1p_v1) 和 v2 (gru_pair_log1p_v2)
+    is_pair_model = config.get("model_type", "").startswith("gru_pair_log1p")
 
     source_stem = os.path.splitext(os.path.basename(input_csv))[0]
     prediction_stem = f"{source_stem}_predict"
@@ -419,46 +471,64 @@ def export_prediction_csv(input_csv, model_path=DEFAULT_MODEL_PATH, output_root=
         #
         # 為何不能滑動視窗? 新模型訓練時只見過「CSV 前 15 步」這種分布,
         # 把 CSV 中段 (如 time 3000-3340s) 當輸入會輸出垃圾 (訓練分布外)。
+        #
+        # v2 (output_channels=2): 同時預測 speed,inference 流程不變;
+        # 下游 signal optimizer 只看 count, 但 prediction CSV 多寫一欄 avg_speed_kmh
+        # 讓前端 / LLM / 其他下游可以拿到速度預測。
         # ═════════════════════════════════════════════════════════════
         input_traf = scaled_traffic[:input_len]
         input_time = build_time_features(
             os.path.basename(input_csv), input_len, gap_minutes=gap_for_inference
         )
         pred_seq_real = _predict_sequence(model, device, input_traf, input_time, scaler)
-        # pred_seq_real shape = (pred_horizon, num_edges)
+        # pred_seq_real shape:
+        #   v1: (pred_horizon, num_edges)
+        #   v2: (pred_horizon, num_edges*2)  前半 count, 後半 speed
+
+        # 拆分 count vs speed
+        pred_count = pred_seq_real[:, :num_edges]
+        pred_speed = (pred_seq_real[:, num_edges:] if output_channels == 2 else None)
 
         # time 軸: 接續輸入 CSV 之後 (對齊舊模型第一個 window 的輸出)
         last_input_time = float(time_index[input_len - 1])  # 通常 ≈ 340.0
         for step_index in range(pred_horizon):
             current_time = float(last_input_time + 20.0 * (step_index + 1))
-            step_values = pred_seq_real[step_index]
             for edge_index, edge_id in enumerate(edge_ids):
-                vol = round(float(step_values[edge_index]), 4)
-                full_rows.append({
+                vol = round(float(pred_count[step_index, edge_index]), 4)
+                row_full = {
                     "time": current_time,
                     "edge_id": edge_id,
                     "vehicle_count": vol,
-                })
+                }
+                if pred_speed is not None:
+                    row_full["avg_speed_kmh"] = round(float(pred_speed[step_index, edge_index]), 2)
+                full_rows.append(row_full)
                 if vol > PREDICTION_MIN_THRESHOLD:
-                    rows.append({
+                    row_ctrl = {
                         "time": current_time,
                         "edge_id": edge_id,
                         "vehicle_count": vol,
-                    })
+                    }
+                    if pred_speed is not None:
+                        row_ctrl["avg_speed_kmh"] = row_full["avg_speed_kmh"]
+                    rows.append(row_ctrl)
         # 若 rows 為空 (極稀疏情況),退而求 top-K
         if not rows:
             for step_index in range(pred_horizon):
                 current_time = float(last_input_time + 20.0 * (step_index + 1))
-                step_values = pred_seq_real[step_index]
+                step_values = pred_count[step_index]
                 for edge_index in _select_edge_indices(step_values):
                     vol = float(step_values[int(edge_index)])
                     if vol <= 0:
                         continue
-                    rows.append({
+                    row = {
                         "time": current_time,
                         "edge_id": edge_ids[edge_index],
                         "vehicle_count": round(vol, 4),
-                    })
+                    }
+                    if pred_speed is not None:
+                        row["avg_speed_kmh"] = round(float(pred_speed[step_index, edge_index]), 2)
+                    rows.append(row)
     else:
         # ═════════════════════════════════════════════════════════════
         # 舊模型: 滑動視窗 + 多窗融合 (保留原始邏輯)
@@ -526,15 +596,21 @@ def export_prediction_csv(input_csv, model_path=DEFAULT_MODEL_PATH, output_root=
                     "vehicle_count": round(vehicle_count, 4),
                 })
 
-    prediction_df = pd.DataFrame(rows, columns=["time", "edge_id", "vehicle_count"])
+    # v2 額外有 avg_speed_kmh 欄;v1/legacy 維持 3 欄
+    csv_columns = ["time", "edge_id", "vehicle_count"]
+    if output_channels == 2 and is_pair_model:
+        csv_columns.append("avg_speed_kmh")
+
+    prediction_df = pd.DataFrame(rows, columns=csv_columns)
     prediction_df.to_csv(prediction_csv, index=False)
 
-    prediction_full_df = pd.DataFrame(full_rows, columns=["time", "edge_id", "vehicle_count"])
+    prediction_full_df = pd.DataFrame(full_rows, columns=csv_columns)
     prediction_full_df.to_csv(prediction_full_csv, index=False)
 
     print(f"預測 CSV 已輸出: {prediction_csv}")
     print(f"完整預測 CSV 已輸出: {prediction_full_csv}")
     print(f"  模式: {'pair (單次)' if is_pair_model else 'sliding (多窗)'} | "
+          f"output_channels: {output_channels} | "
           f"time bins: {prediction_full_df['time'].nunique()} | "
           f"控制 rows: {len(rows)} | full rows: {len(full_rows)}")
     return {

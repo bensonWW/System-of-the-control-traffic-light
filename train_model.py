@@ -44,7 +44,7 @@ if torch.cuda.is_available():
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data", "simulation_data")
-MODEL_PATH = os.path.join(BASE_DIR, "gru_traffic_model_pair.pth")
+MODEL_PATH = os.path.join(BASE_DIR, "gru_traffic_model_pair_v2.pth")
 EDGE_UNION_CACHE = os.path.join(BASE_DIR, "data", "edge_ids_union.json")
 
 INPUT_LEN = 15        # 5 分鐘 (20 秒/步)
@@ -59,6 +59,11 @@ DROPOUT = 0.2
 
 GAP_MIN_SEC = 180     # pair 最小時間差 (3 分鐘)
 GAP_MAX_SEC = 900     # pair 最大時間差 (15 分鐘)
+
+# v2: 2 channels per edge (vehicle_count + avg_speed_kmh)
+# v1 用 OUTPUT_CHANNELS=1; 保留變數讓未來方便回到 v1 或擴充更多 channel
+OUTPUT_CHANNELS = 2
+SPEED_LOSS_WEIGHT = 1.0   # speed channel 在 total loss 內的權重 (count 部分仍有 5× 高流量加權)
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -206,34 +211,57 @@ def build_edge_union(csv_paths, cache_path=EDGE_UNION_CACHE, rebuild=False):
 # =================================================
 # 4. CSV 載入 (取前 N 步,對齊 edge)
 # =================================================
-def load_csv_first_n_steps(csv_path, edge_ids, n_steps):
+def load_csv_first_n_steps(csv_path, edge_ids, n_steps, output_channels=1):
     """
     讀 CSV → pivot (time, edge_id) → 對齊 edge_ids → 取前 n_steps 步。
 
+    output_channels:
+        1 → 只取 vehicle_count            返回 shape = (n_steps, num_edges)
+        2 → vehicle_count + avg_speed_kmh 返回 shape = (n_steps, num_edges*2)
+            前 num_edges 欄是 count, 後 num_edges 欄是 speed
+
     Returns:
-        (ndarray shape=(n_steps, num_edges), fname) 或 None (資料不足/讀取失敗)
+        (ndarray, fname) 或 None (資料不足/讀取失敗/缺少必要欄位)
     """
     try:
         df = pd.read_csv(csv_path)
         if "時間" in df.columns:
             df = df.rename(columns={"時間": "time", "路段ID": "edge_id", "車輛數": "vehicle_count"})
-        pivot = df.pivot(index="time", columns="edge_id", values="vehicle_count").fillna(0)
-        pivot = pivot.sort_index()
-        pivot = pivot.reindex(columns=edge_ids, fill_value=0)
-        if len(pivot) < n_steps:
+
+        pivot_count = df.pivot(index="time", columns="edge_id", values="vehicle_count").fillna(0)
+        pivot_count = pivot_count.sort_index().reindex(columns=edge_ids, fill_value=0)
+
+        if output_channels == 1:
+            if len(pivot_count) < n_steps:
+                return None
+            arr = pivot_count.iloc[:n_steps].values.astype(np.float32)
+            return arr, os.path.basename(csv_path)
+
+        # output_channels == 2: 也 pivot speed,對齊到同個 time index 後 concat
+        if "avg_speed_kmh" not in df.columns:
+            return None  # 舊格式 CSV 不能用於 v2 訓練
+        pivot_speed = df.pivot(index="time", columns="edge_id", values="avg_speed_kmh").fillna(0)
+        pivot_speed = pivot_speed.sort_index().reindex(columns=edge_ids, fill_value=0)
+        # 取兩者共有的 time index 對齊 (理論上 count CSV 寫得齊時兩者 index 一致)
+        common_idx = pivot_count.index.intersection(pivot_speed.index)
+        pivot_count = pivot_count.loc[common_idx]
+        pivot_speed = pivot_speed.loc[common_idx]
+        if len(pivot_count) < n_steps:
             return None
-        arr = pivot.iloc[:n_steps].values.astype(np.float32)
+        arr_count = pivot_count.iloc[:n_steps].values.astype(np.float32)
+        arr_speed = pivot_speed.iloc[:n_steps].values.astype(np.float32)
+        arr = np.concatenate([arr_count, arr_speed], axis=1)  # (n_steps, num_edges*2)
         return arr, os.path.basename(csv_path)
     except Exception:
         return None
 
 
-def preload_csvs(csv_paths, edge_ids, n_steps):
+def preload_csvs(csv_paths, edge_ids, n_steps, output_channels=1):
     """一次性把所有 CSV 的前 n_steps 步載入記憶體,加速訓練。"""
     cache = {}
     skipped = 0
     for p in tqdm(csv_paths, desc="Preloading CSVs"):
-        res = load_csv_first_n_steps(p, edge_ids, n_steps)
+        res = load_csv_first_n_steps(p, edge_ids, n_steps, output_channels=output_channels)
         if res is None:
             skipped += 1
             continue
@@ -248,24 +276,31 @@ def preload_csvs(csv_paths, edge_ids, n_steps):
 class PairDataset(Dataset):
     """
     每個樣本: (input, target)
-        input  shape = (INPUT_LEN, num_edges + 3)   ← edges + sin/cos/gap
-        target shape = (PRED_HORIZON, num_edges)
+        output_channels=1:
+            input  shape = (INPUT_LEN, num_edges + 3)         ← edges + sin/cos/gap
+            target shape = (PRED_HORIZON, num_edges)
+        output_channels=2:
+            input  shape = (INPUT_LEN, num_edges*2 + 3)       ← count + speed + sin/cos/gap
+            target shape = (PRED_HORIZON, num_edges*2)
     """
-    def __init__(self, pair_list, edge_ids, scaler, csv_cache):
+    def __init__(self, pair_list, edge_ids, scaler, csv_cache, output_channels=1):
         self.edge_ids = edge_ids
         self.num_edges = len(edge_ids)
         self.scaler = scaler
         self.cache = csv_cache
+        self.output_channels = output_channels
         # 只留下兩端 CSV 都已成功 preload 的 pair
         self.pair_list = [
             (a, b, g) for a, b, g in pair_list if a in csv_cache and b in csv_cache
         ]
-        # 額外過濾: 若 A 的 max < log1p(5),代表幾乎無車流,跳過
+        # 額外過濾: 若 A 的 count 部分 max < log1p(5),代表幾乎無車流,跳過
+        # 多 channel 時只判斷 count 部分(前 num_edges 欄),不被 speed 干擾
         threshold = np.log1p(5).astype(np.float32)
         kept = []
         for a, b, g in self.pair_list:
             a_arr = self.cache[a][:INPUT_LEN]
-            a_max = float(np.log1p(a_arr).max())
+            a_count = a_arr[:, :self.num_edges]
+            a_max = float(np.log1p(a_count).max())
             if a_max >= threshold:
                 kept.append((a, b, g))
         self.pair_list = kept
@@ -277,6 +312,7 @@ class PairDataset(Dataset):
         path_a, path_b, gap = self.pair_list[idx]
         arr_a = self.cache[path_a][:INPUT_LEN]
         arr_b = self.cache[path_b][:PRED_HORIZON]
+        # scaler 對全部 channel 一律 log1p (count 和 speed 同 scaler,簡單一致)
         x_traf = self.scaler.transform(arr_a)
         y_target = self.scaler.transform(arr_b)
         x_time = build_time_features(os.path.basename(path_a), INPUT_LEN, gap)
@@ -293,20 +329,27 @@ class PairDataset(Dataset):
 class GRUSequence(nn.Module):
     """
     GRU + Attention + Decoder。
-    input  shape = (B, INPUT_LEN, num_edges + input_extra_features)
-    output shape = (B, PRED_HORIZON, num_edges)
+
+    output_channels=1 (v1):
+        input  shape = (B, INPUT_LEN, num_edges + input_extra_features)
+        output shape = (B, PRED_HORIZON, num_edges)
+    output_channels=2 (v2):
+        input  shape = (B, INPUT_LEN, num_edges*2 + input_extra_features)
+        output shape = (B, PRED_HORIZON, num_edges*2)
+        前 num_edges 欄是 count, 後 num_edges 欄是 speed
 
     input_extra_features:
         新版 (pair model): 3 (sin/cos/gap)
         舊版 (sliding):    2 (sin/cos)
     """
     def __init__(self, num_edges, hidden_dim, num_layers, horizon, dropout=0.2,
-                 input_extra_features=3):
+                 input_extra_features=3, output_channels=1):
         super().__init__()
         self.horizon = horizon
         self.num_edges = num_edges
+        self.output_channels = output_channels
         self.gru = nn.GRU(
-            input_size=num_edges + input_extra_features,
+            input_size=num_edges * output_channels + input_extra_features,
             hidden_size=hidden_dim,
             num_layers=num_layers,
             batch_first=True,
@@ -318,7 +361,7 @@ class GRUSequence(nn.Module):
             nn.Linear(hidden_dim, mid),
             nn.ReLU(),
             nn.Dropout(dropout),
-            nn.Linear(mid, num_edges * horizon),
+            nn.Linear(mid, num_edges * horizon * output_channels),
         )
 
     def forward(self, x):
@@ -326,15 +369,36 @@ class GRUSequence(nn.Module):
         attn_w = torch.softmax(self.attn(out), dim=1)   # (B, T, 1)
         context = (attn_w * out).sum(dim=1)             # (B, H)
         pred_flat = self.decoder(context)
-        return pred_flat.view(-1, self.horizon, self.num_edges)
+        return pred_flat.view(-1, self.horizon, self.num_edges * self.output_channels)
 
 
-def weighted_sequence_loss(pred, target):
-    """高流量 edge (target > log1p(10) ≈ 2.4) 權重 5×。"""
+def weighted_sequence_loss(pred, target, num_edges=None, output_channels=1,
+                            speed_loss_weight=SPEED_LOSS_WEIGHT):
+    """
+    output_channels=1: 沿用 v1 行為,高流量 edge (target > log1p(10) ≈ 2.4) 權重 5×。
+    output_channels=2:
+        - count 部分: 沿用 v1 weighted MSE (高流量 5×)
+        - speed 部分: 標準 MSE × speed_loss_weight
+        - 兩個 loss 相加
+    """
+    if output_channels == 1:
+        threshold = 2.4
+        weights = 1.0 + 4.0 * (target > threshold).float()
+        loss = (pred - target) ** 2
+        return (loss * weights).mean()
+
+    # v2: 拆 count vs speed
+    assert num_edges is not None, "v2 loss 需傳 num_edges"
+    pred_count  = pred[...,  :num_edges]
+    pred_speed  = pred[..., num_edges:]
+    targ_count  = target[...,  :num_edges]
+    targ_speed  = target[..., num_edges:]
+
     threshold = 2.4
-    weights = 1.0 + 4.0 * (target > threshold).float()
-    loss = (pred - target) ** 2
-    return (loss * weights).mean()
+    weights = 1.0 + 4.0 * (targ_count > threshold).float()
+    count_loss = ((pred_count - targ_count) ** 2 * weights).mean()
+    speed_loss = ((pred_speed - targ_speed) ** 2).mean()
+    return count_loss + speed_loss_weight * speed_loss
 
 
 # =================================================
@@ -364,7 +428,7 @@ def run_training(args):
 
     # 預載入所有 CSV (節省每 epoch 重複 I/O)
     n_steps = max(INPUT_LEN, PRED_HORIZON)
-    csv_cache = preload_csvs(all_paths, edge_ids, n_steps)
+    csv_cache = preload_csvs(all_paths, edge_ids, n_steps, output_channels=OUTPUT_CHANNELS)
 
     # 切分 (時序: 最後 10% 當 val,避免時序洩漏)
     split = int(len(pairs) * 0.9)
@@ -372,8 +436,10 @@ def run_training(args):
     val_pairs = pairs[split:]
 
     scaler = Log1pScaler()
-    train_ds = PairDataset(train_pairs, edge_ids, scaler, csv_cache)
-    val_ds = PairDataset(val_pairs, edge_ids, scaler, csv_cache)
+    train_ds = PairDataset(train_pairs, edge_ids, scaler, csv_cache,
+                           output_channels=OUTPUT_CHANNELS)
+    val_ds = PairDataset(val_pairs, edge_ids, scaler, csv_cache,
+                         output_channels=OUTPUT_CHANNELS)
     print(f"Train: {len(train_ds)} pairs, Val: {len(val_ds)} pairs (after filtering)")
 
     if len(train_ds) == 0:
@@ -386,11 +452,13 @@ def run_training(args):
                             num_workers=0, pin_memory=True)
 
     model = GRUSequence(num_edges, HIDDEN_DIM, NUM_LAYERS, PRED_HORIZON, DROPOUT,
-                        input_extra_features=3).to(DEVICE)
+                        input_extra_features=3,
+                        output_channels=OUTPUT_CHANNELS).to(DEVICE)
     optimizer = torch.optim.Adam(model.parameters(), lr=LR)
 
-    print(f"\nStart training (pair-based, gap feature ON)")
-    print(f"Model: input_size={num_edges + 3}, hidden={HIDDEN_DIM}, layers={NUM_LAYERS}, horizon={PRED_HORIZON}")
+    input_size = num_edges * OUTPUT_CHANNELS + 3
+    print(f"\nStart training (pair-based, gap feature ON, output_channels={OUTPUT_CHANNELS})")
+    print(f"Model: input_size={input_size}, hidden={HIDDEN_DIM}, layers={NUM_LAYERS}, horizon={PRED_HORIZON}")
     print(f"Hyperparams: epochs={EPOCHS}, batch={BATCH_SIZE}, lr={LR}, patience={PATIENCE}\n")
 
     min_val = float("inf")
@@ -405,7 +473,9 @@ def run_training(args):
             bx, by = bx.to(DEVICE), by.to(DEVICE)
             optimizer.zero_grad()
             pred = model(bx)
-            loss = weighted_sequence_loss(pred, by)
+            loss = weighted_sequence_loss(pred, by,
+                                          num_edges=num_edges,
+                                          output_channels=OUTPUT_CHANNELS)
             loss.backward()
             optimizer.step()
             tr_loss += loss.item() * bx.size(0)
@@ -419,7 +489,9 @@ def run_training(args):
             for vx, vy in val_loader:
                 vx, vy = vx.to(DEVICE), vy.to(DEVICE)
                 vp = model(vx)
-                va_loss += weighted_sequence_loss(vp, vy).item() * vx.size(0)
+                va_loss += weighted_sequence_loss(vp, vy,
+                                                  num_edges=num_edges,
+                                                  output_channels=OUTPUT_CHANNELS).item() * vx.size(0)
                 n_val += vx.size(0)
         va_loss /= max(n_val, 1)
 
@@ -427,6 +499,7 @@ def run_training(args):
 
         if va_loss < min_val:
             min_val = va_loss
+            model_type = "gru_pair_log1p_v2" if OUTPUT_CHANNELS == 2 else "gru_pair_log1p_v1"
             best_state = {
                 "model_state_dict": model.state_dict(),
                 "scaler_type": "log1p",
@@ -437,9 +510,12 @@ def run_training(args):
                     "pred_horizon": PRED_HORIZON,
                     "hidden_dim": HIDDEN_DIM,
                     "num_layers": NUM_LAYERS,
-                    "model_type": "gru_pair_log1p_v1",
+                    "model_type": model_type,
                     "gap_feature": True,
                     "input_basis": "pair",
+                    "output_channels": OUTPUT_CHANNELS,
+                    "channel_order": ["vehicle_count", "avg_speed_kmh"][:OUTPUT_CHANNELS],
+                    "speed_loss_weight": SPEED_LOSS_WEIGHT if OUTPUT_CHANNELS == 2 else None,
                 },
             }
             print(" * Best")
@@ -482,6 +558,7 @@ def load_checkpoint(model_path):
     num_edges = len(edge_ids)
 
     input_extra = 3 if config.get("gap_feature", False) else 2
+    output_channels = config.get("output_channels", 1)  # 舊 v1 模型沒這欄,預設 1
 
     model = GRUSequence(
         num_edges,
@@ -489,20 +566,25 @@ def load_checkpoint(model_path):
         config.get("num_layers", NUM_LAYERS),
         config.get("pred_horizon", PRED_HORIZON),
         input_extra_features=input_extra,
+        output_channels=output_channels,
     ).to(DEVICE)
     model.load_state_dict(ckpt["model_state_dict"])
     model.eval()
 
     scaler = ckpt.get("scaler") or Log1pScaler()
     print(f"  num_edges={num_edges}, model_type={config.get('model_type', 'unknown')}, "
-          f"gap_feature={config.get('gap_feature', False)}")
+          f"gap_feature={config.get('gap_feature', False)}, output_channels={output_channels}")
     return model, scaler, edge_ids, config
 
 
 def evaluate_pair(input_csv, target_csv, model_path=None, gap_minutes=None, bundle=None):
     """
-    Returns dict: input_csv, target_csv, gap_minutes,
-                  overall_mae, overall_rmse, per_step_mae (list len=PRED_HORIZON)
+    Returns dict:
+        input_csv, target_csv, gap_minutes
+        overall_mae, overall_rmse, per_step_mae      ← v1 數字 (count 部分)
+        v2 額外有:
+            count_mae, count_rmse, count_per_step
+            speed_mae, speed_rmse, speed_per_step    ← km/h
     """
     if bundle is None:
         bundle = load_checkpoint(model_path)
@@ -510,9 +592,13 @@ def evaluate_pair(input_csv, target_csv, model_path=None, gap_minutes=None, bund
 
     input_len = config.get("input_len", INPUT_LEN)
     pred_horizon = config.get("pred_horizon", PRED_HORIZON)
+    output_channels = config.get("output_channels", 1)
+    num_edges = len(edge_ids)
 
-    res_a = load_csv_first_n_steps(input_csv, edge_ids, input_len)
-    res_b = load_csv_first_n_steps(target_csv, edge_ids, pred_horizon)
+    res_a = load_csv_first_n_steps(input_csv, edge_ids, input_len,
+                                   output_channels=output_channels)
+    res_b = load_csv_first_n_steps(target_csv, edge_ids, pred_horizon,
+                                   output_channels=output_channels)
     if res_a is None:
         raise ValueError(f"Input CSV 不足 {input_len} 步或讀取失敗: {input_csv}")
     if res_b is None:
@@ -545,26 +631,63 @@ def evaluate_pair(input_csv, target_csv, model_path=None, gap_minutes=None, bund
 
     abs_err = np.abs(pred_real - arr_b)
     sq_err = (pred_real - arr_b) ** 2
-    return {
+
+    result = {
         "input_csv": os.path.basename(input_csv),
         "target_csv": os.path.basename(target_csv),
         "gap_minutes": float(gap_minutes),
-        "overall_mae": float(np.mean(abs_err)),
-        "overall_rmse": float(np.sqrt(np.mean(sq_err))),
-        "per_step_mae": [float(np.mean(abs_err[t])) for t in range(pred_horizon)],
+        "output_channels": output_channels,
     }
+
+    if output_channels == 1:
+        # v1: 直接全矩陣統計
+        result.update({
+            "overall_mae": float(np.mean(abs_err)),
+            "overall_rmse": float(np.sqrt(np.mean(sq_err))),
+            "per_step_mae": [float(np.mean(abs_err[t])) for t in range(pred_horizon)],
+        })
+    else:
+        # v2: 拆 count vs speed,分別算
+        abs_count = abs_err[:, :num_edges]
+        abs_speed = abs_err[:, num_edges:]
+        sq_count  = sq_err[:,  :num_edges]
+        sq_speed  = sq_err[:,  num_edges:]
+        result.update({
+            "count_mae":      float(np.mean(abs_count)),
+            "count_rmse":     float(np.sqrt(np.mean(sq_count))),
+            "count_per_step": [float(np.mean(abs_count[t])) for t in range(pred_horizon)],
+            "speed_mae":      float(np.mean(abs_speed)),
+            "speed_rmse":     float(np.sqrt(np.mean(sq_speed))),
+            "speed_per_step": [float(np.mean(abs_speed[t])) for t in range(pred_horizon)],
+            # 為了和 v1 介面相容,overall_mae/rmse 仍指 count (主要評估目標)
+            "overall_mae":    float(np.mean(abs_count)),
+            "overall_rmse":   float(np.sqrt(np.mean(sq_count))),
+            "per_step_mae":   [float(np.mean(abs_count[t])) for t in range(pred_horizon)],
+        })
+    return result
 
 
 def print_eval_result(res):
     print(f"\n[Pair Eval] {res['input_csv']}  →  {res['target_csv']}")
     print(f"  Gap         : {res['gap_minutes']:.2f} min")
-    print(f"  Overall MAE : {res['overall_mae']:.4f}")
-    print(f"  Overall RMSE: {res['overall_rmse']:.4f}")
-    print(f"  Per-step MAE (each step = 20s):")
-    for i, mae in enumerate(res["per_step_mae"]):
-        sec = (i + 1) * 20
-        bar = "█" * int(mae * 20)
-        print(f"    +{sec:>3d}s (step {i + 1:2d}): {mae:.4f}  {bar}")
+    is_v2 = res.get("output_channels", 1) == 2
+
+    if is_v2:
+        print(f"  Count MAE / RMSE : {res['count_mae']:.4f} / {res['count_rmse']:.4f} (輛)")
+        print(f"  Speed MAE / RMSE : {res['speed_mae']:.4f} / {res['speed_rmse']:.4f} (km/h)")
+        print(f"  Per-step MAE (count | speed, each step = 20s):")
+        for i, (c, s) in enumerate(zip(res["count_per_step"], res["speed_per_step"])):
+            sec = (i + 1) * 20
+            bar = "█" * int(c * 20)
+            print(f"    +{sec:>3d}s (step {i + 1:2d}): count={c:.4f}  speed={s:.4f}  {bar}")
+    else:
+        print(f"  Overall MAE : {res['overall_mae']:.4f}")
+        print(f"  Overall RMSE: {res['overall_rmse']:.4f}")
+        print(f"  Per-step MAE (each step = 20s):")
+        for i, mae in enumerate(res["per_step_mae"]):
+            sec = (i + 1) * 20
+            bar = "█" * int(mae * 20)
+            print(f"    +{sec:>3d}s (step {i + 1:2d}): {mae:.4f}  {bar}")
 
 
 def evaluate_batch(args):
@@ -578,10 +701,16 @@ def evaluate_batch(args):
         print(f"Limited to first {len(pairs)} pairs (--max-pairs)")
 
     bundle = load_checkpoint(args.model)
+    _, _, _, _config = bundle
+    is_v2 = _config.get("output_channels", 1) == 2
 
     overall_maes = []
     overall_rmses = []
     per_step_acc = np.zeros(PRED_HORIZON, dtype=np.float64)
+    # v2 額外收集 speed 指標
+    speed_maes = []
+    speed_rmses = []
+    speed_per_step_acc = np.zeros(PRED_HORIZON, dtype=np.float64)
     n_success = n_fail = 0
 
     for path_a, path_b, gap in tqdm(pairs, desc="Evaluating"):
@@ -590,6 +719,10 @@ def evaluate_batch(args):
             overall_maes.append(res["overall_mae"])
             overall_rmses.append(res["overall_rmse"])
             per_step_acc += np.array(res["per_step_mae"])
+            if is_v2:
+                speed_maes.append(res["speed_mae"])
+                speed_rmses.append(res["speed_rmse"])
+                speed_per_step_acc += np.array(res["speed_per_step"])
             n_success += 1
         except Exception:
             n_fail += 1
@@ -601,19 +734,34 @@ def evaluate_batch(args):
     per_step_mean = per_step_acc / n_success
     print("\n========== Batch Eval Summary ==========")
     print(f"Pairs evaluated: {n_success} (skipped {n_fail})")
-    print(f"Overall MAE  : mean={np.mean(overall_maes):.4f}, "
+    print(f"Model version: {'v2 (count + speed)' if is_v2 else 'v1 (count only)'}")
+    label = "Count MAE" if is_v2 else "Overall MAE"
+    print(f"{label}    : mean={np.mean(overall_maes):.4f}, "
           f"median={np.median(overall_maes):.4f}, "
-          f"p90={np.percentile(overall_maes, 90):.4f}")
-    print(f"Overall RMSE : mean={np.mean(overall_rmses):.4f}, "
-          f"median={np.median(overall_rmses):.4f}")
-    print(f"Per-step MAE (mean over all pairs):")
+          f"p90={np.percentile(overall_maes, 90):.4f}  (輛)")
+    print(f"Count RMSE   : mean={np.mean(overall_rmses):.4f}, "
+          f"median={np.median(overall_rmses):.4f}  (輛)")
+    if is_v2:
+        speed_per_step_mean = speed_per_step_acc / n_success
+        print(f"Speed MAE    : mean={np.mean(speed_maes):.4f}, "
+              f"median={np.median(speed_maes):.4f}, "
+              f"p90={np.percentile(speed_maes, 90):.4f}  (km/h)")
+        print(f"Speed RMSE   : mean={np.mean(speed_rmses):.4f}, "
+              f"median={np.median(speed_rmses):.4f}  (km/h)")
+    print(f"Per-step Count MAE:")
     for i, mae in enumerate(per_step_mean):
         sec = (i + 1) * 20
         bar = "█" * int(mae * 20)
         print(f"  +{sec:>3d}s (step {i + 1:2d}): {mae:.4f}  {bar}")
+    if is_v2:
+        print(f"Per-step Speed MAE (km/h):")
+        for i, mae in enumerate(speed_per_step_mean):
+            sec = (i + 1) * 20
+            bar = "█" * int(mae)  # km/h 量級較大,bar 縮小
+            print(f"  +{sec:>3d}s (step {i + 1:2d}): {mae:.4f}  {bar}")
     monotonic = all(per_step_mean[i] <= per_step_mean[i + 1] + 1e-6
                     for i in range(len(per_step_mean) - 1))
-    print(f"Monotonic per-step degradation: {'YES' if monotonic else 'NO'}")
+    print(f"Monotonic per-step degradation (count): {'YES' if monotonic else 'NO'}")
 
     # ---------- Step 1 驗收 (對照 INTEGRATION_PAIR_MODEL.md) ----------
     mae_mean = float(np.mean(overall_maes))
