@@ -970,6 +970,62 @@ def _gru_predict_by_road() -> dict:
     return {r: round(v, 1) for r, v in by_road.items()}
 
 
+def _gru_predict_speed_by_edge() -> dict:
+    """Mean predicted avg_speed_kmh per edge across the 15-step horizon.
+
+    Only exists for v2 pair models (output_channels=2). v1 models don't write
+    the column → returns {} and callers should fall back to SUMO baseline spd.
+    Edges with avg_speed_kmh <= 0 (model artefact, no prediction signal) are
+    excluded so road-level aggregation doesn't dilute against real values.
+    """
+    csv_path = _latest_predict_csv()
+    if csv_path is None:
+        return {}
+    try:
+        df = pd.read_csv(csv_path)
+        if "avg_speed_kmh" not in df.columns or "edge_id" not in df.columns:
+            return {}  # v1 model — no speed channel
+        means = df.groupby("edge_id")["avg_speed_kmh"].mean()
+        return {eid: float(v) for eid, v in means.items() if v and v > 0}
+    except Exception as exc:
+        print(f"  ⚠ _gru_predict_speed_by_edge: 解析 predict CSV 失敗 ({exc})")
+        return {}
+
+
+def _gru_predict_speed_by_road() -> dict:
+    """Aggregate edge-level GRU speed predictions to road names.
+
+    Mean of per-edge mean speeds (only edges that contributed predictions).
+    Returns {} when v1 model (callers fall back to SUMO baseline).
+    """
+    by_edge = _gru_predict_speed_by_edge()
+    if not by_edge:
+        return {}
+    road_map = _ensure_edge_road_map()
+    bucket: dict = {}
+    for eid, spd in by_edge.items():
+        road = road_map.get(eid)
+        if not road:
+            continue
+        bucket.setdefault(road, []).append(spd)
+    return {r: round(sum(v) / len(v), 1) for r, v in bucket.items() if v}
+
+
+# Feature flag: route /api/{roads,edges}/forecast.pred.spd through GRU v2
+# pair model's avg_speed_kmh instead of SUMO baseline mean speed.
+#
+# Default OFF because the currently shipped gru_traffic_model_pair_v2.pth was
+# trained on data/simulation_data/ CSVs that had no avg_speed_kmh column
+# (training Y filled speed=0) — model output's speed channel is collapsed
+# near zero. After v2 is retrained against runtime CSVs that contain real
+# speed (Step 1 of INTEGRATION_EDGE_SPEED.md, now in place), flip this to 1
+# to give the dashboard a single-source-of-truth for pred (vol + spd both
+# from GRU instead of mixed GRU vol / SUMO baseline spd).
+#
+# When OFF: legacy behavior preserved — pred.spd comes from SUMO baseline.
+_USE_GRU_V2_SPEED = os.environ.get("TRAFFICVISION_USE_GRU_V2_SPEED", "0") == "1"
+
+
 def _aggregate_edges_to_roads(heatmap_file: Path) -> dict:
     """把 edge 級熱力圖依 _edge_road_map 聚合成 { 大分類路名: {spd, vol, occ} }。
 
@@ -1028,6 +1084,10 @@ def get_road_forecast():
     sumo_baseline = _aggregate_edges_to_roads(EDGE_HEATMAP_BASELINE_FILE)
     sumo_best     = _aggregate_edges_to_roads(EDGE_HEATMAP_FILE)
     gru_by_road   = _gru_predict_by_road()
+    # v2 GRU speed channel disabled by default (model trained without speed →
+    # output collapses near zero). Flip TRAFFICVISION_USE_GRU_V2_SPEED=1 after
+    # v2 is retrained. {} keeps the existing SUMO-baseline fallback path active.
+    gru_spd_by_road = _gru_predict_speed_by_road() if _USE_GRU_V2_SPEED else {}
 
     # pred.vol is the GRU model's raw output unit: sum of vehicle_count across
     # 15 × 20-sec snapshots per edge, then aggregated by road. This is NOT the
@@ -1035,14 +1095,19 @@ def get_road_forecast():
     # Little's Law the two differ by a factor of ~dwell_time/window ≈ 1/6.
     # We deliberately do NOT scale: a multiplier would invent absolute magnitude
     # the model can't actually predict. The meta block tells consumers the unit.
+    #
+    # pred.spd: v2 pair model emits avg_speed_kmh per (time, edge) — prefer it
+    # when available (single source of truth with vol). Fall back to SUMO
+    # baseline for v1 models / edges without speed prediction.
     pred_merged: dict = {}
     for road in set(sumo_baseline) | set(gru_by_road):
         sumo_row = sumo_baseline.get(road, {})
         gru_raw = gru_by_road.get(road, 0)
+        gru_spd = gru_spd_by_road.get(road)  # None when v1 or no edges
         pred_merged[road] = {
             "vol": int(round(gru_raw)),
-            "spd": sumo_row.get("spd", 0.0),
-            "occ": sumo_row.get("occ", 0.0),
+            "spd": gru_spd if gru_spd is not None else sumo_row.get("spd", 0.0),
+            "occ": sumo_row.get("occ", 0.0),  # GRU doesn't predict occupancy
         }
 
     # Opt scenario: physically, signal optimization redistributes timing — it
@@ -1063,7 +1128,12 @@ def get_road_forecast():
         "opt":  opt_merged,
         "meta": {
             "pred_vol_unit":         "vehicle-snapshots (GRU pair model: Σ vehicle_count over 15 × 20-sec timesteps per edge)",
-            "pred_spd_occ_source":   "SUMO no_control 基準模擬",
+            "pred_spd_source":       (
+                "GRU v2 pair model (avg_speed_kmh, mean over 15-step horizon)"
+                if gru_spd_by_road else
+                "SUMO no_control 基準模擬 (v1 model fallback — no avg_speed_kmh column)"
+            ),
+            "pred_occ_source":       "SUMO no_control 基準模擬（GRU 不預測 occupancy）",
             "opt_vol_source":        "= pred.vol（優化改變流速，不改變車輛數）",
             "opt_spd_occ_source":    "SUMO best-strategy 模擬（顯示優化後的速度/佔有率）",
             "vs_vd_note":            "NOT directly comparable to VD TotalVol (which is 5-min pass-through flow). Ratio ~1/6 by Little's Law (dwell_time/window).",
@@ -1134,20 +1204,35 @@ def get_edge_forecast():
 
     前端 pred / opt 模式的監控列表用這個 endpoint 直接顯示 ~130 條 named edges。
     """
-    # SUMO baseline gives physics (spd/occ) + the named-edge structure we need
+    # SUMO baseline gives physics (occ) + the named-edge structure we need
     sumo_baseline_edges = _flatten_heatmap_for_monitor(EDGE_HEATMAP_BASELINE_FILE)
     gru_by_edge = _gru_predict_by_edge()
+    # v2 GRU speed channel gated by feature flag (see _USE_GRU_V2_SPEED comment).
+    # {} keeps the existing SUMO-baseline fallback path active until v2 retrained.
+    gru_spd_by_edge = _gru_predict_speed_by_edge() if _USE_GRU_V2_SPEED else {}
 
-    # spd fallback chain for edges where the baseline strategy's SUMO sim
-    # didn't route vehicles (spd=0 = "no measurement", not "stopped"):
-    #   primary: edgedata_baseline.xml (no_control strategy sim)
-    #   fallback 1: edgedata_current.xml (Step 2 current-demand sim)
-    #   final: null  (so dashboard renders "---" instead of fake "0 km/h")
+    # spd fallback chain (v2 GRU is preferred when available, SUMO is the
+    # fallback for v1 or edges the model didn't predict for):
+    #   primary:   GRU v2 pair model avg_speed_kmh (true prediction)
+    #   fallback 1: edgedata_baseline.xml (no_control SUMO baseline sim)
+    #   fallback 2: edgedata_current.xml (Step 2 current-demand sim)
+    #   final:     null  (so dashboard renders "---" instead of fake "0 km/h")
     spd_fallback_current = _spd_by_edge(EDGE_HEATMAP_CURRENT_FILE)
 
-    def _resolved_spd(eid, primary_spd):
-        if primary_spd and primary_spd > 0:
-            return primary_spd
+    def _resolved_pred_spd(eid, sumo_primary_spd):
+        gru_spd = gru_spd_by_edge.get(eid)
+        if gru_spd and gru_spd > 0:
+            return round(gru_spd, 1)
+        if sumo_primary_spd and sumo_primary_spd > 0:
+            return sumo_primary_spd
+        fb = spd_fallback_current.get(eid)
+        return fb if fb and fb > 0 else None
+
+    def _resolved_opt_spd(eid, sumo_strategy_spd):
+        # Opt is "post-signal-change simulated reality" — keep SUMO chain;
+        # GRU only predicts the baseline scenario, not strategy outcomes.
+        if sumo_strategy_spd and sumo_strategy_spd > 0:
+            return sumo_strategy_spd
         fb = spd_fallback_current.get(eid)
         return fb if fb and fb > 0 else None
 
@@ -1158,7 +1243,7 @@ def get_edge_forecast():
     for row in sumo_baseline_edges:
         eid = row.get("id")
         gru_vol = gru_by_edge.get(eid)
-        resolved_spd = _resolved_spd(eid, row.get("spd"))
+        resolved_spd = _resolved_pred_spd(eid, row.get("spd"))
         # MOE only meaningful when we have a real speed
         moe = _moe_from_spd(resolved_spd) if resolved_spd is not None else None
         base = {**row, "spd": resolved_spd, "moe": moe, "vol_sumo": row.get("vol", 0)}
@@ -1167,13 +1252,14 @@ def get_edge_forecast():
         pred_edges.append(base)
 
     # Opt edges: vol = pred.vol (vehicles preserved), spd/occ from SUMO best
-    # with same fallback chain so the table doesn't show fake 0 km/h.
+    # with the SUMO-only fallback chain (GRU only predicts baseline scenario,
+    # not strategy outcomes).
     pred_by_id = {r["id"]: r for r in pred_edges}
     opt_edges = []
     for row in _flatten_heatmap_for_monitor(EDGE_HEATMAP_FILE):
         eid = row.get("id")
         pred_row = pred_by_id.get(eid, {})
-        resolved_spd = _resolved_spd(eid, row.get("spd"))
+        resolved_spd = _resolved_opt_spd(eid, row.get("spd"))
         moe = _moe_from_spd(resolved_spd) if resolved_spd is not None else None
         opt_edges.append({
             **row,
@@ -1188,12 +1274,18 @@ def get_edge_forecast():
         "opt":  opt_edges,
         "meta": {
             "pred_vol_unit":       "vehicle-snapshots (GRU pair model: Σ vehicle_count over 15 × 20-sec timesteps per edge)",
-            "pred_spd_occ_source": "SUMO no_control 基準模擬（spd=0 時 fallback 取 current sim，仍 0 則回傳 null）",
+            "pred_spd_source":     (
+                "GRU v2 pair model (avg_speed_kmh, mean over 15-step horizon); fallback: SUMO no_control → current sim → null"
+                if gru_spd_by_edge else
+                "SUMO no_control 基準模擬（spd=0 時 fallback 取 current sim，仍 0 則回傳 null）"
+            ),
+            "pred_occ_source":     "SUMO no_control 基準模擬（GRU 不預測 occupancy）",
             "opt_vol_source":      "= pred.vol（優化改變流速，不改變車輛數）",
             "opt_spd_occ_source":  "SUMO best-strategy 模擬（同 spd fallback chain）",
             "vs_vd_note":          "NOT directly comparable to VD TotalVol (5-min pass-through flow). Ratio ~1/6 by Little's Law.",
             "predict_csv":         str(_latest_predict_csv() or ""),
             "gru_edges_total":     len(gru_by_edge),
+            "gru_spd_edges_total": len(gru_spd_by_edge),
         },
     }
 
