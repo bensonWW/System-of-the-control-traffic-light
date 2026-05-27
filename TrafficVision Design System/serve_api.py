@@ -970,6 +970,13 @@ def _gru_predict_by_road() -> dict:
     return {r: round(v, 1) for r, v in by_road.items()}
 
 
+# Server-side clip on GRU v2 speed predictions: real-world urban roads
+# rarely exceed 70 km/h. v2 model occasionally outputs 100+ km/h outliers
+# (mask-trained regression on sparse cells can over-shoot). Clip protects
+# the dashboard from absurd values without changing typical predictions.
+_GRU_SPEED_CLIP_MAX_KMH = float(os.environ.get("TRAFFICVISION_GRU_SPEED_CLIP_KMH", "70"))
+
+
 def _gru_predict_speed_by_edge() -> dict:
     """Mean predicted avg_speed_kmh per edge across the 15-step horizon.
 
@@ -977,6 +984,8 @@ def _gru_predict_speed_by_edge() -> dict:
     the column → returns {} and callers should fall back to SUMO baseline spd.
     Edges with avg_speed_kmh <= 0 (model artefact, no prediction signal) are
     excluded so road-level aggregation doesn't dilute against real values.
+    Per-cell predictions are clipped to [0, _GRU_SPEED_CLIP_MAX_KMH] before
+    averaging to protect against rare model over-shoot (e.g. 200+ km/h).
     """
     csv_path = _latest_predict_csv()
     if csv_path is None:
@@ -985,7 +994,10 @@ def _gru_predict_speed_by_edge() -> dict:
         df = pd.read_csv(csv_path)
         if "avg_speed_kmh" not in df.columns or "edge_id" not in df.columns:
             return {}  # v1 model — no speed channel
-        means = df.groupby("edge_id")["avg_speed_kmh"].mean()
+        # Clip outliers before per-edge mean so a single 220 km/h cell can't
+        # skew an edge's reported speed.
+        clipped = df["avg_speed_kmh"].clip(lower=0, upper=_GRU_SPEED_CLIP_MAX_KMH)
+        means = clipped.groupby(df["edge_id"]).mean()
         return {eid: float(v) for eid, v in means.items() if v and v > 0}
     except Exception as exc:
         print(f"  ⚠ _gru_predict_speed_by_edge: 解析 predict CSV 失敗 ({exc})")

@@ -63,7 +63,10 @@ GAP_MAX_SEC = 900     # pair 最大時間差 (15 分鐘)
 # v2: 2 channels per edge (vehicle_count + avg_speed_kmh)
 # v1 用 OUTPUT_CHANNELS=1; 保留變數讓未來方便回到 v1 或擴充更多 channel
 OUTPUT_CHANNELS = 2
-SPEED_LOSS_WEIGHT = 1.0   # speed channel 在 total loss 內的權重 (count 部分仍有 5× 高流量加權)
+SPEED_LOSS_WEIGHT = 0.5   # speed channel 在 total loss 內的權重 (count 部分仍有 5× 高流量加權)
+# 註: speed loss 用 has-vehicle mask 後,量級從「3450 cells mean」變「~350 cells mean」
+# 約大 10×。若仍用 1.0 會 dominate total loss 害到 count 學習;0.5 為折衷起點,
+# count_loss vs speed_loss contribution 大致同量級。實證若不夠平衡再 tune。
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -378,8 +381,17 @@ def weighted_sequence_loss(pred, target, num_edges=None, output_channels=1,
     output_channels=1: 沿用 v1 行為,高流量 edge (target > log1p(10) ≈ 2.4) 權重 5×。
     output_channels=2:
         - count 部分: 沿用 v1 weighted MSE (高流量 5×)
-        - speed 部分: 標準 MSE × speed_loss_weight
+        - speed 部分: has-vehicle masked MSE × speed_loss_weight
         - 兩個 loss 相加
+
+    為什麼 speed 用 has-vehicle mask:
+        Target speed matrix 是 (T × num_edges) dense,但 SUMO CSV 是 sparse
+        (只記 count > 0 的 cell),pivot 後 fillna(0) 把「沒車 edge」補成 0。
+        典型 90% cells 是這種 fillna 假 0,只有 10% 是真實 speed 量測。
+        若 speed loss 平均整個 matrix,90% 假 0 會稀釋掉真 signal,model
+        會 collapse 到「對所有 cells 輸出 ~5 km/h」(loss local minimum)。
+        Mask 後 speed loss 只計算 targ_count > 0 的 cells (真量測點),
+        強制 model 學「對有車 edge,輸出正確速度」這個真實 mapping。
     """
     if output_channels == 1:
         threshold = 2.4
@@ -397,7 +409,14 @@ def weighted_sequence_loss(pred, target, num_edges=None, output_channels=1,
     threshold = 2.4
     weights = 1.0 + 4.0 * (targ_count > threshold).float()
     count_loss = ((pred_count - targ_count) ** 2 * weights).mean()
-    speed_loss = ((pred_speed - targ_speed) ** 2).mean()
+
+    # has-vehicle mask: speed loss 只在 target count > 0 的 cells 計算,
+    # 避免 fillna(0) 的 dense matrix 假 0 稀釋真 signal。+1e-6 防 div-by-zero
+    # (理論上 train batch 一定會有 has-vehicle cells,但保險)。
+    speed_mask = (targ_count > 0).float()
+    speed_sq_err = (pred_speed - targ_speed) ** 2 * speed_mask
+    speed_loss = speed_sq_err.sum() / (speed_mask.sum() + 1e-6)
+
     return count_loss + speed_loss_weight * speed_loss
 
 
