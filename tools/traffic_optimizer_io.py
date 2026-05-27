@@ -224,7 +224,12 @@ def run_sumo_simulation_with_end_time(config_file, output_csv=None, override_pro
                 for edge in traci.edge.getIDList():
                     count = traci.edge.getLastStepVehicleNumber(edge)
                     if count > 0:
-                        data_buffer.append((current_time, edge, count))
+                        # 同步採集平均速度供 v2 pair model (count + speed) 使用。
+                        # 照 VehicleData.py L117-125 的做法: 只在 count > 0 時取,
+                        # 避免 TraCI 對空 edge 回特殊值 (-1001 等)。單位 m/s → km/h。
+                        mean_speed_ms = traci.edge.getLastStepMeanSpeed(edge)
+                        avg_speed_kmh = mean_speed_ms * 3.6
+                        data_buffer.append((current_time, edge, count, avg_speed_kmh))
 
         if output_csv:
             actual_end_time = data_buffer[-1][0] if data_buffer else simulation_end_time
@@ -250,11 +255,13 @@ def run_sumo_simulation_with_end_time(config_file, output_csv=None, override_pro
                 # Shrink tail trim to whatever still keeps >= needed_window
                 tail_trim = max(0.0, available_after_warmup - needed_window)
             cutoff_upper = actual_end_time - tail_trim
+            # 4 欄 CSV (新增 avg_speed_kmh 給 v2 pair model)。下游 predict_to_csv 用具名
+            # 欄位讀,多 1 欄相容。VehicleData.py 已是同格式。
             with open(output_csv, "w", encoding="utf-8") as f:
-                f.write("time,edge_id,vehicle_count\n")
+                f.write("time,edge_id,vehicle_count,avg_speed_kmh\n")
                 f.writelines(
-                    f"{current_time},{edge},{count}\n"
-                    for current_time, edge, count in data_buffer
+                    f"{current_time},{edge},{count},{speed:.2f}\n"
+                    for current_time, edge, count, speed in data_buffer
                     if LEADING_WARMUP <= current_time <= cutoff_upper
                 )
 
