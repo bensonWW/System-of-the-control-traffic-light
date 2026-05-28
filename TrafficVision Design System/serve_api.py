@@ -977,15 +977,28 @@ def _gru_predict_by_road() -> dict:
 _GRU_SPEED_CLIP_MAX_KMH = float(os.environ.get("TRAFFICVISION_GRU_SPEED_CLIP_KMH", "70"))
 
 
+# Minimum per-edge GRU count sum to consider the speed prediction trustworthy.
+# Reasoning: when total predicted count across the 15-step horizon is below ~0.5,
+# `int(round(count_sum)) = 0` so the dashboard's vol column shows 0 — pairing
+# that with a non-zero spd produces "speed but no traffic" inconsistency.
+# Gating speed on count alignment makes both columns disappear together.
+_GRU_SPEED_MIN_COUNT_SUM = 0.5
+
+
 def _gru_predict_speed_by_edge() -> dict:
     """Mean predicted avg_speed_kmh per edge across the 15-step horizon.
 
     Only exists for v2 pair models (output_channels=2). v1 models don't write
     the column → returns {} and callers should fall back to SUMO baseline spd.
-    Edges with avg_speed_kmh <= 0 (model artefact, no prediction signal) are
-    excluded so road-level aggregation doesn't dilute against real values.
     Per-cell predictions are clipped to [0, _GRU_SPEED_CLIP_MAX_KMH] before
     averaging to protect against rare model over-shoot (e.g. 200+ km/h).
+
+    Filters:
+      - Drop edges where mean speed <= 0 (no prediction signal).
+      - Drop edges where count_sum < _GRU_SPEED_MIN_COUNT_SUM. This keeps
+        speed dict aligned with what the dashboard renders as "has traffic"
+        (because vol uses int(round(count_sum)) — sums below 0.5 round to 0
+        and would be paired with a non-zero spd, looking inconsistent).
     """
     csv_path = _latest_predict_csv()
     if csv_path is None:
@@ -997,8 +1010,13 @@ def _gru_predict_speed_by_edge() -> dict:
         # Clip outliers before per-edge mean so a single 220 km/h cell can't
         # skew an edge's reported speed.
         clipped = df["avg_speed_kmh"].clip(lower=0, upper=_GRU_SPEED_CLIP_MAX_KMH)
+        grouped = df.groupby("edge_id")
         means = clipped.groupby(df["edge_id"]).mean()
-        return {eid: float(v) for eid, v in means.items() if v and v > 0}
+        counts = grouped["vehicle_count"].sum()
+        return {
+            eid: float(v) for eid, v in means.items()
+            if v and v > 0 and counts.get(eid, 0) >= _GRU_SPEED_MIN_COUNT_SUM
+        }
     except Exception as exc:
         print(f"  ⚠ _gru_predict_speed_by_edge: 解析 predict CSV 失敗 ({exc})")
         return {}
@@ -1116,9 +1134,13 @@ def get_road_forecast():
         sumo_row = sumo_baseline.get(road, {})
         gru_raw = gru_by_road.get(road, 0)
         gru_spd = gru_spd_by_road.get(road)  # None when v1 or no edges
+        vol = int(round(gru_raw))
+        # Consistency invariant: if predicted traffic rounds to 0, suppress spd.
+        # Otherwise the dashboard shows "vol=0, spd=35 km/h" which reads as a bug.
+        spd = (gru_spd if gru_spd is not None else sumo_row.get("spd", 0.0)) if vol > 0 else 0.0
         pred_merged[road] = {
-            "vol": int(round(gru_raw)),
-            "spd": gru_spd if gru_spd is not None else sumo_row.get("spd", 0.0),
+            "vol": vol,
+            "spd": spd,
             "occ": sumo_row.get("occ", 0.0),  # GRU doesn't predict occupancy
         }
 
@@ -1129,9 +1151,12 @@ def get_road_forecast():
     for road in set(pred_merged) | set(sumo_best):
         pred_row = pred_merged.get(road, {})
         sumo_row = sumo_best.get(road, {})
+        vol = pred_row.get("vol", 0)
+        # Same invariant: no vol → no spd display
+        spd = sumo_row.get("spd", pred_row.get("spd", 0.0)) if vol > 0 else 0.0
         opt_merged[road] = {
-            "vol": pred_row.get("vol", 0),  # vehicles preserved
-            "spd": sumo_row.get("spd", pred_row.get("spd", 0.0)),
+            "vol": vol,  # vehicles preserved
+            "spd": spd,
             "occ": sumo_row.get("occ", pred_row.get("occ", 0.0)),
         }
 
@@ -1261,6 +1286,14 @@ def get_edge_forecast():
         base = {**row, "spd": resolved_spd, "moe": moe, "vol_sumo": row.get("vol", 0)}
         if gru_vol is not None:
             base["vol"] = int(round(float(gru_vol)))
+        # Consistency invariant: if no traffic predicted/measured, suppress spd.
+        # "Has speed but no traffic" reads as a bug to users — when count rounds
+        # to 0 (GRU vol < 0.5) AND SUMO baseline also has no vehicles, the spd
+        # fallback (which may still find a value from edgedata XML transients)
+        # shouldn't surface.
+        if base.get("vol", 0) == 0:
+            base["spd"] = None
+            base["moe"] = None
         pred_edges.append(base)
 
     # Opt edges: vol = pred.vol (vehicles preserved), spd/occ from SUMO best
@@ -1273,13 +1306,18 @@ def get_edge_forecast():
         pred_row = pred_by_id.get(eid, {})
         resolved_spd = _resolved_opt_spd(eid, row.get("spd"))
         moe = _moe_from_spd(resolved_spd) if resolved_spd is not None else None
-        opt_edges.append({
+        opt_row = {
             **row,
             "spd":      resolved_spd,
             "moe":      moe,
             "vol":      pred_row.get("vol", row.get("vol", 0)),  # carry pred.vol forward
             "vol_sumo": row.get("vol", 0),
-        })
+        }
+        # Same consistency invariant: no vol → no spd display
+        if opt_row.get("vol", 0) == 0:
+            opt_row["spd"] = None
+            opt_row["moe"] = None
+        opt_edges.append(opt_row)
 
     return {
         "pred": pred_edges,
