@@ -218,7 +218,7 @@ Added in this stabilization round; defaults preserve original behavior.
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **System-of-the-control-traffic-light** (7037 symbols, 9623 relationships, 185 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **System-of-the-control-traffic-light** (7198 symbols, 9864 relationships, 181 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
@@ -258,10 +258,11 @@ This project is indexed by GitNexus as **System-of-the-control-traffic-light** (
 | Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md` |
 | Work in the Unsloth_compiled_cache area (382 symbols) | `.claude/skills/generated/unsloth-compiled-cache/SKILL.md` |
 | Work in the Tools area (119 symbols) | `.claude/skills/generated/tools/SKILL.md` |
-| Work in the TrafficVision Design System area (43 symbols) | `.claude/skills/generated/trafficvision-design-system/SKILL.md` |
-| Work in the Cluster_48 area (13 symbols) | `.claude/skills/generated/cluster-48/SKILL.md` |
-| Work in the Cluster_11 area (7 symbols) | `.claude/skills/generated/cluster-11/SKILL.md` |
-| Work in the Cluster_9 area (6 symbols) | `.claude/skills/generated/cluster-9/SKILL.md` |
-| Work in the Cluster_12 area (4 symbols) | `.claude/skills/generated/cluster-12/SKILL.md` |
+| Work in the TrafficVision Design System area (53 symbols) | `.claude/skills/generated/trafficvision-design-system/SKILL.md` |
+| Work in the Tests area (15 symbols) | `.claude/skills/generated/tests/SKILL.md` |
+| Work in the Cluster_53 area (13 symbols) | `.claude/skills/generated/cluster-53/SKILL.md` |
+| Work in the Cluster_14 area (7 symbols) | `.claude/skills/generated/cluster-14/SKILL.md` |
+| Work in the Cluster_12 area (6 symbols) | `.claude/skills/generated/cluster-12/SKILL.md` |
+| Work in the Cluster_15 area (4 symbols) | `.claude/skills/generated/cluster-15/SKILL.md` |
 
 <!-- gitnexus:end -->
