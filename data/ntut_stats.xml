@@ -1,18 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<!-- generated on 2026-05-27T10:28:28.601291+08:00 by Eclipse SUMO sumo 1.26.0
+<!-- generated on 2026-06-03 22:05:18 by Eclipse SUMO sumo Version 1.24.0
 <sumoConfiguration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/sumoConfiguration.xsd">
 
     <input>
-        <net-file value="C:\Users\User\Documents\GitHub\System-of-the-control-traffic-light\data\ntut_network_split.net.xml"/>
-        <route-files value="C:\Users\User\Documents\GitHub\System-of-the-control-traffic-light\data\temp_routes_20260416_055207_13972.rou.xml"/>
-        <additional-files value="C:\Users\User\Documents\GitHub\System-of-the-control-traffic-light\data\edgedata.add.xml"/>
+        <net-file value="D:\system\System-of-the-control-traffic-light-master\data\ntut_network_split.net.xml"/>
+        <route-files value="D:\system\System-of-the-control-traffic-light-master\data\final_output.rou.alt.xml"/>
+        <additional-files value="D:\system\System-of-the-control-traffic-light-master\data\edgedata.add.xml"/>
     </input>
 
     <output>
         <output-prefix value="ntut_"/>
-        <tripinfo-output value="C:\Users\User\Documents\GitHub\System-of-the-control-traffic-light\data\tripinfos.xml"/>
-        <statistic-output value="C:\Users\User\Documents\GitHub\System-of-the-control-traffic-light\data\stats.xml"/>
+        <tripinfo-output value="D:\system\System-of-the-control-traffic-light-master\data\tripinfos.xml"/>
+        <statistic-output value="D:\system\System-of-the-control-traffic-light-master\data\stats.xml"/>
     </output>
 
     <processing>
@@ -27,12 +27,13 @@
 
     <report>
         <verbose value="true"/>
+        <no-warnings value="true"/>
         <duration-log.statistics value="true"/>
         <no-step-log value="true"/>
     </report>
 
     <traci_server>
-        <remote-port value="51966"/>
+        <remote-port value="60535"/>
     </traci_server>
 
     <gui_only>
@@ -40,16 +41,17 @@
         <start value="true"/>
     </gui_only>
 
-</sumoConfiguration>--->
+</sumoConfiguration>
+-->
 
 <statistics xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/statistic_file.xsd">
-    <performance clockBegin="603149.12" clockEnd="603168.96" clockDuration="19.84" traciDuration="16.65" realTimeFactor="239.05" vehicleUpdatesPerSecond="14294.85" personUpdatesPerSecond="0.00" begin="0.00" end="4742.00" duration="4742.00"/>
-    <vehicles loaded="1722" inserted="1722" running="0" waiting="0"/>
-    <teleports total="39" jam="10" yield="23" wrongLane="6"/>
-    <safety collisions="0" emergencyStops="0" emergencyBraking="2"/>
+    <performance clockBegin="31713.65" clockEnd="31767.63" clockDuration="53.99" traciDuration="53.81" realTimeFactor="16.86" vehicleUpdatesPerSecond="311.51" personUpdatesPerSecond="0.00" begin="0.00" end="910.00" duration="910.00"/>
+    <vehicles loaded="493" inserted="493" running="0" waiting="0"/>
+    <teleports total="0" jam="0" yield="0" wrongLane="0"/>
+    <safety collisions="0" emergencyStops="0" emergencyBraking="0"/>
     <persons loaded="0" running="0" jammed="0"/>
     <personTeleports total="0" abortWait="0" wrongDest="0"/>
-    <vehicleTripStatistics count="1722" routeLength="148.43" speed="4.94" duration="164.67" waitingTime="136.26" timeLoss="152.67" departDelay="346.63" departDelayWaiting="-1.00" totalTravelTime="283565.00" totalDepartDelay="596902.46"/>
+    <vehicleTripStatistics count="493" routeLength="126.74" speed="5.68" duration="34.11" waitingTime="18.26" timeLoss="24.30" departDelay="12.72" departDelayWaiting="-1.00" totalTravelTime="16817.00" totalDepartDelay="6273.17"/>
     <pedestrianStatistics number="0" routeLength="0.00" duration="0.00" timeLoss="0.00"/>
     <rideStatistics number="0"/>
     <transportStatistics number="0"/>

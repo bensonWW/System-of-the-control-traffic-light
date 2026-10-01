@@ -1,0 +1,952 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TrafficVision · 全像座艙 — 總覽儀表板</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" crossorigin="anonymous"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet-src.js" integrity="sha384-4aETf8z71hiSsoK0xYsa5JtiJHfL3h7uMAsZ2QYOLvcySDL/cEDfdLt0SaBypTQZ" crossorigin="anonymous"></script>
+<style>
+:root{
+  --bg:#020617; --bg-deep:#060c1a; --surf:#0a0f1e; --surf2:#0f1629; --elev:#162036;
+  --txt:#f1f5f9; --txt2:#a3b2cf; --muted:#9aabce;
+  --cyan:#22d3ee; --blue:#3b82f6; --blue2:#60a5fa; --green:#22c55e; --amber:#f59e0b; --red:#ef4444; --mag:#d946ef;
+  --free:#22c55e; --normal:#f59e0b; --cong:#ef4444;
+  --glass:rgba(15,22,41,0.55); --glass-float:rgba(8,13,28,0.62);
+  --gborder:rgba(120,160,240,0.18);
+  --gshadow:0 8px 32px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.06);
+  --accent:var(--cyan);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:'Inter','Noto Sans TC',system-ui,sans-serif;
+  background:var(--bg); color:var(--txt);
+  font-size:14px; line-height:1.45; overflow:hidden;
+  -webkit-font-smoothing:antialiased;
+}
+.mono{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums}
+.num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
+button{font-family:inherit;cursor:pointer;color:inherit;border:none;background:none}
+input{font-family:inherit}
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:rgba(120,160,240,0.22);border-radius:8px}
+::-webkit-scrollbar-thumb:hover{background:rgba(120,160,240,0.4)}
+
+a:focus-visible,button:focus-visible,input:focus-visible,[tabindex]:focus-visible,.tab:focus-visible,.nav-item:focus-visible{
+  outline:2px solid var(--cyan); outline-offset:2px; border-radius:8px;
+}
+
+/* ===== Ambient backdrop ===== */
+.bg-grid{position:fixed;inset:0;z-index:0;pointer-events:none;
+  background:
+    radial-gradient(1200px 700px at 70% -10%, rgba(34,211,238,0.10), transparent 60%),
+    radial-gradient(900px 600px at 10% 110%, rgba(59,130,246,0.10), transparent 60%),
+    linear-gradient(180deg,var(--bg-deep),var(--bg));
+}
+.bg-lines{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:0.4;
+  background-image:
+    linear-gradient(rgba(120,160,240,0.05) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(120,160,240,0.05) 1px,transparent 1px);
+  background-size:46px 46px;
+  mask-image:radial-gradient(ellipse 80% 80% at 50% 40%, #000 40%, transparent 100%);
+}
+.scanline{position:fixed;inset:0;z-index:60;pointer-events:none;
+  background:repeating-linear-gradient(180deg,rgba(34,211,238,0.035) 0 1px,transparent 1px 3px);
+  mix-blend-mode:screen;opacity:0.5;
+}
+.scanline::after{content:"";position:absolute;left:0;right:0;height:120px;
+  background:linear-gradient(180deg,transparent,rgba(34,211,238,0.06),transparent);
+  animation:scan 7s linear infinite;
+}
+@keyframes scan{0%{top:-15%}100%{top:115%}}
+
+/* ===== Shell ===== */
+.app{position:relative;z-index:1;display:grid;grid-template-columns:240px 1fr;height:100vh}
+
+/* ===== Sidebar ===== */
+.sidebar{
+  background:linear-gradient(180deg,rgba(10,15,30,0.92),rgba(6,12,26,0.92));
+  border-right:1px solid var(--gborder);
+  backdrop-filter:blur(18px) saturate(140%);-webkit-backdrop-filter:blur(18px) saturate(140%);
+  display:flex;flex-direction:column;padding:18px 14px;gap:6px;position:relative;
+}
+.sidebar::after{content:"";position:absolute;top:0;right:-1px;width:1px;height:100%;
+  background:linear-gradient(180deg,transparent,rgba(34,211,238,0.5),transparent);opacity:0.6}
+.brand{display:flex;align-items:center;gap:11px;padding:6px 8px 16px}
+.brand-mark{width:38px;height:38px;border-radius:11px;flex:none;position:relative;
+  background:linear-gradient(135deg,rgba(34,211,238,0.25),rgba(59,130,246,0.18));
+  border:1px solid rgba(34,211,238,0.4);display:grid;place-items:center;
+  box-shadow:0 0 18px rgba(34,211,238,0.3),inset 0 1px 0 rgba(255,255,255,0.12)}
+.brand-mark svg{width:21px;height:21px}
+.brand-txt b{display:block;font-size:15px;font-weight:700;letter-spacing:0.3px}
+.brand-txt span{display:block;font-size:11px;color:var(--txt2);letter-spacing:0.5px}
+.nav{display:flex;flex-direction:column;gap:3px;margin-top:6px}
+.nav-label{font-size:10px;letter-spacing:1.6px;color:var(--muted);text-transform:uppercase;padding:8px 10px 4px}
+.nav-item{display:flex;align-items:center;gap:11px;padding:10px 11px;border-radius:10px;
+  color:var(--txt2);font-size:13.5px;font-weight:500;transition:color .2s,background .2s,transform .2s;
+  width:100%;text-align:left;position:relative}
+.nav-item svg{width:18px;height:18px;flex:none;opacity:0.85}
+.nav-item:hover{background:rgba(120,160,240,0.08);color:var(--txt);transform:translateX(2px)}
+.nav-item.active{color:var(--txt);background:linear-gradient(90deg,rgba(34,211,238,0.16),rgba(34,211,238,0.02));
+  box-shadow:inset 0 0 0 1px rgba(34,211,238,0.28)}
+.nav-item.active::before{content:"";position:absolute;left:0;top:8px;bottom:8px;width:3px;border-radius:3px;
+  background:var(--cyan);box-shadow:0 0 10px var(--cyan)}
+.nav-item.active svg{opacity:1;color:var(--cyan)}
+.side-foot{margin-top:auto;padding:12px 10px 4px;font-size:11px;color:var(--muted);line-height:1.7}
+.side-foot .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green);margin-right:6px;
+  box-shadow:0 0 8px var(--green);animation:pulse 2.2s ease-in-out infinite}
+
+/* ===== Main ===== */
+.main{display:flex;flex-direction:column;min-width:0;height:100vh;overflow:hidden}
+
+/* Top bar */
+.topbar{display:flex;align-items:center;gap:16px;padding:14px 22px;
+  border-bottom:1px solid var(--gborder);
+  background:linear-gradient(180deg,rgba(10,15,30,0.7),rgba(10,15,30,0.35));
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);flex:none}
+.topbar h1{font-size:19px;font-weight:700;letter-spacing:0.3px}
+.topbar .sub{font-size:11.5px;color:var(--txt2);margin-top:2px}
+.topbar .sub .mono{color:var(--cyan)}
+.spacer{flex:1}
+.live-pill{display:flex;align-items:center;gap:8px;padding:7px 13px;border-radius:999px;
+  background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.35);
+  color:#86efac;font-size:12px;font-weight:600;letter-spacing:0.5px}
+.live-dot{width:9px;height:9px;border-radius:50%;background:var(--green);position:relative;
+  box-shadow:0 0 10px var(--green)}
+.live-dot::after{content:"";position:absolute;inset:-4px;border-radius:50%;border:1px solid var(--green);
+  animation:ring 2s ease-out infinite}
+@keyframes ring{0%{transform:scale(0.7);opacity:0.9}100%{transform:scale(2.1);opacity:0}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.35}}
+.clock{font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:500;letter-spacing:1px;color:var(--txt);
+  padding:5px 12px;border-radius:10px;background:rgba(8,13,28,0.6);border:1px solid var(--gborder)}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:9px 15px;border-radius:10px;font-size:13px;font-weight:600;
+  transition:transform .18s,box-shadow .18s,background .18s;border:1px solid var(--gborder);
+  background:rgba(22,32,54,0.7);color:var(--txt)}
+.btn svg{width:16px;height:16px}
+.btn:hover{transform:translateY(-1px);background:rgba(34,46,74,0.85)}
+.btn:active{transform:translateY(0)}
+.btn-primary{background:linear-gradient(135deg,rgba(34,211,238,0.9),rgba(59,130,246,0.9));color:#021018;
+  border-color:rgba(34,211,238,0.6);box-shadow:0 0 18px rgba(34,211,238,0.35)}
+.btn-primary:hover{box-shadow:0 0 26px rgba(34,211,238,0.5);background:linear-gradient(135deg,#22d3ee,#3b82f6)}
+
+/* Content scroll area */
+.content{flex:1;overflow-y:auto;overflow-x:hidden;padding:18px 22px 26px}
+
+/* Glass panel + HUD brackets */
+.glass{background:var(--glass);border:1px solid var(--gborder);border-radius:15px;box-shadow:var(--gshadow);
+  backdrop-filter:blur(18px) saturate(140%);-webkit-backdrop-filter:blur(18px) saturate(140%);position:relative}
+.hud{position:relative}
+.hud .bracket{position:absolute;width:16px;height:16px;border-color:rgba(34,211,238,0.55);pointer-events:none;z-index:2}
+.hud .bracket.tl{top:7px;left:7px;border-top:2px solid;border-left:2px solid;border-top-left-radius:5px}
+.hud .bracket.tr{top:7px;right:7px;border-top:2px solid;border-right:2px solid;border-top-right-radius:5px}
+.hud .bracket.bl{bottom:7px;left:7px;border-bottom:2px solid;border-left:2px solid;border-bottom-left-radius:5px}
+.hud .bracket.br{bottom:7px;right:7px;border-bottom:2px solid;border-right:2px solid;border-bottom-right-radius:5px}
+
+.panel-head{display:flex;align-items:center;gap:10px;padding:13px 16px;border-bottom:1px solid var(--gborder)}
+.panel-head h2{font-size:14px;font-weight:600;letter-spacing:0.3px}
+.panel-head .tick{font-size:10px;letter-spacing:1.4px;color:var(--muted);text-transform:uppercase}
+.panel-head svg{width:17px;height:17px;color:var(--cyan)}
+
+/* ===== Cockpit grid: left telemetry | center map | right ops ===== */
+.cockpit{display:grid;grid-template-columns:268px minmax(0,1fr) 320px;gap:16px;align-items:start}
+
+/* Left telemetry rail */
+.telemetry{display:flex;flex-direction:column;gap:14px}
+.rail-title{display:flex;align-items:center;gap:9px;font-size:11px;letter-spacing:1.6px;color:var(--muted);
+  text-transform:uppercase;padding:0 4px}
+.rail-title::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--cyan);box-shadow:0 0 8px var(--cyan)}
+.gauge-card{padding:14px 14px 13px;display:flex;align-items:center;gap:14px}
+.gauge-svg{width:74px;height:74px;flex:none}
+.gauge-info{min-width:0}
+.gauge-info .lbl{font-size:11.5px;color:var(--txt2);font-weight:500;margin-bottom:3px;letter-spacing:0.3px}
+.gauge-info .val{font-size:26px;font-weight:700;line-height:1;letter-spacing:-0.5px}
+.gauge-info .unit{font-size:12px;color:var(--muted);font-weight:500;margin-left:3px}
+.gauge-info .delta{font-size:11px;margin-top:5px;display:flex;align-items:center;gap:4px}
+.gauge-info .delta.up{color:#86efac}
+.gauge-info .delta.down{color:#fca5a5}
+.gauge-info .delta svg{width:12px;height:12px}
+
+/* Center column */
+.center-col{display:flex;flex-direction:column;gap:16px;min-width:0}
+.map-wrap{overflow:hidden}
+.map-bar{display:flex;align-items:center;gap:12px;padding:11px 14px;border-bottom:1px solid var(--gborder);flex-wrap:wrap}
+.seg{display:inline-flex;background:rgba(8,13,28,0.65);border:1px solid var(--gborder);border-radius:11px;padding:3px;gap:2px}
+.tab{display:inline-flex;align-items:center;gap:7px;padding:7px 14px;border-radius:8px;font-size:12.5px;font-weight:600;
+  color:var(--txt2);transition:color .2s,background .2s;position:relative}
+.tab .swatch{width:9px;height:9px;border-radius:3px}
+.tab[data-mode="raw"] .swatch{background:var(--blue2)}
+.tab[data-mode="pred"] .swatch{background:var(--amber)}
+.tab[data-mode="opt"] .swatch{background:var(--green)}
+.tab:hover{color:var(--txt)}
+.tab.active{color:#021018}
+.tab.active[data-mode="raw"]{background:var(--blue2);box-shadow:0 0 14px rgba(96,165,250,0.45)}
+.tab.active[data-mode="pred"]{background:var(--amber);box-shadow:0 0 14px rgba(245,158,11,0.45)}
+.tab.active[data-mode="opt"]{background:var(--green);box-shadow:0 0 14px rgba(34,197,94,0.45)}
+#map{height:430px;width:100%;background:#060c1a}
+.leaflet-container{background:#060c1a;font-family:inherit}
+.leaflet-control-zoom a{background:rgba(10,15,30,0.85)!important;color:var(--cyan)!important;border-color:var(--gborder)!important}
+.leaflet-control-attribution{background:rgba(6,12,26,0.92)!important;color:#aebcdb!important;font-size:9px!important}
+.leaflet-control-attribution a{color:#9bd9ec!important}
+.beacon{width:0;height:0}
+.beacon .ring{position:absolute;width:46px;height:46px;left:-23px;top:-23px;border-radius:50%;
+  border:2px solid rgba(34,211,238,0.6);animation:beacon 2.4s ease-out infinite}
+.beacon .core{position:absolute;width:14px;height:14px;left:-7px;top:-7px;border-radius:50%;
+  background:var(--cyan);box-shadow:0 0 14px var(--cyan),0 0 28px rgba(34,211,238,0.6);border:2px solid #021018}
+.beacon .tag{position:absolute;left:14px;top:-10px;white-space:nowrap;font-size:11px;font-weight:700;color:#bff7ff;
+  background:rgba(8,13,28,0.85);padding:2px 8px;border-radius:6px;border:1px solid rgba(34,211,238,0.4);
+  font-family:'Noto Sans TC',sans-serif}
+@keyframes beacon{0%{transform:scale(0.4);opacity:0.9}100%{transform:scale(1.6);opacity:0}}
+
+/* Map overlay HUD chips */
+.map-overlay{position:absolute;left:14px;bottom:14px;z-index:500;display:flex;gap:9px;flex-wrap:wrap;max-width:60%}
+.hud-chip{background:var(--glass-float);border:1px solid var(--gborder);border-radius:11px;padding:8px 12px;
+  backdrop-filter:blur(18px) saturate(140%);-webkit-backdrop-filter:blur(18px) saturate(140%);
+  box-shadow:var(--gshadow);display:flex;align-items:center;gap:9px}
+.hud-chip .ic{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;flex:none}
+.hud-chip .ic svg{width:16px;height:16px}
+.hud-chip .k{font-size:10px;color:var(--txt2);letter-spacing:0.4px}
+.hud-chip .v{font-size:15px;font-weight:700;line-height:1.1}
+.legend{position:absolute;right:14px;top:14px;z-index:500;background:var(--glass-float);
+  border:1px solid var(--gborder);border-radius:12px;padding:11px 13px;
+  backdrop-filter:blur(18px) saturate(140%);-webkit-backdrop-filter:blur(18px) saturate(140%);box-shadow:var(--gshadow);min-width:158px}
+.legend .lt{font-size:10px;letter-spacing:1.2px;color:var(--muted);text-transform:uppercase;margin-bottom:8px}
+.legend-bar{height:9px;border-radius:5px;margin-bottom:5px;
+  background:linear-gradient(90deg,#ef4444,#f97316,#f59e0b,#84cc16,#22c55e)}
+.legend-scale{display:flex;justify-content:space-between;font-size:9.5px;color:var(--txt2)}
+.legend .width-note{margin-top:9px;font-size:10px;color:var(--txt2);display:flex;align-items:center;gap:7px}
+.legend .width-note .w1{width:24px;height:3px;background:var(--cyan);border-radius:2px}
+.legend .width-note .w2{width:24px;height:7px;background:var(--cyan);border-radius:3px}
+
+/* Road table */
+.table-head{display:flex;align-items:center;gap:12px;padding:13px 16px;border-bottom:1px solid var(--gborder)}
+.table-head h2{font-size:14px;font-weight:600;flex:none}
+.search{display:flex;align-items:center;gap:8px;background:rgba(8,13,28,0.6);border:1px solid var(--gborder);
+  border-radius:10px;padding:7px 11px;margin-left:auto;min-width:210px;transition:box-shadow .2s,border-color .2s}
+.search:focus-within{border-color:rgba(34,211,238,0.45);box-shadow:0 0 0 3px rgba(34,211,238,0.12)}
+.search svg{width:15px;height:15px;color:var(--muted)}
+.search input{background:none;border:none;outline:none;color:var(--txt);font-size:13px;width:100%}
+.search input::placeholder{color:var(--muted)}
+.tbl{width:100%;border-collapse:collapse;font-size:13px}
+.tbl thead th{text-align:left;font-size:10.5px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);
+  font-weight:600;padding:11px 16px;position:sticky;top:0;background:rgba(10,15,30,0.92);backdrop-filter:blur(8px);z-index:1}
+.tbl thead th.r{text-align:right}
+.tbl tbody td{padding:11px 16px;border-top:1px solid rgba(120,160,240,0.08)}
+.tbl tbody td.r{text-align:right}
+.tbl tbody tr{cursor:pointer;transition:background .15s}
+.tbl tbody tr:hover{background:rgba(34,211,238,0.07)}
+.road-name{font-weight:600;color:var(--txt)}
+.road-id{font-size:10.5px;color:var(--muted);margin-top:1px}
+.cell-spd{font-weight:700}
+.minibar{height:5px;border-radius:3px;background:rgba(120,160,240,0.12);overflow:hidden;margin-top:5px;width:62px;margin-left:auto}
+.minibar i{display:block;height:100%;border-radius:3px}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;font-size:11.5px;font-weight:600}
+.pill::before{content:"";width:7px;height:7px;border-radius:50%}
+.pill.free{background:rgba(34,197,94,0.14);color:#86efac}.pill.free::before{background:var(--green);box-shadow:0 0 7px var(--green)}
+.pill.normal{background:rgba(245,158,11,0.14);color:#fcd34d}.pill.normal::before{background:var(--amber);box-shadow:0 0 7px var(--amber)}
+.pill.congested{background:rgba(239,68,68,0.14);color:#fca5a5}.pill.congested::before{background:var(--red);box-shadow:0 0 7px var(--red)}
+
+/* Right ops rail */
+.ops{display:flex;flex-direction:column;gap:16px}
+.sig-list{max-height:328px;overflow-y:auto;padding:8px}
+.sig-item{display:flex;align-items:center;gap:12px;padding:11px 11px;border-radius:12px;cursor:pointer;
+  transition:background .18s,box-shadow .18s;border:1px solid transparent}
+.sig-item:hover{background:rgba(120,160,240,0.07)}
+.sig-item.sel{background:rgba(34,211,238,0.08);border-color:rgba(34,211,238,0.3);
+  box-shadow:0 0 0 1px rgba(34,211,238,0.18),0 0 16px rgba(34,211,238,0.1)}
+.tlight{flex:none;display:flex;flex-direction:column;gap:4px;padding:6px 5px;border-radius:8px;
+  background:rgba(2,6,16,0.7);border:1px solid rgba(120,160,240,0.15)}
+.tlight .d{width:11px;height:11px;border-radius:50%;background:#1c2740;transition:box-shadow .3s,background .3s}
+.tlight .d.red.on{background:var(--red);box-shadow:0 0 10px var(--red),0 0 4px var(--red)}
+.tlight .d.amber.on{background:var(--amber);box-shadow:0 0 10px var(--amber),0 0 4px var(--amber)}
+.tlight .d.green.on{background:var(--green);box-shadow:0 0 10px var(--green),0 0 4px var(--green)}
+.sig-meta{min-width:0;flex:1}
+.sig-meta .nm{font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sig-meta .id{font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sig-right{display:flex;flex-direction:column;align-items:flex-end;gap:5px;flex:none}
+.countdown{font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:500;letter-spacing:0.5px}
+.spill{font-size:10px;padding:2px 8px;border-radius:999px;font-weight:600;white-space:nowrap}
+.spill.optimized{background:rgba(34,211,238,0.14);color:#7de9fb}
+.spill.normal{background:rgba(148,163,184,0.14);color:#cbd5e1}
+.spill.congested{background:rgba(239,68,68,0.14);color:#fca5a5}
+
+.sig-detail{padding:14px 16px}
+.sig-detail .dh{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px}
+.sig-detail .dh .t{font-size:13px;font-weight:600}
+.sig-detail .dh .i{font-size:10px;color:var(--muted)}
+.big-count{display:flex;align-items:baseline;gap:10px;margin-bottom:6px}
+.big-count .n{font-family:'JetBrains Mono',monospace;font-size:44px;font-weight:500;line-height:1;letter-spacing:-1px}
+.big-count .ph{font-size:12px;color:var(--txt2);font-weight:600}
+.phase-bar{display:flex;height:14px;border-radius:7px;overflow:hidden;margin-top:12px;border:1px solid rgba(120,160,240,0.15)}
+.phase-bar .seg-g{background:var(--green)}.phase-bar .seg-a{background:var(--amber)}.phase-bar .seg-r{background:var(--red)}
+.phase-bar i{transition:flex .3s;position:relative}
+.phase-bar i.live{box-shadow:inset 0 0 0 2px rgba(255,255,255,0.55)}
+.phase-legend{display:flex;gap:14px;margin-top:9px;font-size:11px;color:var(--txt2)}
+.phase-legend span{display:flex;align-items:center;gap:5px}
+.phase-legend i{width:9px;height:9px;border-radius:2px;display:inline-block}
+
+/* System health */
+.health-body{padding:13px 16px;display:flex;flex-direction:column;gap:11px}
+.health-row{display:flex;align-items:center;gap:10px;font-size:12px}
+.health-row .hl{color:var(--txt2);flex:1}
+.health-row .hbar{width:88px;height:6px;border-radius:4px;background:rgba(120,160,240,0.12);overflow:hidden}
+.health-row .hbar i{display:block;height:100%;border-radius:4px}
+.health-row .hv{font-family:'JetBrains Mono',monospace;font-size:11.5px;width:42px;text-align:right;color:var(--txt)}
+.status-ok{color:#86efac}
+
+/* ===== AI panel (full width below) ===== */
+.ai-grid{display:grid;grid-template-columns:1fr;gap:16px;margin-top:16px}
+.ai-head{display:flex;align-items:center;gap:11px;padding:13px 16px;border-bottom:1px solid var(--gborder)}
+.ai-avatar{width:36px;height:36px;border-radius:11px;flex:none;display:grid;place-items:center;
+  background:linear-gradient(135deg,rgba(217,70,239,0.28),rgba(59,130,246,0.24));
+  border:1px solid rgba(217,70,239,0.4);box-shadow:0 0 16px rgba(217,70,239,0.25)}
+.ai-avatar svg{width:19px;height:19px;color:#f0abfc}
+.ai-head .ti b{font-size:13.5px;font-weight:600}
+.ai-head .ti span{font-size:11px;color:var(--txt2)}
+.tagm{font-size:10px;font-family:'JetBrains Mono',monospace;padding:3px 8px;border-radius:6px;margin-left:auto;
+  background:rgba(217,70,239,0.14);color:#f0abfc;border:1px solid rgba(217,70,239,0.3)}
+.chat{padding:15px 16px;display:flex;flex-direction:column;gap:12px;max-height:230px;overflow-y:auto}
+.msg{display:flex;gap:10px;max-width:78%}
+.msg.user{align-self:flex-end;flex-direction:row-reverse}
+.msg .bub{padding:10px 13px;border-radius:13px;font-size:13px;line-height:1.55;
+  background:rgba(15,22,41,0.7);border:1px solid var(--gborder);backdrop-filter:blur(8px)}
+.msg.user .bub{background:rgba(34,211,238,0.12);border-color:rgba(34,211,238,0.3)}
+.msg .bub b{color:var(--cyan);font-weight:700}
+.msg .mav{width:28px;height:28px;border-radius:8px;flex:none;display:grid;place-items:center;font-size:11px;font-weight:700}
+.msg.bot .mav{background:rgba(217,70,239,0.18);color:#f0abfc;border:1px solid rgba(217,70,239,0.3)}
+.msg.user .mav{background:rgba(34,211,238,0.18);color:#7de9fb;border:1px solid rgba(34,211,238,0.3)}
+.chips{display:flex;gap:8px;padding:0 16px 12px;flex-wrap:wrap}
+.chip{padding:7px 12px;border-radius:999px;font-size:12px;font-weight:500;color:var(--txt2);
+  background:rgba(8,13,28,0.6);border:1px solid var(--gborder);transition:all .18s}
+.chip:hover{color:var(--cyan);border-color:rgba(34,211,238,0.4);transform:translateY(-1px)}
+.ai-input{display:flex;gap:9px;padding:12px 16px;border-top:1px solid var(--gborder)}
+.ai-input input{flex:1;background:rgba(8,13,28,0.6);border:1px solid var(--gborder);border-radius:11px;
+  padding:11px 14px;color:var(--txt);font-size:13px;outline:none;transition:box-shadow .2s,border-color .2s}
+.ai-input input:focus{border-color:rgba(34,211,238,0.45);box-shadow:0 0 0 3px rgba(34,211,238,0.12)}
+.ai-input input::placeholder{color:var(--muted)}
+.send-btn{width:42px;height:42px;border-radius:11px;flex:none;display:grid;place-items:center;
+  background:linear-gradient(135deg,rgba(34,211,238,0.9),rgba(59,130,246,0.9));color:#021018;
+  box-shadow:0 0 16px rgba(34,211,238,0.35);transition:transform .18s,box-shadow .18s}
+.send-btn:hover{transform:translateY(-1px);box-shadow:0 0 24px rgba(34,211,238,0.5)}
+.send-btn svg{width:18px;height:18px}
+
+/* ===== Alt views ===== */
+.view{display:none}.view.active{display:block}
+.placeholder{padding:60px 30px;text-align:center}
+.placeholder .pic{width:64px;height:64px;margin:0 auto 18px;border-radius:18px;display:grid;place-items:center;
+  background:rgba(34,211,238,0.1);border:1px solid rgba(34,211,238,0.3);box-shadow:0 0 24px rgba(34,211,238,0.18)}
+.placeholder .pic svg{width:30px;height:30px;color:var(--cyan)}
+.placeholder h2{font-size:18px;margin-bottom:8px}
+.placeholder p{color:var(--txt2);font-size:13.5px;max-width:440px;margin:0 auto}
+.alt-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;margin-top:26px;max-width:760px;margin-left:auto;margin-right:auto;text-align:left}
+.alt-card{padding:16px}
+.alt-card .ac-l{font-size:11.5px;color:var(--txt2);margin-bottom:6px}
+.alt-card .ac-v{font-size:24px;font-weight:700;letter-spacing:-0.5px}
+.alt-card .ac-v small{font-size:13px;color:var(--muted);font-weight:500}
+
+@media (max-width:1240px){
+  .cockpit{grid-template-columns:1fr;}
+  .telemetry{flex-direction:row;flex-wrap:wrap}
+  .telemetry .gauge-card{flex:1 1 230px}
+  .telemetry .rail-title{flex-basis:100%}
+  .ops{flex-direction:row;flex-wrap:wrap}
+  .ops>*{flex:1 1 320px}
+}
+@media (max-width:1024px){
+  .app{grid-template-columns:72px 1fr}
+  .brand-txt,.nav-label,.nav-item span,.side-foot{display:none}
+  .nav-item{justify-content:center;padding:11px 0}
+  .brand{justify-content:center;padding:6px 0 16px}
+  .map-overlay{max-width:90%}
+}
+@media (prefers-reduced-motion:reduce){
+  *{animation:none!important;transition:none!important}
+  .scanline::after{display:none}
+}
+</style>
+</head>
+<body>
+<div class="bg-grid"></div>
+<div class="bg-lines"></div>
+<div class="scanline" aria-hidden="true"></div>
+
+<div class="app">
+  <!-- ===== Sidebar ===== -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#22d3ee" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="3"/><circle cx="12" cy="7" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="17" r="2"/></svg>
+      </div>
+      <div class="brand-txt">
+        <b>TrafficVision</b>
+        <span>NTUT 交通監控</span>
+      </div>
+    </div>
+    <nav class="nav" aria-label="主導覽">
+      <div class="nav-label">控制中樞</div>
+      <button class="nav-item active" data-view="overview" aria-current="page" aria-label="總覽儀表板" title="總覽儀表板">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
+        <span>總覽儀表板</span>
+      </button>
+      <button class="nav-item" data-view="roads" aria-label="路段監控" title="路段監控">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19 9 5"/><path d="M20 19 15 5"/><path d="M12 6v2M12 11v2M12 16v2"/></svg>
+        <span>路段監控</span>
+      </button>
+      <button class="nav-item" data-view="signals" aria-label="號誌控制" title="號誌控制">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="2" width="8" height="20" rx="3"/><circle cx="12" cy="7" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="17" r="1.6"/></svg>
+        <span>號誌控制</span>
+      </button>
+      <button class="nav-item" data-view="forecast" aria-label="流量預測" title="流量預測">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17l5-5 4 3 7-8"/><path d="M16 4h5v5"/></svg>
+        <span>流量預測</span>
+      </button>
+      <button class="nav-item" data-view="ai" aria-label="AI 助理" title="AI 助理">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="6" width="16" height="12" rx="3"/><path d="M9 11h.01M15 11h.01"/><path d="M12 2v4M9 18l-1 3M15 18l1 3"/></svg>
+        <span>AI 助理</span>
+      </button>
+      <button class="nav-item" data-view="export" aria-label="匯出報告" title="匯出報告">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M5 3h9l6 6v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M12 11v6M9.5 14.5 12 17l2.5-2.5"/></svg>
+        <span>匯出報告</span>
+      </button>
+    </nav>
+    <div class="side-foot">
+      <span class="dot"></span>系統運行中<br>更新週期 5 分鐘
+    </div>
+  </aside>
+
+  <!-- ===== Main ===== -->
+  <div class="main">
+    <header class="topbar">
+      <div>
+        <h1 id="page-title">總覽儀表板</h1>
+        <div class="sub">最後更新 <span class="mono" id="last-update">2026-06-03 09:42:17</span> · 資料源 VD + SUMO + GRU</div>
+      </div>
+      <div class="spacer"></div>
+      <div class="live-pill"><span class="live-dot" aria-hidden="true"></span>即時資料 LIVE</div>
+      <div class="clock mono" id="clock" role="timer" aria-live="off" aria-label="系統時間">09:42:17</div>
+      <button class="btn" id="refresh-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v5h-5"/></svg>
+        立即更新
+      </button>
+      <button class="btn btn-primary" id="optimize-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h7l-1 8 10-12h-7l1-8z"/></svg>
+        啟動優化
+      </button>
+    </header>
+
+    <div class="content">
+      <!-- ============ OVERVIEW ============ -->
+      <section class="view active" id="view-overview">
+        <div class="cockpit">
+          <!-- Left telemetry rail -->
+          <div class="telemetry">
+            <div class="rail-title">遙測指標 · TELEMETRY</div>
+            <div class="glass hud gauge-card" id="g1"></div>
+            <div class="glass hud gauge-card" id="g2"></div>
+            <div class="glass hud gauge-card" id="g3"></div>
+            <div class="glass hud gauge-card" id="g4"></div>
+            <div class="glass hud gauge-card" id="g5"></div>
+            <div class="glass hud gauge-card" id="g6"></div>
+          </div>
+
+          <!-- Center: map + table -->
+          <div class="center-col">
+            <div class="glass hud map-wrap">
+              <span class="bracket tl"></span><span class="bracket tr"></span><span class="bracket bl"></span><span class="bracket br"></span>
+              <div class="map-bar">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#22d3ee" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5 3 7v12l6-2 6 2 6-2V5l-6 2-6-2z"/><path d="M9 5v12M15 7v12"/></svg>
+                <strong style="font-size:14px">即時路網地圖</strong>
+                <div class="seg" role="tablist" aria-label="地圖模式" style="margin-left:auto">
+                  <button class="tab active" id="tab-raw" role="tab" aria-selected="true" aria-controls="map-panel" data-mode="raw"><span class="swatch"></span>原始車流</button>
+                  <button class="tab" id="tab-pred" role="tab" aria-selected="false" tabindex="-1" aria-controls="map-panel" data-mode="pred"><span class="swatch"></span>預測車流</button>
+                  <button class="tab" id="tab-opt" role="tab" aria-selected="false" tabindex="-1" aria-controls="map-panel" data-mode="opt"><span class="swatch"></span>優化車流</button>
+                </div>
+              </div>
+              <div style="position:relative" id="map-panel" role="tabpanel" aria-labelledby="tab-raw">
+                <div id="map"></div>
+                <div class="map-overlay">
+                  <div class="hud-chip">
+                    <div class="ic" style="background:rgba(239,68,68,0.16)"><svg viewBox="0 0 24 24" fill="none" stroke="#fca5a5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg></div>
+                    <div><div class="k">壅塞熱點</div><div class="v num" style="color:#fca5a5">2</div></div>
+                  </div>
+                  <div class="hud-chip">
+                    <div class="ic" style="background:rgba(34,211,238,0.16)"><svg viewBox="0 0 24 24" fill="none" stroke="#7de9fb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg></div>
+                    <div><div class="k">路網均速</div><div class="v num" id="ov-spd">31</div></div>
+                  </div>
+                  <div class="hud-chip">
+                    <div class="ic" style="background:rgba(34,197,94,0.16)"><svg viewBox="0 0 24 24" fill="none" stroke="#86efac" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+                    <div><div class="k">優化覆蓋</div><div class="v num">16<small style="font-size:11px;color:var(--muted)"> 組</small></div></div>
+                  </div>
+                </div>
+                <div class="legend">
+                  <div class="lt">車速 km/h</div>
+                  <div class="legend-bar"></div>
+                  <div class="legend-scale"><span>0</span><span>20</span><span>40+</span></div>
+                  <div class="width-note"><span class="w1"></span><span class="w2"></span>線寬 = 車流量</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="glass hud">
+              <span class="bracket tl"></span><span class="bracket tr"></span><span class="bracket bl"></span><span class="bracket br"></span>
+              <div class="table-head">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#22d3ee" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+                <h2>路段監控列表</h2>
+                <label class="search">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+                  <input type="text" id="road-search" placeholder="搜尋路段名稱或代碼…" aria-label="搜尋路段">
+                </label>
+              </div>
+              <div style="overflow-x:auto">
+                <table class="tbl">
+                  <thead><tr>
+                    <th>路段名稱</th><th class="r">平均車速</th><th class="r">車流量</th><th class="r">佔有率</th><th>狀態</th>
+                  </tr></thead>
+                  <tbody id="road-body"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right ops rail -->
+          <div class="ops">
+            <div class="glass hud">
+              <span class="bracket tl"></span><span class="bracket tr"></span><span class="bracket bl"></span><span class="bracket br"></span>
+              <div class="panel-head">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="20" rx="3"/><circle cx="12" cy="7" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="17" r="1.6"/></svg>
+                <h2>號誌控制</h2><span class="tick" style="margin-left:auto">4 路口</span>
+              </div>
+              <div class="sig-list" id="sig-list" aria-live="off"></div>
+              <div class="sig-detail" id="sig-detail" aria-live="off" style="border-top:1px solid var(--gborder)"></div>
+            </div>
+
+            <div class="glass hud">
+              <span class="bracket tl"></span><span class="bracket tr"></span><span class="bracket bl"></span><span class="bracket br"></span>
+              <div class="panel-head">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                <h2>系統健康</h2><span class="tick status-ok" style="margin-left:auto">● 正常</span>
+              </div>
+              <div class="health-body">
+                <div class="health-row"><span class="hl">VD 資料新鮮度</span><span class="hbar"><i style="width:88%;background:var(--green)"></i></span><span class="hv">1m 12s</span></div>
+                <div class="health-row"><span class="hl">GRU 預測模型</span><span class="hbar"><i style="width:94%;background:var(--cyan)"></i></span><span class="hv">線上</span></div>
+                <div class="health-row"><span class="hl">SUMO 模擬器</span><span class="hbar"><i style="width:76%;background:var(--blue2)"></i></span><span class="hv">16 核</span></div>
+                <div class="health-row"><span class="hl">排程器迭代</span><span class="hbar"><i style="width:62%;background:var(--amber)"></i></span><span class="hv">3m 04s</span></div>
+                <div class="health-row"><span class="hl">Gemma 4 LLM</span><span class="hbar"><i style="width:90%;background:var(--mag)"></i></span><span class="hv">就緒</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- AI assistant full width -->
+        <div class="ai-grid">
+          <div class="glass hud">
+            <span class="bracket tl"></span><span class="bracket tr"></span><span class="bracket bl"></span><span class="bracket br"></span>
+            <div class="ai-head">
+              <div class="ai-avatar" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="6" width="16" height="12" rx="3"/><path d="M9 11h.01M15 11h.01"/><path d="M12 2v4M8 18l-1 3M16 18l1 3"/></svg></div>
+              <div class="ti"><b>TrafficVision AI 助理</b><span>交通數據與號誌智慧分析</span></div>
+              <span class="tagm">gemma-4</span>
+            </div>
+            <div class="chat" id="chat">
+              <div class="msg bot"><div class="mav">AI</div><div class="bub">您好！我是 TrafficVision AI 助理。請問有什麼關於目前交通數據或號誌控制的問題？</div></div>
+              <div class="msg user"><div class="mav">你</div><div class="bub">忠孝東路為什麼這麼塞？</div></div>
+              <div class="msg bot"><div class="mav">AI</div><div class="bub">忠孝東路（復興–建國）目前 <b>平均車速 9 km/h</b>、佔有率 72%，屬尖峰壅塞。建議延長該方向綠燈 8 秒。</div></div>
+            </div>
+            <div class="chips">
+              <button class="chip">壅塞原因分析</button>
+              <button class="chip">號誌優化建議</button>
+              <button class="chip">預測未來 1 小時</button>
+            </div>
+            <div class="ai-input">
+              <input type="text" id="ai-text" placeholder="輸入關於交通的問題…" aria-label="輸入訊息給 AI 助理">
+              <button class="send-btn" id="ai-send" aria-label="送出訊息">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ ROADS ============ -->
+      <section class="view" id="view-roads">
+        <div class="glass hud" style="max-width:980px;margin:0 auto">
+          <span class="bracket tl"></span><span class="bracket tr"></span><span class="bracket bl"></span><span class="bracket br"></span>
+          <div class="table-head">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#22d3ee" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19 9 5M20 19 15 5"/></svg>
+            <h2>路段監控 · 全部 64 條</h2>
+            <span class="tick" style="margin-left:auto">即時 VD 串流</span>
+          </div>
+          <div style="overflow-x:auto">
+            <table class="tbl">
+              <thead><tr><th>路段名稱</th><th class="r">平均車速</th><th class="r">車流量</th><th class="r">佔有率</th><th>狀態</th></tr></thead>
+              <tbody id="road-body-2"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ SIGNALS ============ -->
+      <section class="view" id="view-signals">
+        <div class="placeholder">
+          <div class="pic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="20" rx="3"/><circle cx="12" cy="7" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="17" r="1.6"/></svg></div>
+          <h2>號誌控制中心</h2>
+          <p>16 組路口號誌即時相位與優化狀態。完整總覽請見 <strong style="color:var(--cyan)">總覽儀表板</strong> 右側即時面板。</p>
+          <div class="alt-cards">
+            <div class="glass hud alt-card"><div class="ac-l">已優化路口</div><div class="ac-v num" style="color:#7de9fb">16 <small>組</small></div></div>
+            <div class="glass hud alt-card"><div class="ac-l">平均週期縮短</div><div class="ac-v num" style="color:#86efac">−12 <small>%</small></div></div>
+            <div class="glass hud alt-card"><div class="ac-l">壅塞中路口</div><div class="ac-v num" style="color:#fca5a5">1 <small>組</small></div></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ FORECAST ============ -->
+      <section class="view" id="view-forecast">
+        <div class="placeholder">
+          <div class="pic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-5 4 3 7-8"/><path d="M16 4h5v5"/></svg></div>
+          <h2>流量預測</h2>
+          <p>GRU 神經網路提供未來 5 分鐘（15 步 × 20 秒）短時車流預測，結合 SUMO 模擬輸出最佳號誌策略。</p>
+          <div class="alt-cards">
+            <div class="glass hud alt-card"><div class="ac-l">預測視窗</div><div class="ac-v num">5 <small>分鐘</small></div></div>
+            <div class="glass hud alt-card"><div class="ac-l">模型 MAE</div><div class="ac-v num" style="color:#86efac">2.4 <small>輛</small></div></div>
+            <div class="glass hud alt-card"><div class="ac-l">預測路段</div><div class="ac-v num">64 <small>條</small></div></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ AI ============ -->
+      <section class="view" id="view-ai">
+        <div class="placeholder">
+          <div class="pic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="6" width="16" height="12" rx="3"/><path d="M9 11h.01M15 11h.01"/><path d="M12 2v4"/></svg></div>
+          <h2>AI 助理 · gemma-4</h2>
+          <p>由微調後的 Gemma 4 模型解讀即時交通數據與號誌策略。完整對話介面已嵌入 <strong style="color:var(--cyan)">總覽儀表板</strong> 底部。</p>
+        </div>
+      </section>
+
+      <!-- ============ EXPORT ============ -->
+      <section class="view" id="view-export">
+        <div class="placeholder">
+          <div class="pic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M5 3h9l6 6v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M12 11v6M9.5 14.5 12 17l2.5-2.5"/></svg></div>
+          <h2>匯出報告</h2>
+          <p>產生交通分析 PDF / CSV 報表，含路段車流、號誌優化前後對比與 AI 摘要建議。</p>
+          <div class="alt-cards">
+            <div class="glass hud alt-card"><div class="ac-l">最近報告</div><div class="ac-v" style="font-size:17px">2026-06-03</div></div>
+            <div class="glass hud alt-card"><div class="ac-l">可用格式</div><div class="ac-v" style="font-size:17px">PDF · CSV</div></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============ SAMPLE DATA ============ */
+const ROADS = [
+ {"name":"建國南路 忠孝–仁愛","id":"ZJHKR40","spd":12,"vol":420,"occ":61,"status":"congested","coords":[[25.04183,121.53782],[25.04003,121.53779],[25.03803,121.53776],[25.03683,121.53774]]},
+ {"name":"建國北路 長安–忠孝","id":"ZK7KP40","spd":28,"vol":310,"occ":34,"status":"normal","coords":[[25.04983,121.53782],[25.04683,121.53782],[25.04383,121.53781],[25.04183,121.53782]]},
+ {"name":"市民大道 建國–金山","id":"ZK9KC60","spd":47,"vol":280,"occ":18,"status":"free","coords":[[25.04483,121.53782],[25.04505,121.5332],[25.04528,121.5287],[25.04548,121.52483]]},
+ {"name":"八德路 建國–新生","id":"ZK5JW60","spd":33,"vol":240,"occ":26,"status":"normal","coords":[[25.04783,121.53782],[25.0478,121.5339],[25.04776,121.52983]]},
+ {"name":"忠孝東路 復興–建國","id":"ZJHKR20","spd":9,"vol":510,"occ":72,"status":"congested","coords":[[25.04183,121.54383],[25.04182,121.54083],[25.04181,121.53783]]},
+ {"name":"忠孝東路 金山–中山","id":"ZJSJD40","spd":41,"vol":300,"occ":22,"status":"free","coords":[[25.04183,121.52483],[25.04183,121.5213],[25.04182,121.51783]]},
+ {"name":"新生南路 長安–忠孝","id":"XS7NS40","spd":24,"vol":360,"occ":39,"status":"normal","coords":[[25.04983,121.5295],[25.04683,121.52935],[25.04383,121.52922],[25.04183,121.5292]]},
+ {"name":"松江路 長安–忠孝","id":"SJ7LT40","spd":51,"vol":210,"occ":14,"status":"free","coords":[[25.04983,121.543],[25.04683,121.543],[25.04383,121.543],[25.04183,121.543]]}
+];
+const SIGNALS = [
+ {"name":"八德路一段/忠孝東路二段","id":"655375241","cycle":90,"status":"optimized","phases":[{"c":"green","dur":86},{"c":"amber","dur":3},{"c":"red","dur":1}]},
+ {"name":"忠孝東路二段/臨沂街","id":"cluster_2038168688_655375573","cycle":90,"status":"normal","phases":[{"c":"green","dur":37},{"c":"amber","dur":5},{"c":"red","dur":3},{"c":"green","dur":37},{"c":"amber","dur":5},{"c":"red","dur":3}]},
+ {"name":"市民大道三段/新生北路一段","id":"cluster655375336","cycle":190,"status":"congested","phases":[{"c":"green","dur":120},{"c":"amber","dur":4},{"c":"red","dur":4},{"c":"green","dur":58},{"c":"amber","dur":4}]},
+ {"name":"八德路二段/建國南路一段","id":"cluster_623980090","cycle":234,"status":"optimized","phases":[{"c":"green","dur":85},{"c":"amber","dur":3},{"c":"red","dur":2},{"c":"green","dur":60},{"c":"amber","dur":3}]}
+];
+
+/* ============ Color helpers ============ */
+function hex2rgb(h){h=h.replace('#','');return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)];}
+function lerp(a,b,t){const A=hex2rgb(a),B=hex2rgb(b);return `rgb(${Math.round(A[0]+(B[0]-A[0])*t)},${Math.round(A[1]+(B[1]-A[1])*t)},${Math.round(A[2]+(B[2]-A[2])*t)})`;}
+function spdColor(s){
+  if(s<=0) return '#ef4444';
+  if(s<=10) return lerp('#ef4444','#f97316',s/10);
+  if(s<=20) return lerp('#f97316','#f59e0b',(s-10)/10);
+  if(s<=30) return lerp('#f59e0b','#84cc16',(s-20)/10);
+  if(s<=40) return lerp('#84cc16','#22c55e',(s-30)/10);
+  return '#22c55e';
+}
+const STATUS_TXT={free:'暢通',normal:'普通',congested:'壅塞'};
+
+/* ============ Mode tinting ============ */
+const MODES = {
+  raw:{shift:0, accent:'#60a5fa'},
+  pred:{shift:-6, accent:'#f59e0b'},
+  opt:{shift:+9, accent:'#22c55e'}
+};
+let currentMode='raw';
+function modeSpd(base){
+  let s = base + MODES[currentMode].shift;
+  return Math.max(0, s);
+}
+
+/* ============ Leaflet map ============ */
+const map = L.map('map',{zoomControl:true,attributionControl:true}).setView([25.0448,121.532],15);
+
+/* Self-contained dark basemap: no external tile host (rubric allows only
+   Google Fonts + Leaflet CDN). We render a procedural graticule grid layer
+   with Leaflet's own canvas so the map still pans/zooms and gives spatial
+   reference, while remaining fully offline-capable. */
+const GridLayer = L.GridLayer.extend({
+  createTile:function(coords){
+    const tile=document.createElement('canvas');
+    const size=this.getTileSize();
+    tile.width=size.x; tile.height=size.y;
+    const ctx=tile.getContext('2d');
+    // base fill (matches --bg-deep so tiles blend into the panel)
+    ctx.fillStyle='#060c1a';
+    ctx.fillRect(0,0,size.x,size.y);
+    // fine neon graticule
+    ctx.strokeStyle='rgba(120,160,240,0.10)';
+    ctx.lineWidth=1;
+    const step=size.x/4;
+    ctx.beginPath();
+    for(let x=0;x<=size.x;x+=step){ctx.moveTo(x+0.5,0);ctx.lineTo(x+0.5,size.y);}
+    for(let y=0;y<=size.y;y+=step){ctx.moveTo(0,y+0.5);ctx.lineTo(size.x,y+0.5);}
+    ctx.stroke();
+    // brighter major grid lines on tile edges for a HUD feel
+    ctx.strokeStyle='rgba(34,211,238,0.07)';
+    ctx.lineWidth=1;
+    ctx.strokeRect(0.5,0.5,size.x-1,size.y-1);
+    return tile;
+  }
+});
+new GridLayer({maxZoom:19,attribution:'TrafficVision · 程序生成路網底圖'}).addTo(map);
+
+// NTUT beacon
+const beacon = L.divIcon({className:'beacon',html:'<div class="ring"></div><div class="core"></div><div class="tag">北科大</div>',iconSize:[0,0]});
+L.marker([25.0422,121.5355],{icon:beacon,zIndexOffset:1000}).addTo(map);
+
+let roadLayers=[];
+function drawRoads(){
+  roadLayers.forEach(g=>{map.removeLayer(g.glow);map.removeLayer(g.line);});
+  roadLayers=[];
+  ROADS.forEach(r=>{
+    const s = modeSpd(r.spd);
+    const col = spdColor(s);
+    const w = 3 + Math.min(9, r.vol/55); // width scales with vol
+    const glow = L.polyline(r.coords,{color:col,weight:w+8,opacity:0.16,lineCap:'round',lineJoin:'round'}).addTo(map);
+    const line = L.polyline(r.coords,{color:col,weight:w,opacity:0.95,lineCap:'round',lineJoin:'round'}).addTo(map);
+    const popup = `<div style="font-family:'Noto Sans TC',sans-serif;min-width:150px">
+      <div style="font-weight:700;font-size:13px;color:#f1f5f9;margin-bottom:2px">${r.name}</div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#9aabce;margin-bottom:7px">${r.id}</div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;color:#cbd5e1;gap:14px">
+        <span>車速</span><b style="color:${col}">${s} km/h</b></div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;color:#cbd5e1;gap:14px">
+        <span>車流</span><b style="color:#f1f5f9">${r.vol} 輛</b></div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;color:#cbd5e1;gap:14px">
+        <span>佔有率</span><b style="color:#f1f5f9">${r.occ}%</b></div></div>`;
+    line.bindPopup(popup,{className:'glass-popup'});
+    glow.bindPopup(popup,{className:'glass-popup'});
+    roadLayers.push({glow,line});
+  });
+}
+drawRoads();
+
+// glass popup styling
+const styleEl=document.createElement('style');
+styleEl.textContent=`.leaflet-popup-content-wrapper{background:rgba(8,13,28,0.92)!important;color:#f1f5f9!important;border:1px solid rgba(34,211,238,0.35)!important;border-radius:12px!important;box-shadow:0 8px 32px rgba(0,0,0,0.6),0 0 18px rgba(34,211,238,0.12)!important;backdrop-filter:blur(12px)}.leaflet-popup-tip{background:rgba(8,13,28,0.92)!important;border:1px solid rgba(34,211,238,0.35)!important}.leaflet-popup-close-button{color:#9aabce!important}`;
+document.head.appendChild(styleEl);
+
+/* ============ Mode tabs ============ */
+document.querySelectorAll('.tab').forEach(t=>{
+  t.addEventListener('click',()=>{
+    document.querySelectorAll('.tab').forEach(x=>{x.classList.remove('active');x.setAttribute('aria-selected','false');x.setAttribute('tabindex','-1');});
+    t.classList.add('active');t.setAttribute('aria-selected','true');t.setAttribute('tabindex','0');
+    // keep the tabpanel labelled by the currently selected tab
+    const panel=document.getElementById('map-panel');
+    if(panel) panel.setAttribute('aria-labelledby',t.id);
+    currentMode=t.dataset.mode;
+    document.documentElement.style.setProperty('--accent',MODES[currentMode].accent);
+    drawRoads();
+    // update overlay avg
+    const avg=Math.round(ROADS.reduce((a,r)=>a+modeSpd(r.spd),0)/ROADS.length);
+    document.getElementById('ov-spd').textContent=avg;
+  });
+});
+
+/* ============ Radial gauges (SVG) ============ */
+function gauge(el,{label,value,unit,max,color,delta,dir}){
+  const pct=Math.max(0,Math.min(1,value/max));
+  const r=28, c=2*Math.PI*r, off=c*(1-pct);
+  el.innerHTML=`
+    <span class="bracket tl"></span><span class="bracket tr"></span><span class="bracket bl"></span><span class="bracket br"></span>
+    <svg class="gauge-svg" viewBox="0 0 74 74" aria-hidden="true">
+      <circle cx="37" cy="37" r="28" fill="none" stroke="rgba(120,160,240,0.13)" stroke-width="6"/>
+      <circle cx="37" cy="37" r="28" fill="none" stroke="${color}" stroke-width="6" stroke-linecap="round"
+        stroke-dasharray="${c}" stroke-dashoffset="${off}" transform="rotate(-90 37 37)"
+        style="filter:drop-shadow(0 0 5px ${color}88)"/>
+      <text x="37" y="41" text-anchor="middle" fill="#f1f5f9" font-size="15" font-weight="700" font-family="Inter">${Math.round(pct*100)}<tspan font-size="9" fill="#94a3b8">%</tspan></text>
+    </svg>
+    <div class="gauge-info">
+      <div class="lbl">${label}</div>
+      <div><span class="val num" style="color:${color}">${value}</span><span class="unit">${unit}</span></div>
+      ${delta?`<div class="delta ${dir}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">${dir==='up'?'<path d="M7 14l5-5 5 5"/>':'<path d="M7 10l5 5 5-5"/>'}</svg>${delta}</div>`:''}
+    </div>`;
+}
+gauge(document.getElementById('g1'),{label:'監控路段',value:'64',unit:'條',max:64,color:'#22d3ee',delta:'全線上',dir:'up'});
+gauge(document.getElementById('g2'),{label:'平均車速',value:'41',unit:'km/h',max:60,color:'#22c55e',delta:'+3 km/h',dir:'up'});
+gauge(document.getElementById('g3'),{label:'總車流量',value:'1,860',unit:'輛',max:2400,color:'#60a5fa',delta:'−120 輛',dir:'down'});
+gauge(document.getElementById('g4'),{label:'壅塞路段',value:'3',unit:'條',max:64,color:'#ef4444',delta:'−1 條',dir:'down'});
+gauge(document.getElementById('g5'),{label:'暢通路段',value:'38',unit:'條',max:64,color:'#22c55e',delta:'+5 條',dir:'up'});
+gauge(document.getElementById('g6'),{label:'號誌優化',value:'16',unit:'組',max:24,color:'#f59e0b',delta:'運行中',dir:'up'});
+
+/* ============ Road table ============ */
+function statusVal(st){return st==='congested'?100:st==='normal'?55:25;}
+function spdBarColor(s){return spdColor(s);}
+function renderTable(tbodyId, list){
+  const tb=document.getElementById(tbodyId);
+  tb.innerHTML='';
+  list.forEach(r=>{
+    const col=spdColor(r.spd);
+    const occCol=r.occ>60?'#fca5a5':r.occ>35?'#fcd34d':'#86efac';
+    const tr=document.createElement('tr');
+    tr.tabIndex=0;
+    tr.innerHTML=`
+      <td><div class="road-name">${r.name}</div><div class="road-id mono">${r.id}</div></td>
+      <td class="r"><span class="cell-spd" style="color:${col}">${r.spd}</span> <span style="font-size:10px;color:var(--muted)">km/h</span></td>
+      <td class="r num">${r.vol}</td>
+      <td class="r"><span class="num" style="color:${occCol};font-weight:600">${r.occ}%</span><div class="minibar"><i style="width:${r.occ}%;background:${occCol}"></i></div></td>
+      <td><span class="pill ${r.status}">${STATUS_TXT[r.status]}</span></td>`;
+    tr.addEventListener('click',()=>{
+      const idx=ROADS.indexOf(r);
+      if(roadLayers[idx]){map.fitBounds(L.polyline(r.coords).getBounds(),{padding:[60,60],maxZoom:16});roadLayers[idx].line.openPopup();}
+    });
+    tb.appendChild(tr);
+  });
+}
+renderTable('road-body',ROADS);
+renderTable('road-body-2',ROADS);
+
+document.getElementById('road-search').addEventListener('input',e=>{
+  const q=e.target.value.trim().toLowerCase();
+  renderTable('road-body',ROADS.filter(r=>r.name.toLowerCase().includes(q)||r.id.toLowerCase().includes(q)));
+});
+
+/* ============ Signals ============ */
+// Build a per-signal phase timeline (flatten phases by second)
+const sigState = SIGNALS.map(sig=>{
+  const timeline=[];
+  sig.phases.forEach((p,pi)=>{for(let i=0;i<p.dur;i++)timeline.push({c:p.c,pi});});
+  return {sig,timeline,t:Math.floor(Math.random()*timeline.length)};
+});
+let selectedSig=0;
+
+function renderSigList(){
+  const wrap=document.getElementById('sig-list');
+  wrap.innerHTML='';
+  sigState.forEach((st,i)=>{
+    const cur=st.timeline[st.t % st.timeline.length];
+    const phase=st.sig.phases[cur.pi];
+    // remaining in current phase
+    let acc=0,rem=0;
+    for(const p of st.sig.phases){ if(st.t % st.timeline.length < acc+p.dur){rem=acc+p.dur-(st.t%st.timeline.length);break;} acc+=p.dur; }
+    const item=document.createElement('div');
+    item.className='sig-item'+(i===selectedSig?' sel':'');
+    item.tabIndex=0;
+    const cdColor=cur.c==='green'?'#86efac':cur.c==='amber'?'#fcd34d':'#fca5a5';
+    item.innerHTML=`
+      <div class="tlight" aria-hidden="true">
+        <div class="d red ${cur.c==='red'?'on':''}"></div>
+        <div class="d amber ${cur.c==='amber'?'on':''}"></div>
+        <div class="d green ${cur.c==='green'?'on':''}"></div>
+      </div>
+      <div class="sig-meta"><div class="nm">${st.sig.name}</div><div class="id mono">${st.sig.id}</div></div>
+      <div class="sig-right">
+        <div class="countdown" style="color:${cdColor}">${rem}s</div>
+        <span class="spill ${st.sig.status}">${st.sig.status==='optimized'?'已優化':st.sig.status==='normal'?'正常':'壅塞中'}</span>
+      </div>`;
+    item.addEventListener('click',()=>{selectedSig=i;renderSigList();renderSigDetail();});
+    item.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();selectedSig=i;renderSigList();renderSigDetail();}});
+    wrap.appendChild(item);
+  });
+}
+function renderSigDetail(){
+  const st=sigState[selectedSig];
+  const cur=st.timeline[st.t % st.timeline.length];
+  let acc=0,rem=0;
+  for(const p of st.sig.phases){ if(st.t % st.timeline.length < acc+p.dur){rem=acc+p.dur-(st.t%st.timeline.length);break;} acc+=p.dur; }
+  const phName=cur.c==='green'?'綠燈':cur.c==='amber'?'黃燈':'紅燈';
+  const cdColor=cur.c==='green'?'#86efac':cur.c==='amber'?'#fcd34d':'#fca5a5';
+  // phase bar segments
+  const total=st.sig.phases.reduce((a,p)=>a+p.dur,0);
+  let segs='';
+  st.sig.phases.forEach((p,pi)=>{
+    const cls=p.c==='green'?'seg-g':p.c==='amber'?'seg-a':'seg-r';
+    segs+=`<i class="${cls} ${pi===cur.pi?'live':''}" style="flex:${p.dur}"></i>`;
+  });
+  document.getElementById('sig-detail').innerHTML=`
+    <div class="dh"><span class="t">${st.sig.name}</span><span class="i mono">週期 ${st.sig.cycle}s</span></div>
+    <div class="big-count"><span class="n" style="color:${cdColor}">${rem}<span style="font-size:18px">s</span></span><span class="ph" style="color:${cdColor}">${phName}剩餘</span></div>
+    <div class="phase-bar">${segs}</div>
+    <div class="phase-legend"><span><i style="background:var(--green)"></i>綠</span><span><i style="background:var(--amber)"></i>黃</span><span><i style="background:var(--red)"></i>紅</span><span style="margin-left:auto;color:var(--muted)" class="mono">${st.sig.id.slice(0,16)}</span></div>`;
+}
+renderSigList();renderSigDetail();
+
+/* tick signals every second */
+setInterval(()=>{
+  sigState.forEach(st=>{st.t=(st.t+1)%st.timeline.length;});
+  renderSigList();renderSigDetail();
+},1000);
+
+/* ============ Clock ============ */
+function tickClock(){
+  const d=new Date();
+  const hh=String(d.getHours()).padStart(2,'0');
+  const mm=String(d.getMinutes()).padStart(2,'0');
+  const ss=String(d.getSeconds()).padStart(2,'0');
+  document.getElementById('clock').textContent=`${hh}:${mm}:${ss}`;
+}
+tickClock();setInterval(tickClock,1000);
+
+/* ============ Nav switching ============ */
+const TITLES={overview:'總覽儀表板',roads:'路段監控',signals:'號誌控制',forecast:'流量預測',ai:'AI 助理',export:'匯出報告'};
+document.querySelectorAll('.nav-item').forEach(n=>{
+  n.addEventListener('click',()=>{
+    document.querySelectorAll('.nav-item').forEach(x=>{x.classList.remove('active');x.removeAttribute('aria-current');});
+    n.classList.add('active');n.setAttribute('aria-current','page');
+    const v=n.dataset.view;
+    document.querySelectorAll('.view').forEach(s=>s.classList.remove('active'));
+    document.getElementById('view-'+v).classList.add('active');
+    document.getElementById('page-title').textContent=TITLES[v];
+    if(v==='overview') setTimeout(()=>map.invalidateSize(),60);
+  });
+});
+
+/* ============ AI chat (sample) ============ */
+function addMsg(text,who){
+  const chat=document.getElementById('chat');
+  const m=document.createElement('div');
+  m.className='msg '+(who==='user'?'user':'bot');
+  m.innerHTML=`<div class="mav">${who==='user'?'你':'AI'}</div><div class="bub">${text}</div>`;
+  chat.appendChild(m);chat.scrollTop=chat.scrollHeight;
+}
+function sendAI(){
+  const inp=document.getElementById('ai-text');
+  const v=inp.value.trim();if(!v)return;
+  addMsg(v,'user');inp.value='';
+  setTimeout(()=>addMsg('已收到查詢。正在彙整即時 VD 與 GRU 預測數據… <b>分析完成後將提供號誌調整建議</b>。',''),650);
+}
+document.getElementById('ai-send').addEventListener('click',sendAI);
+document.getElementById('ai-text').addEventListener('keydown',e=>{if(e.key==='Enter')sendAI();});
+document.querySelectorAll('.chip').forEach(c=>{
+  c.addEventListener('click',()=>{document.getElementById('ai-text').value=c.textContent;document.getElementById('ai-text').focus();});
+});
+
+/* ============ Buttons feedback ============ */
+document.getElementById('refresh-btn').addEventListener('click',function(){
+  const d=new Date();
+  const f=n=>String(n).padStart(2,'0');
+  document.getElementById('last-update').textContent=`${d.getFullYear()}-${f(d.getMonth()+1)}-${f(d.getDate())} ${f(d.getHours())}:${f(d.getMinutes())}:${f(d.getSeconds())}`;
+  this.style.transform='translateY(-1px) scale(0.97)';setTimeout(()=>this.style.transform='',180);
+});
+document.getElementById('optimize-btn').addEventListener('click',function(){
+  this.style.boxShadow='0 0 34px rgba(34,211,238,0.7)';setTimeout(()=>this.style.boxShadow='',420);
+});
+</script>
+</body>
+</html>

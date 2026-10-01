@@ -27,6 +27,7 @@ API 端點：
 import asyncio
 import json
 import os
+import re
 import glob
 import sys
 import threading
@@ -1576,7 +1577,28 @@ GRU 預測：{_compact(get_prediction())}
 優化效益：{_compact(get_comparison())}
 
 ═══ 回答格式 ═══
-使用繁體中文。引用數值時標明單位（km/h、%、輛、秒）。簡潔為主，不重複摘要已說明的內容。"""
+使用繁體中文。引用數值時標明單位（km/h、%、輛、秒）。簡潔為主，不重複摘要已說明的內容。
+數字一律用純文字輸出，禁止使用 LaTeX 或 Markdown 數學語法：不要用 $...$、\\(...\\)、\\[...\\]、\\frac 等包裹數字，例如直接寫「0.8892」而非「$0.8892$」。"""
+
+
+def _strip_latex_math(text: str) -> str:
+    """移除模型回覆裡的 LaTeX/Markdown 數學包裹，保留內容。
+
+    前端 chat 沒有 math 渲染器，模型若輸出 `$0.8892$` 會直接顯示成
+    有錢字號的醜字串。這裡把成對的 $$...$$ / $...$ / \\(...\\) / \\[...\\]
+    去掉只留內容，並把 \\% → %。交通情境沒有貨幣，去掉 $ 不會誤刪金額。
+    """
+    if not text:
+        return text
+    # display math 先處理，避免被單一 $ 規則咬掉
+    text = re.sub(r"\$\$(.+?)\$\$", r"\1", text, flags=re.S)
+    text = re.sub(r"\\\[(.+?)\\\]", r"\1", text, flags=re.S)
+    # inline math
+    text = re.sub(r"\$(.+?)\$", r"\1", text, flags=re.S)
+    text = re.sub(r"\\\((.+?)\\\)", r"\1", text, flags=re.S)
+    # 常見殘留的 escape
+    text = text.replace(r"\%", "%").replace(r"\,", "").replace(r"\;", " ")
+    return text
 
 
 @app.post("/api/chat")
@@ -1588,7 +1610,9 @@ async def chat(req: ChatRequest):
                 "reply": f"訊息太長（上限 {_CHAT_MAX_MESSAGE_CHARS} 字元，收到 {len(req.message)}）。請拆短再試。"}
 
     loop = asyncio.get_running_loop()
-    traffic = await loop.run_in_executor(None, get_latest_traffic)
+    # get_latest_traffic 是路由處理函式，需要一個 Response 來設 cache header；
+    # 這裡是內部呼叫，丟一個拋棄式 Response 進去即可（其 header 不會送給客戶端）。
+    traffic = await loop.run_in_executor(None, get_latest_traffic, Response())
     system = _build_system_prompt(traffic)
 
     messages = [{"role": "system", "content": system}]
@@ -1621,7 +1645,7 @@ async def chat(req: ChatRequest):
             ),
         )
         resp.raise_for_status()
-        reply = resp.json()["message"]["content"]
+        reply = _strip_latex_math(resp.json()["message"]["content"])
         return {"reply": reply}
     except requests.exceptions.ConnectTimeout:
         return {

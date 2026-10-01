@@ -1,0 +1,979 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TrafficVision · 總覽儀表板 · Bento HUD</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" crossorigin="anonymous"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet-src.js" integrity="sha384-4aETf8z71hiSsoK0xYsa5JtiJHfL3h7uMAsZ2QYOLvcySDL/cEDfdLt0SaBypTQZ" crossorigin="anonymous"></script>
+<style>
+:root{
+  --bg:#020617; --bg-deep:#060c1a;
+  --surf:#0a0f1e; --surf2:#0f1629; --elev:#162036;
+  --txt:#f1f5f9; --txt2:#94a3b8; --muted:#8295ba;
+  --cyan:#22d3ee; --blue:#3b82f6; --blue2:#60a5fa;
+  --green:#22c55e; --amber:#f59e0b; --red:#ef4444; --magenta:#d946ef;
+  --free:#22c55e; --normal:#f59e0b; --cong:#ef4444;
+  --glass:rgba(15,22,41,0.55);
+  --glass-float:rgba(8,13,28,0.62);
+  --bd:1px solid rgba(120,160,240,0.18);
+  --r:15px; --rc:10px;
+  --shadow:0 8px 32px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.06);
+  --accent:var(--cyan);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:'Inter','Noto Sans TC',system-ui,sans-serif;
+  background:
+    radial-gradient(1200px 700px at 78% -8%, rgba(34,211,238,0.07), transparent 60%),
+    radial-gradient(1000px 620px at 6% 110%, rgba(59,130,246,0.08), transparent 60%),
+    linear-gradient(180deg,#020617 0%, #060c1a 100%);
+  color:var(--txt);
+  font-size:14px; line-height:1.45;
+  overflow:hidden;
+}
+.tnum{font-variant-numeric:tabular-nums}
+.mono{font-family:'JetBrains Mono',ui-monospace,monospace}
+button{font-family:inherit;color:inherit;cursor:pointer;border:none;background:none}
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:rgba(120,160,240,0.18);border-radius:8px}
+::-webkit-scrollbar-thumb:hover{background:rgba(120,160,240,0.32)}
+
+/* scanline overlay */
+body::after{
+  content:"";position:fixed;inset:0;pointer-events:none;z-index:9999;
+  background:repeating-linear-gradient(180deg, rgba(255,255,255,0.012) 0px, rgba(255,255,255,0.012) 1px, transparent 2px, transparent 4px);
+  mix-blend-mode:overlay;opacity:.5;
+}
+
+/* ---------- App shell ---------- */
+.app{display:grid;grid-template-columns:84px 1fr;height:100vh;width:100vw}
+
+/* ---------- Left rail nav ---------- */
+.rail{
+  background:linear-gradient(180deg, rgba(10,15,30,0.85), rgba(6,12,26,0.92));
+  border-right:var(--bd);
+  display:flex;flex-direction:column;align-items:center;
+  padding:18px 0 14px;gap:6px;position:relative;z-index:20;
+}
+.brand-mini{display:flex;flex-direction:column;align-items:center;gap:8px;margin-bottom:14px}
+.brand-logo{
+  width:44px;height:44px;border-radius:13px;
+  background:linear-gradient(145deg, rgba(34,211,238,0.22), rgba(59,130,246,0.22));
+  border:1px solid rgba(34,211,238,0.4);
+  display:grid;place-items:center;
+  box-shadow:0 0 0 1px rgba(34,211,238,0.25), 0 0 22px rgba(34,211,238,0.22);
+}
+.brand-logo svg{width:24px;height:24px}
+.brand-tag{font-size:8px;letter-spacing:.14em;color:var(--cyan);font-weight:600;text-align:center;line-height:1.3}
+.nav{display:flex;flex-direction:column;gap:5px;width:100%;align-items:center;flex:1}
+.nav-item{
+  width:60px;height:54px;border-radius:13px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;
+  color:var(--txt2);transition:background .2s,color .2s,transform .2s,box-shadow .2s;position:relative;
+}
+.nav-item svg{width:21px;height:21px}
+.nav-item span{font-size:9px;letter-spacing:.02em;font-weight:500}
+.nav-item:hover{color:var(--txt);background:rgba(120,160,240,0.07);transform:translateY(-1px)}
+.nav-item.active{
+  color:var(--cyan);background:rgba(34,211,238,0.10);
+  box-shadow:0 0 0 1px rgba(34,211,238,0.35), 0 0 18px rgba(34,211,238,0.18);
+}
+.nav-item.active::before{
+  content:"";position:absolute;left:-1px;top:14px;bottom:14px;width:3px;border-radius:3px;
+  background:linear-gradient(180deg,var(--cyan),var(--blue));
+  box-shadow:0 0 10px var(--cyan);
+}
+.rail-foot{font-size:8px;color:var(--muted);text-align:center;line-height:1.5;padding:0 6px}
+.rail-foot .dot{display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--green);margin-right:3px;box-shadow:0 0 6px var(--green)}
+
+/* ---------- Main ---------- */
+.main{display:flex;flex-direction:column;height:100vh;overflow:hidden}
+
+/* Top bar */
+.topbar{
+  display:flex;align-items:center;gap:16px;padding:14px 22px;
+  border-bottom:var(--bd);
+  background:linear-gradient(180deg, rgba(10,15,30,0.6), rgba(10,15,30,0.25));
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+}
+.topbar h1{font-size:19px;font-weight:700;letter-spacing:.01em}
+.topbar .sub{font-size:11px;color:var(--txt2);font-weight:400}
+.crumb{display:flex;flex-direction:column;gap:2px;min-width:160px}
+.spacer{flex:1}
+.live-pill{
+  display:flex;align-items:center;gap:7px;padding:6px 12px;border-radius:999px;
+  background:rgba(34,197,94,0.10);border:1px solid rgba(34,197,94,0.32);
+  font-size:11px;font-weight:600;color:#bbf7d0;letter-spacing:.06em;
+}
+.live-dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);animation:pulse 1.8s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(34,197,94,.6)}70%{box-shadow:0 0 0 8px rgba(34,197,94,0)}100%{box-shadow:0 0 0 0 rgba(34,197,94,0)}}
+.clock{font-size:13px;font-weight:500;color:var(--txt);letter-spacing:.04em;padding:6px 12px;border-radius:var(--rc);
+  background:rgba(15,22,41,0.5);border:var(--bd)}
+.update-line{font-size:11px;color:var(--txt2);display:flex;align-items:center;gap:6px}
+.update-line .mono{color:var(--blue2)}
+.btn{
+  display:inline-flex;align-items:center;gap:7px;padding:8px 14px;border-radius:var(--rc);
+  font-size:12px;font-weight:600;letter-spacing:.02em;
+  border:var(--bd);background:rgba(15,22,41,0.55);color:var(--txt);
+  transition:background .2s,transform .15s,box-shadow .2s,color .2s;
+}
+.btn svg{width:15px;height:15px}
+.btn:hover{background:rgba(120,160,240,0.12);transform:translateY(-1px)}
+.btn.primary{
+  background:linear-gradient(135deg, rgba(34,211,238,0.22), rgba(59,130,246,0.30));
+  border-color:rgba(34,211,238,0.45);color:#e0fbff;
+  box-shadow:0 0 0 1px rgba(34,211,238,0.30), 0 0 18px rgba(34,211,238,0.20);
+}
+.btn.primary:hover{box-shadow:0 0 0 1px rgba(34,211,238,0.5), 0 0 26px rgba(34,211,238,0.34);transform:translateY(-1px)}
+
+/* ---------- Bento grid ---------- */
+.bento{
+  flex:1;overflow:auto;padding:16px 22px 22px;
+  display:grid;gap:14px;
+  grid-template-columns:repeat(12,1fr);
+  grid-auto-rows:minmax(60px,auto);
+}
+.cell{
+  background:var(--glass);
+  backdrop-filter:blur(18px) saturate(140%);-webkit-backdrop-filter:blur(18px) saturate(140%);
+  border:var(--bd);border-radius:var(--r);box-shadow:var(--shadow);
+  position:relative;overflow:hidden;display:flex;flex-direction:column;
+}
+.cell::before{ /* HUD corner bracket top-left */
+  content:"";position:absolute;top:8px;left:8px;width:12px;height:12px;
+  border-top:1.5px solid rgba(34,211,238,0.30);border-left:1.5px solid rgba(34,211,238,0.30);
+  border-radius:2px 0 0 0;pointer-events:none;opacity:.7;
+}
+.cell-hd{display:flex;align-items:center;gap:9px;padding:12px 15px 8px}
+.cell-hd .ic{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;
+  background:rgba(34,211,238,0.10);border:1px solid rgba(34,211,238,0.22);flex-shrink:0}
+.cell-hd .ic svg{width:16px;height:16px;color:var(--cyan)}
+.cell-hd h3{font-size:13px;font-weight:600;letter-spacing:.02em}
+.cell-hd .hint{font-size:10px;color:var(--muted);margin-left:auto;font-weight:400}
+
+/* KPI strip */
+.kpi-strip{grid-column:span 12;display:grid;grid-template-columns:repeat(6,1fr);gap:14px}
+.kpi{
+  background:var(--glass);backdrop-filter:blur(18px) saturate(140%);-webkit-backdrop-filter:blur(18px) saturate(140%);
+  border:var(--bd);border-radius:var(--r);box-shadow:var(--shadow);
+  padding:14px 15px 12px;position:relative;overflow:hidden;transition:transform .2s,box-shadow .2s;
+}
+.kpi:hover{transform:translateY(-2px);box-shadow:0 12px 38px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.07)}
+.kpi .accent-bar{position:absolute;top:0;left:0;right:0;height:2px;background:var(--kc,var(--cyan));opacity:.8;box-shadow:0 0 12px var(--kc,var(--cyan))}
+.kpi .k-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.kpi .k-label{font-size:11px;color:var(--txt2);font-weight:500}
+.kpi .k-ic{width:24px;height:24px;border-radius:7px;display:grid;place-items:center;
+  background:color-mix(in srgb, var(--kc,var(--cyan)) 14%, transparent);}
+.kpi .k-ic svg{width:14px;height:14px;color:var(--kc,var(--cyan))}
+.kpi .k-num{font-size:30px;font-weight:700;line-height:1;letter-spacing:-0.01em}
+.kpi .k-unit{font-size:11px;color:var(--txt2);font-weight:500;margin-left:4px}
+.kpi .k-bar{height:4px;border-radius:4px;background:rgba(120,160,240,0.14);margin-top:11px;overflow:hidden}
+.kpi .k-bar i{display:block;height:100%;border-radius:4px;background:var(--kc,var(--cyan));box-shadow:0 0 8px var(--kc,var(--cyan))}
+.kpi .k-delta{font-size:10px;margin-top:7px;display:flex;align-items:center;gap:4px;color:var(--txt2)}
+.kpi .k-delta.up{color:#86efac}.kpi .k-delta.down{color:#fca5a5}
+
+/* Map cell */
+.map-cell{grid-column:span 7;grid-row:span 6;min-height:430px}
+#map{flex:1;width:100%;background:#060c1a;border-radius:0 0 var(--r) var(--r)}
+/* self-contained neon graticule backdrop (no external tile server) */
+.leaflet-container{
+  background:#060c1a;font-family:inherit;
+  background-image:
+    radial-gradient(900px 520px at 70% 18%, rgba(34,211,238,0.05), transparent 62%),
+    radial-gradient(760px 480px at 18% 92%, rgba(59,130,246,0.06), transparent 60%),
+    linear-gradient(rgba(120,160,240,0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(120,160,240,0.07) 1px, transparent 1px);
+  background-size:100% 100%, 100% 100%, 48px 48px, 48px 48px;
+}
+.map-toolbar{display:flex;align-items:center;gap:10px;padding:10px 15px 10px;border-bottom:var(--bd);flex-wrap:wrap}
+.seg{display:inline-flex;background:rgba(8,13,28,0.6);border:var(--bd);border-radius:11px;padding:3px;gap:3px}
+.seg button{
+  padding:7px 14px;border-radius:8px;font-size:12px;font-weight:600;color:var(--txt2);
+  display:inline-flex;align-items:center;gap:7px;transition:all .2s;letter-spacing:.01em;
+}
+.seg button .sw{width:9px;height:9px;border-radius:3px;flex-shrink:0}
+.seg button[data-mode="raw"] .sw{background:var(--blue2)}
+.seg button[data-mode="pred"] .sw{background:var(--amber)}
+.seg button[data-mode="opt"] .sw{background:var(--green)}
+.seg button.active{color:var(--txt);background:rgba(120,160,240,0.10)}
+.seg button.active[data-mode="raw"]{box-shadow:0 0 0 1px rgba(96,165,250,.4),0 0 14px rgba(96,165,250,.2);color:#bfdbfe}
+.seg button.active[data-mode="pred"]{box-shadow:0 0 0 1px rgba(245,158,11,.4),0 0 14px rgba(245,158,11,.2);color:#fde68a}
+.seg button.active[data-mode="opt"]{box-shadow:0 0 0 1px rgba(34,197,94,.4),0 0 14px rgba(34,197,94,.2);color:#bbf7d0}
+.map-foot{position:absolute;left:14px;bottom:14px;z-index:500;
+  background:var(--glass-float);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  border:var(--bd);border-radius:12px;padding:10px 13px;box-shadow:var(--shadow);max-width:280px}
+.map-foot .lt{font-size:10px;color:var(--txt2);margin-bottom:7px;font-weight:600;letter-spacing:.04em}
+.legend-grad{height:8px;border-radius:6px;background:linear-gradient(90deg,#ef4444,#f97316,#f59e0b,#84cc16,#22c55e);margin-bottom:5px}
+.legend-scale{display:flex;justify-content:space-between;font-size:9px;color:var(--muted)}
+.legend-w{display:flex;align-items:center;gap:7px;margin-top:9px;font-size:10px;color:var(--txt2)}
+.legend-w .l1,.legend-w .l2{background:var(--cyan);border-radius:3px;box-shadow:0 0 6px var(--cyan)}
+.legend-w .l1{width:18px;height:2px}.legend-w .l2{width:18px;height:6px}
+.mode-badge{position:absolute;top:62px;right:14px;z-index:500;
+  background:var(--glass-float);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  border:var(--bd);border-radius:10px;padding:7px 12px;font-size:11px;font-weight:600;box-shadow:var(--shadow)}
+
+/* Road table cell */
+.table-cell{grid-column:span 5;grid-row:span 6;min-height:430px}
+.tbl-search{display:flex;align-items:center;gap:8px;margin:0 15px 10px;padding:8px 11px;border-radius:var(--rc);
+  background:rgba(8,13,28,0.5);border:var(--bd)}
+.tbl-search svg{width:15px;height:15px;color:var(--muted)}
+.tbl-search input{flex:1;background:none;border:none;color:var(--txt);font-size:12px;outline:none}
+.tbl-search input::placeholder{color:var(--muted)}
+.tbl-wrap{flex:1;overflow:auto;padding:0 8px 8px}
+table{width:100%;border-collapse:collapse;font-size:12px}
+thead th{position:sticky;top:0;text-align:left;font-size:10px;font-weight:600;letter-spacing:.05em;
+  color:var(--muted);padding:8px 8px;background:rgba(10,15,30,0.92);backdrop-filter:blur(6px);z-index:2;text-transform:uppercase}
+thead th.r{text-align:right}
+tbody tr{transition:background .15s;cursor:pointer;border-radius:8px}
+tbody tr:hover{background:rgba(120,160,240,0.07)}
+tbody td{padding:9px 8px;border-bottom:1px solid rgba(120,160,240,0.07)}
+tbody td.r{text-align:right;font-variant-numeric:tabular-nums}
+.rd-name{font-weight:500;color:var(--txt)}
+.rd-id{font-size:9px;color:var(--muted);margin-top:1px}
+.spd-cell{font-weight:600}
+.pill{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;font-size:10px;font-weight:600;white-space:nowrap}
+.pill .pd{width:6px;height:6px;border-radius:50%}
+.pill.free{background:rgba(34,197,94,0.14);color:#86efac}.pill.free .pd{background:var(--green);box-shadow:0 0 6px var(--green)}
+.pill.normal{background:rgba(245,158,11,0.14);color:#fcd34d}.pill.normal .pd{background:var(--amber);box-shadow:0 0 6px var(--amber)}
+.pill.congested{background:rgba(239,68,68,0.14);color:#fca5a5}.pill.congested .pd{background:var(--red);box-shadow:0 0 6px var(--red)}
+.occ-bar{display:inline-block;width:42px;height:5px;border-radius:4px;background:rgba(120,160,240,0.14);overflow:hidden;vertical-align:middle;margin-right:6px}
+.occ-bar i{display:block;height:100%;border-radius:4px}
+
+/* Signals cell */
+.sig-cell{grid-column:span 4;grid-row:span 5;min-height:330px}
+.sig-list{flex:1;overflow:auto;padding:4px 12px 12px;display:flex;flex-direction:column;gap:8px}
+.jx{display:flex;align-items:center;gap:11px;padding:10px 11px;border-radius:12px;
+  background:rgba(8,13,28,0.45);border:1px solid rgba(120,160,240,0.10);transition:all .2s;cursor:pointer}
+.jx:hover{background:rgba(120,160,240,0.08);transform:translateX(2px)}
+.jx.sel{background:rgba(34,211,238,0.08);box-shadow:0 0 0 1px rgba(34,211,238,0.3), 0 0 14px rgba(34,211,238,0.12)}
+.minitl{display:flex;flex-direction:column;gap:3px;padding:5px 4px;border-radius:7px;background:rgba(0,0,0,0.4);flex-shrink:0}
+.minitl .tl-dot{width:11px;height:11px;border-radius:50%;background:#1b2436;transition:all .3s;border:1px solid rgba(255,255,255,0.05)}
+.minitl .tl-dot.on.red{background:var(--red);box-shadow:0 0 9px var(--red)}
+.minitl .tl-dot.on.amber{background:var(--amber);box-shadow:0 0 9px var(--amber)}
+.minitl .tl-dot.on.green{background:var(--green);box-shadow:0 0 9px var(--green)}
+.jx-info{flex:1;min-width:0}
+.jx-name{font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.jx-id{font-size:9px;color:var(--muted);margin-top:1px}
+.jx-right{display:flex;flex-direction:column;align-items:flex-end;gap:5px;flex-shrink:0}
+.jx-count{font-size:16px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1}
+.jx-count.green{color:#86efac}.jx-count.amber{color:#fcd34d}.jx-count.red{color:#fca5a5}
+.pill.optimized{background:rgba(34,211,238,0.14);color:#a5f3fc}.pill.optimized .pd{background:var(--cyan);box-shadow:0 0 6px var(--cyan)}
+.pill.congestedSig{background:rgba(239,68,68,0.14);color:#fca5a5}.pill.congestedSig .pd{background:var(--red);box-shadow:0 0 6px var(--red)}
+
+/* Signal detail cell */
+.sigdet-cell{grid-column:span 4;grid-row:span 5;min-height:330px}
+.sd-body{flex:1;padding:6px 16px 16px;display:flex;flex-direction:column;gap:14px}
+.sd-name{font-size:14px;font-weight:600}
+.sd-id{font-size:10px;color:var(--muted);margin-top:2px}
+.sd-big{display:flex;align-items:center;gap:18px;padding:16px;border-radius:14px;
+  background:rgba(8,13,28,0.5);border:var(--bd);position:relative;overflow:hidden}
+.sd-ring{position:relative;width:96px;height:96px;flex-shrink:0}
+.sd-ring svg{transform:rotate(-90deg)}
+.sd-ring .ring-num{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.sd-ring .ring-num b{font-size:28px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
+.sd-ring .ring-num span{font-size:10px;color:var(--txt2);margin-top:2px}
+.sd-meta{flex:1}
+.sd-meta .row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(120,160,240,0.08);font-size:12px}
+.sd-meta .row:last-child{border-bottom:none}
+.sd-meta .row span{color:var(--txt2)}.sd-meta .row b{font-weight:600}
+.sd-phases h4{font-size:11px;color:var(--txt2);margin-bottom:8px;font-weight:600;letter-spacing:.03em}
+.phasebar{display:flex;height:26px;border-radius:8px;overflow:hidden;border:1px solid rgba(120,160,240,0.12)}
+.phasebar div{display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600;color:rgba(0,0,0,0.65);transition:flex .3s}
+.phasebar .pg{background:var(--green)}.phasebar .pa{background:var(--amber)}.phasebar .pr{background:var(--red)}
+.phase-legend{display:flex;gap:14px;margin-top:9px;font-size:10px;color:var(--txt2)}
+.phase-legend span{display:flex;align-items:center;gap:5px}
+.phase-legend i{width:9px;height:9px;border-radius:3px;display:inline-block}
+
+/* AI cell */
+.ai-cell{grid-column:span 4;grid-row:span 5;min-height:330px}
+.ai-hd{display:flex;align-items:center;gap:10px;padding:12px 15px 10px;border-bottom:var(--bd)}
+.ai-av{width:34px;height:34px;border-radius:11px;display:grid;place-items:center;flex-shrink:0;
+  background:linear-gradient(145deg, rgba(217,70,239,0.25), rgba(59,130,246,0.25));
+  border:1px solid rgba(217,70,239,0.35);box-shadow:0 0 14px rgba(217,70,239,0.18)}
+.ai-av svg{width:18px;height:18px;color:#f0abfc}
+.ai-hd .t{flex:1}
+.ai-hd .t b{font-size:13px;font-weight:600}
+.ai-hd .t small{display:block;font-size:10px;color:var(--txt2)}
+.ai-tag{font-size:9px;font-weight:600;color:#a5f3fc;background:rgba(34,211,238,0.12);
+  border:1px solid rgba(34,211,238,0.28);padding:3px 8px;border-radius:999px;letter-spacing:.04em}
+.ai-msgs{flex:1;overflow:auto;padding:13px 15px;display:flex;flex-direction:column;gap:11px}
+.msg{max-width:86%;padding:10px 13px;border-radius:14px;font-size:12px;line-height:1.5}
+.msg.bot{align-self:flex-start;background:rgba(15,22,41,0.7);border:var(--bd);border-bottom-left-radius:5px}
+.msg.user{align-self:flex-end;background:linear-gradient(135deg,rgba(34,211,238,0.16),rgba(59,130,246,0.20));
+  border:1px solid rgba(34,211,238,0.28);border-bottom-right-radius:5px;color:#e0fbff}
+.msg b{color:#fde68a;font-weight:700}
+.ai-chips{display:flex;gap:7px;flex-wrap:wrap;padding:0 15px 10px}
+.chip{font-size:11px;padding:6px 11px;border-radius:999px;background:rgba(8,13,28,0.55);
+  border:var(--bd);color:var(--txt2);transition:all .2s;font-weight:500}
+.chip:hover{color:var(--cyan);border-color:rgba(34,211,238,0.4);transform:translateY(-1px)}
+.ai-input{display:flex;gap:8px;padding:10px 14px 14px}
+.ai-input input{flex:1;background:rgba(8,13,28,0.6);border:var(--bd);border-radius:var(--rc);
+  padding:9px 13px;color:var(--txt);font-size:12px;outline:none;font-family:inherit}
+.ai-input input::placeholder{color:var(--muted)}
+.ai-input input:focus-visible{border-color:rgba(34,211,238,0.45);box-shadow:0 0 0 1px rgba(34,211,238,0.3)}
+.ai-send{width:38px;height:38px;border-radius:var(--rc);display:grid;place-items:center;
+  background:linear-gradient(135deg,rgba(34,211,238,0.25),rgba(59,130,246,0.32));
+  border:1px solid rgba(34,211,238,0.4);color:#e0fbff;transition:transform .15s,box-shadow .2s}
+.ai-send svg{width:16px;height:16px}
+.ai-send:hover{transform:translateY(-1px);box-shadow:0 0 18px rgba(34,211,238,0.3)}
+
+/* Trend / sparkline cells */
+.trend-row{grid-column:span 12;display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.trend{
+  background:var(--glass);backdrop-filter:blur(18px) saturate(140%);-webkit-backdrop-filter:blur(18px) saturate(140%);
+  border:var(--bd);border-radius:var(--r);box-shadow:var(--shadow);padding:13px 15px;position:relative;overflow:hidden;
+  display:flex;flex-direction:column;gap:8px;transition:transform .2s}
+.trend:hover{transform:translateY(-2px)}
+.trend .t-top{display:flex;align-items:center;justify-content:space-between}
+.trend .t-label{font-size:11px;color:var(--txt2);font-weight:500}
+.trend .t-val{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums}
+.trend .t-val small{font-size:11px;color:var(--txt2);font-weight:500;margin-left:3px}
+.trend svg.spark{width:100%;height:38px;display:block}
+.trend .t-delta{font-size:10px;font-weight:600}
+.trend .t-delta.up{color:#86efac}.trend .t-delta.down{color:#fca5a5}
+
+/* Leaflet popup glass */
+.leaflet-popup-content-wrapper{
+  background:var(--glass-float)!important;backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  border:var(--bd);border-radius:12px!important;box-shadow:var(--shadow)!important;color:var(--txt)!important}
+.leaflet-popup-tip{background:var(--glass-float)!important;border:var(--bd)}
+.leaflet-popup-content{margin:11px 13px!important;font-family:inherit}
+.pop-name{font-size:12px;font-weight:600;margin-bottom:6px}
+.pop-id{font-size:9px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-bottom:8px}
+.pop-grid{display:grid;grid-template-columns:auto auto;gap:3px 14px;font-size:11px}
+.pop-grid b{font-variant-numeric:tabular-nums}
+.pop-grid .l{color:var(--txt2)}
+.ntut-marker{display:flex;flex-direction:column;align-items:center;gap:3px}
+.ntut-marker .pin{width:14px;height:14px;border-radius:50%;background:var(--cyan);
+  border:2px solid #020617;box-shadow:0 0 0 3px rgba(34,211,238,0.3),0 0 14px var(--cyan)}
+.ntut-marker .lbl{font-size:10px;font-weight:700;color:#a5f3fc;background:rgba(8,13,28,0.85);
+  padding:2px 7px;border-radius:6px;border:1px solid rgba(34,211,238,0.35);white-space:nowrap;
+  font-family:'Noto Sans TC',sans-serif}
+.leaflet-control-zoom a{background:var(--glass-float)!important;color:var(--txt)!important;border:var(--bd)!important;
+  backdrop-filter:blur(10px)}
+.leaflet-control-attribution{background:rgba(8,13,28,0.7)!important;color:var(--muted)!important}
+.leaflet-control-attribution a{color:var(--blue2)!important}
+
+/* Alt views */
+.alt-view{grid-column:span 12;grid-row:span 11;display:none;align-items:center;justify-content:center;
+  flex-direction:column;gap:14px;text-align:center;padding:60px;min-height:440px}
+.alt-view.show{display:flex}
+.alt-view .ic-big{width:72px;height:72px;border-radius:20px;display:grid;place-items:center;
+  background:rgba(34,211,238,0.08);border:1px solid rgba(34,211,238,0.25);box-shadow:0 0 26px rgba(34,211,238,0.14)}
+.alt-view .ic-big svg{width:34px;height:34px;color:var(--cyan)}
+.alt-view h2{font-size:20px;font-weight:700}
+.alt-view p{font-size:13px;color:var(--txt2);max-width:420px}
+
+/* focus */
+:focus-visible{outline:2px solid var(--cyan);outline-offset:2px;border-radius:6px}
+
+@media (max-width:1180px){
+  .map-cell{grid-column:span 12}
+  .table-cell{grid-column:span 12}
+  .sig-cell,.sigdet-cell,.ai-cell{grid-column:span 6}
+  .kpi-strip{grid-template-columns:repeat(3,1fr)}
+  .trend-row{grid-template-columns:repeat(2,1fr)}
+}
+@media (prefers-reduced-motion: reduce){
+  *{animation:none!important;transition:none!important}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- ============ LEFT RAIL ============ -->
+  <nav class="rail" aria-label="主導覽">
+    <div class="brand-mini">
+      <div class="brand-logo" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#22d3ee" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="8" y="2" width="8" height="20" rx="3"/><circle cx="12" cy="7" r="1.6" fill="#ef4444" stroke="none"/>
+          <circle cx="12" cy="12" r="1.6" fill="#f59e0b" stroke="none"/><circle cx="12" cy="17" r="1.6" fill="#22c55e" stroke="none"/>
+        </svg>
+      </div>
+      <div class="brand-tag">TRAFFIC<br>VISION</div>
+    </div>
+    <div class="nav" role="tablist">
+      <button class="nav-item active" data-view="overview" role="tab" aria-selected="true" aria-label="總覽儀表板" aria-controls="overviewPanel">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
+        <span>總覽</span>
+      </button>
+      <button class="nav-item" data-view="roads" role="tab" aria-selected="false" aria-label="路段監控" aria-controls="altView">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19 9 5"/><path d="M20 19 15 5"/><path d="M12 6v2"/><path d="M12 11v2"/><path d="M12 16v2"/></svg>
+        <span>路段</span>
+      </button>
+      <button class="nav-item" data-view="signals" role="tab" aria-selected="false" aria-label="號誌控制" aria-controls="altView">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="20" rx="3"/><circle cx="12" cy="7" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="12" cy="17" r="1.4"/></svg>
+        <span>號誌</span>
+      </button>
+      <button class="nav-item" data-view="forecast" role="tab" aria-selected="false" aria-label="流量預測" aria-controls="altView">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17 9 11l4 4 8-8"/><path d="M16 7h5v5"/></svg>
+        <span>預測</span>
+      </button>
+      <button class="nav-item" data-view="ai" role="tab" aria-selected="false" aria-label="AI 助理" aria-controls="altView">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="6" width="16" height="12" rx="3"/><path d="M12 6V3"/><circle cx="9" cy="12" r="1.2" fill="currentColor"/><circle cx="15" cy="12" r="1.2" fill="currentColor"/><path d="M2 12h2M20 12h2"/></svg>
+        <span>AI</span>
+      </button>
+      <button class="nav-item" data-view="export" role="tab" aria-selected="false" aria-label="匯出報告" aria-controls="altView">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 18v-6M9 15l3 3 3-3"/></svg>
+        <span>報告</span>
+      </button>
+    </div>
+    <div class="rail-foot"><span class="dot"></span>系統運行中<br>更新週期 5 分鐘</div>
+  </nav>
+
+  <!-- ============ MAIN ============ -->
+  <div class="main">
+    <!-- Top bar -->
+    <header class="topbar">
+      <div class="crumb">
+        <h1 id="pageTitle">總覽儀表板</h1>
+        <div class="update-line">最後更新 <span class="mono" id="lastUpdate">--:--:--</span> · NTUT 交通監控</div>
+      </div>
+      <div class="spacer"></div>
+      <div class="live-pill"><span class="live-dot" aria-hidden="true"></span>即時資料 LIVE</div>
+      <div class="clock mono" id="clock" aria-label="目前時間">--:--:--</div>
+      <button class="btn" id="refreshBtn" aria-label="立即更新資料">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v5h-5"/></svg>
+        立即更新
+      </button>
+      <button class="btn primary" id="optBtn" aria-label="啟動號誌優化">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m13 2-9 12h7l-1 8 9-12h-7z"/></svg>
+        啟動優化
+      </button>
+    </header>
+
+    <!-- Bento grid -->
+    <div class="bento" id="bento">
+
+      <!-- KPI strip (also the overview tabpanel anchor; overview spans every [data-overview] section) -->
+      <section class="kpi-strip" data-overview id="overviewPanel" role="tabpanel" aria-label="總覽儀表板" tabindex="0">
+        <div class="kpi" style="--kc:var(--cyan)">
+          <div class="accent-bar"></div>
+          <div class="k-top"><span class="k-label">監控路段</span>
+            <span class="k-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19 9 5M20 19 15 5" stroke-linecap="round"/></svg></span></div>
+          <div><span class="k-num tnum">64</span><span class="k-unit">條</span></div>
+          <div class="k-bar"><i style="width:100%"></i></div>
+          <div class="k-delta">全線上線</div>
+        </div>
+        <div class="kpi" style="--kc:var(--green)">
+          <div class="accent-bar"></div>
+          <div class="k-top"><span class="k-label">平均車速</span>
+            <span class="k-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 14 8 8" stroke-linecap="round"/><circle cx="12" cy="14" r="1.5" fill="currentColor"/><path d="M5 18a8 8 0 0 1 14 0" stroke-linecap="round"/></svg></span></div>
+          <div><span class="k-num tnum">41</span><span class="k-unit">km/h</span></div>
+          <div class="k-bar"><i style="width:68%"></i></div>
+          <div class="k-delta up">▲ 3.2 vs 上週期</div>
+        </div>
+        <div class="kpi" style="--kc:var(--blue2)">
+          <div class="accent-bar"></div>
+          <div class="k-top"><span class="k-label">總車流量</span>
+            <span class="k-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="11" width="6" height="6" rx="1.5"/><rect x="13" y="7" width="8" height="4" rx="1.5"/><path d="M9 14h4M13 9H9" stroke-linecap="round"/></svg></span></div>
+          <div><span class="k-num tnum">1,860</span><span class="k-unit">輛</span></div>
+          <div class="k-bar"><i style="width:74%"></i></div>
+          <div class="k-delta up">▲ 6.1% 尖峰時段</div>
+        </div>
+        <div class="kpi" style="--kc:var(--red)">
+          <div class="accent-bar"></div>
+          <div class="k-top"><span class="k-label">壅塞路段</span>
+            <span class="k-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 9v4M12 16h.01" stroke-linecap="round"/><path d="M10.3 3.3 2 18a2 2 0 0 0 1.7 3h16.6A2 2 0 0 0 22 18L13.7 3.3a2 2 0 0 0-3.4 0z"/></svg></span></div>
+          <div><span class="k-num tnum">3</span><span class="k-unit">條</span></div>
+          <div class="k-bar"><i style="width:18%"></i></div>
+          <div class="k-delta down">▲ 1 較上週期（壅塞增加）</div>
+        </div>
+        <div class="kpi" style="--kc:var(--green)">
+          <div class="accent-bar"></div>
+          <div class="k-top"><span class="k-label">暢通路段</span>
+            <span class="k-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 6 9 17l-5-5" stroke-linecap="round" stroke-linejoin="round"/></svg></span></div>
+          <div><span class="k-num tnum">38</span><span class="k-unit">條</span></div>
+          <div class="k-bar"><i style="width:59%"></i></div>
+          <div class="k-delta up">59% 路網暢通</div>
+        </div>
+        <div class="kpi" style="--kc:var(--cyan)">
+          <div class="accent-bar"></div>
+          <div class="k-top"><span class="k-label">號誌優化</span>
+            <span class="k-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m13 2-9 12h7l-1 8 9-12h-7z" stroke-linejoin="round"/></svg></span></div>
+          <div><span class="k-num tnum">16</span><span class="k-unit">組</span></div>
+          <div class="k-bar"><i style="width:84%"></i></div>
+          <div class="k-delta up">已套用最佳策略</div>
+        </div>
+      </section>
+
+      <!-- MAP cell -->
+      <section class="cell map-cell" data-overview aria-label="即時車流地圖">
+        <div class="map-toolbar">
+          <div class="cell-hd" style="padding:0;gap:9px">
+            <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 20 3 17V4l6 3 6-3 6 3v13l-6-3-6 3z"/><path d="M9 7v13M15 4v13"/></svg></div>
+            <h3>即時車流地圖</h3>
+          </div>
+          <div class="spacer" style="flex:1"></div>
+          <div class="seg" role="tablist" aria-label="地圖模式">
+            <button data-mode="raw" class="active" role="tab" aria-selected="true" id="mapTab-raw" aria-controls="map"><span class="sw"></span>原始車流</button>
+            <button data-mode="pred" role="tab" aria-selected="false" id="mapTab-pred" aria-controls="map"><span class="sw"></span>預測車流</button>
+            <button data-mode="opt" role="tab" aria-selected="false" id="mapTab-opt" aria-controls="map"><span class="sw"></span>優化車流</button>
+          </div>
+        </div>
+        <div style="position:relative;flex:1;display:flex">
+          <div id="map" role="tabpanel" aria-label="即時車流地圖" aria-labelledby="mapTab-raw"></div>
+          <div class="mode-badge" id="modeBadge">原始車流模式</div>
+          <div class="map-foot">
+            <div class="lt">車速 km/h　·　線寬＝車流量</div>
+            <div class="legend-grad"></div>
+            <div class="legend-scale"><span>0</span><span>10</span><span>20</span><span>30</span><span>40+</span></div>
+            <div class="legend-w"><span class="l1"></span><span class="l2"></span><span>低　→　高車流量</span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ROAD TABLE cell -->
+      <section class="cell table-cell" data-overview aria-label="路段監控列表">
+        <div class="cell-hd">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg></div>
+          <h3>路段監控</h3><span class="hint">8 / 64 條</span>
+        </div>
+        <div class="tbl-search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+          <input type="text" id="roadSearch" placeholder="搜尋路段名稱或代碼…" aria-label="搜尋路段">
+        </div>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr>
+              <th>路段名稱</th><th class="r">平均車速</th><th class="r">車流量</th><th>佔有率</th><th>狀態</th>
+            </tr></thead>
+            <tbody id="roadBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- SIGNALS cell -->
+      <section class="cell sig-cell" data-overview aria-label="號誌控制列表">
+        <div class="cell-hd">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="20" rx="3"/><circle cx="12" cy="7" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="12" cy="17" r="1.4"/></svg></div>
+          <h3>號誌控制</h3><span class="hint">4 路口即時</span>
+        </div>
+        <div class="sig-list" id="sigList"></div>
+      </section>
+
+      <!-- SIGNAL DETAIL cell -->
+      <section class="cell sigdet-cell" data-overview aria-label="號誌路口詳情">
+        <div class="cell-hd">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>
+          <h3>路口詳情</h3><span class="hint" id="sdHint">已優化</span>
+        </div>
+        <div class="sd-body">
+          <div>
+            <div class="sd-name" id="sdName">—</div>
+            <div class="sd-id mono" id="sdId">—</div>
+          </div>
+          <div class="sd-big">
+            <div class="sd-ring">
+              <svg width="96" height="96" viewBox="0 0 96 96">
+                <circle cx="48" cy="48" r="42" fill="none" stroke="rgba(120,160,240,0.14)" stroke-width="7"/>
+                <circle id="sdRing" cx="48" cy="48" r="42" fill="none" stroke="#22c55e" stroke-width="7" stroke-linecap="round"
+                  stroke-dasharray="263.9" stroke-dashoffset="0" style="transition:stroke-dashoffset .4s,stroke .4s;filter:drop-shadow(0 0 6px #22c55e)"/>
+              </svg>
+              <div class="ring-num"><b id="sdCount" class="tnum">--</b><span id="sdPhaseLbl">綠燈</span></div>
+            </div>
+            <div class="sd-meta">
+              <div class="row"><span>週期長度</span><b class="mono" id="sdCycle">90s</b></div>
+              <div class="row"><span>目前相位</span><b id="sdPhase">綠燈</b></div>
+              <div class="row"><span>相位數</span><b id="sdPhaseN">3</b></div>
+              <div class="row"><span>狀態</span><b id="sdStatus" style="color:#a5f3fc">已優化</b></div>
+            </div>
+          </div>
+          <div class="sd-phases">
+            <h4>相位時序分配 (PHASE TIMELINE)</h4>
+            <div class="phasebar" id="sdBar"></div>
+            <div class="phase-legend">
+              <span><i style="background:var(--green)"></i>綠燈</span>
+              <span><i style="background:var(--amber)"></i>黃燈</span>
+              <span><i style="background:var(--red)"></i>紅燈</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- AI cell -->
+      <section class="cell ai-cell" data-overview aria-label="AI 助理">
+        <div class="ai-hd">
+          <div class="ai-av" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="6" width="16" height="12" rx="3"/><path d="M12 6V3"/><circle cx="9" cy="12" r="1.1" fill="currentColor"/><circle cx="15" cy="12" r="1.1" fill="currentColor"/></svg></div>
+          <div class="t"><b>AI 助理</b><small>交通數據智慧分析</small></div>
+          <span class="ai-tag mono">gemma-4</span>
+        </div>
+        <div class="ai-msgs" id="aiMsgs">
+          <div class="msg bot">您好！我是 TrafficVision AI 助理。請問有什麼關於目前交通數據或號誌控制的問題？</div>
+          <div class="msg user">忠孝東路為什麼這麼塞？</div>
+          <div class="msg bot">忠孝東路（復興–建國）目前 <b>平均車速 9 km/h</b>、佔有率 72%，屬尖峰壅塞。建議延長該方向綠燈 8 秒。</div>
+        </div>
+        <div class="ai-chips">
+          <button class="chip">壅塞原因分析</button>
+          <button class="chip">號誌優化建議</button>
+          <button class="chip">預測未來1小時</button>
+        </div>
+        <div class="ai-input">
+          <input type="text" id="aiInput" placeholder="輸入問題…" aria-label="輸入問題給 AI 助理">
+          <button class="ai-send" aria-label="送出訊息"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2 15 22l-4-9-9-4z"/></svg></button>
+        </div>
+      </section>
+
+      <!-- TREND row -->
+      <section class="trend-row" data-overview aria-label="趨勢指標">
+        <div class="trend">
+          <div class="t-top"><span class="t-label">路網平均車速</span><span class="t-delta up">▲ 8%</span></div>
+          <div class="t-val tnum">41<small>km/h</small></div>
+          <svg class="spark" viewBox="0 0 120 38" preserveAspectRatio="none" data-spark="green" data-pts="22,26,24,29,33,30,28,35,38,41"></svg>
+        </div>
+        <div class="trend">
+          <div class="t-top"><span class="t-label">15 分鐘車流</span><span class="t-delta up">▲ 6%</span></div>
+          <div class="t-val tnum">1,860<small>輛</small></div>
+          <svg class="spark" viewBox="0 0 120 38" preserveAspectRatio="none" data-spark="cyan" data-pts="1200,1320,1410,1380,1500,1620,1550,1700,1790,1860"></svg>
+        </div>
+        <div class="trend">
+          <div class="t-top"><span class="t-label">路網平均佔有率</span><span class="t-delta down">▼ 4%</span></div>
+          <div class="t-val tnum">36<small>%</small></div>
+          <svg class="spark" viewBox="0 0 120 38" preserveAspectRatio="none" data-spark="amber" data-pts="48,46,44,45,42,40,39,38,37,36"></svg>
+        </div>
+        <div class="trend">
+          <div class="t-top"><span class="t-label">優化收益（延滯減少）</span><span class="t-delta up">▲ 12% 較上週期</span></div>
+          <div class="t-val tnum">−18<small>% 延滯</small></div>
+          <svg class="spark" viewBox="0 0 120 38" preserveAspectRatio="none" data-spark="blue" data-pts="4,6,7,9,8,11,13,12,15,18"></svg>
+        </div>
+      </section>
+
+      <!-- ALT VIEW -->
+      <section class="alt-view" id="altView" role="tabpanel" aria-label="子頁面" tabindex="0">
+        <div class="ic-big" id="altIc"></div>
+        <h2 id="altTitle">路段監控</h2>
+        <p id="altDesc">此區塊在完整系統中提供進階檢視。總覽儀表板為本設計稿的主要展示畫面，包含即時地圖、路段表、號誌控制與 AI 助理。</p>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* respect users who prefer reduced motion (also gates JS-driven animation, not just CSS) */
+const reduceMotionMQ = window.matchMedia('(prefers-reduced-motion: reduce)');
+const prefersReducedMotion = () => reduceMotionMQ.matches;
+const ROADS =[{"name":"建國南路 忠孝–仁愛","id":"ZJHKR40","spd":12,"vol":420,"occ":61,"status":"congested","coords":[[25.04183,121.53782],[25.04003,121.53779],[25.03803,121.53776],[25.03683,121.53774]]},{"name":"建國北路 長安–忠孝","id":"ZK7KP40","spd":28,"vol":310,"occ":34,"status":"normal","coords":[[25.04983,121.53782],[25.04683,121.53782],[25.04383,121.53781],[25.04183,121.53782]]},{"name":"市民大道 建國–金山","id":"ZK9KC60","spd":47,"vol":280,"occ":18,"status":"free","coords":[[25.04483,121.53782],[25.04505,121.5332],[25.04528,121.5287],[25.04548,121.52483]]},{"name":"八德路 建國–新生","id":"ZK5JW60","spd":33,"vol":240,"occ":26,"status":"normal","coords":[[25.04783,121.53782],[25.0478,121.5339],[25.04776,121.52983]]},{"name":"忠孝東路 復興–建國","id":"ZJHKR20","spd":9,"vol":510,"occ":72,"status":"congested","coords":[[25.04183,121.54383],[25.04182,121.54083],[25.04181,121.53783]]},{"name":"忠孝東路 金山–中山","id":"ZJSJD40","spd":41,"vol":300,"occ":22,"status":"free","coords":[[25.04183,121.52483],[25.04183,121.5213],[25.04182,121.51783]]},{"name":"新生南路 長安–忠孝","id":"XS7NS40","spd":24,"vol":360,"occ":39,"status":"normal","coords":[[25.04983,121.5295],[25.04683,121.52935],[25.04383,121.52922],[25.04183,121.5292]]},{"name":"松江路 長安–忠孝","id":"SJ7LT40","spd":51,"vol":210,"occ":14,"status":"free","coords":[[25.04983,121.543],[25.04683,121.543],[25.04383,121.543],[25.04183,121.543]]}];
+const SIGNALS = [{"name":"八德路一段/忠孝東路二段","id":"655375241","cycle":90,"status":"optimized","phases":[{"c":"green","dur":86},{"c":"amber","dur":3},{"c":"red","dur":1}]},{"name":"忠孝東路二段/臨沂街","id":"cluster_2038168688_655375573","cycle":90,"status":"normal","phases":[{"c":"green","dur":37},{"c":"amber","dur":5},{"c":"red","dur":3},{"c":"green","dur":37},{"c":"amber","dur":5},{"c":"red","dur":3}]},{"name":"市民大道三段/新生北路一段","id":"cluster655375336","cycle":190,"status":"congested","phases":[{"c":"green","dur":120},{"c":"amber","dur":4},{"c":"red","dur":4},{"c":"green","dur":58},{"c":"amber","dur":4}]},{"name":"八德路二段/建國南路一段","id":"cluster_623980090","cycle":234,"status":"optimized","phases":[{"c":"green","dur":85},{"c":"amber","dur":3},{"c":"red","dur":2},{"c":"green","dur":60},{"c":"amber","dur":3}]}];
+
+/* ---------- color helpers ---------- */
+function hx(h){h=h.replace('#','');return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)];}
+function lerp(a,b,t){const A=hx(a),B=hx(b);return 'rgb('+Math.round(A[0]+(B[0]-A[0])*t)+','+Math.round(A[1]+(B[1]-A[1])*t)+','+Math.round(A[2]+(B[2]-A[2])*t)+')';}
+function spdColor(s){
+  if(s<=0) return '#ef4444';
+  if(s<=10) return lerp('#ef4444','#f97316',s/10);
+  if(s<=20) return lerp('#f97316','#f59e0b',(s-10)/10);
+  if(s<=30) return lerp('#f59e0b','#84cc16',(s-20)/10);
+  if(s<=40) return lerp('#84cc16','#22c55e',(s-30)/10);
+  return '#22c55e';
+}
+function widthFor(v){return Math.max(3, Math.min(11, 3 + v/65));}
+
+/* mode tinting of speeds/vols: raw=base, pred=amber shift slower, opt=green faster */
+function modeAdjust(r, mode){
+  if(mode==='pred') return {spd:Math.max(2, Math.round(r.spd*0.92)), vol:Math.round(r.vol*0.42)};
+  if(mode==='opt')  return {spd:Math.round(r.spd*1.18), vol:Math.round(r.vol*0.42)};
+  return {spd:r.spd, vol:r.vol};
+}
+
+/* ---------- Leaflet map ---------- */
+let map, layerGroup;
+function initMap(){
+  map = L.map('map',{zoomControl:true, attributionControl:true}).setView([25.0448,121.532],15);
+  // Self-contained basemap: no third-party tile server (allowlist = Google Fonts + Leaflet only).
+  // A neon graticule grid is drawn on the map pane via CSS instead of fetching CARTO/OSM raster tiles,
+  // so the page stays fully offline-capable. Road polylines + NTUT marker supply the spatial context.
+  map.attributionControl.addAttribution('TrafficVision · 自含式底圖（無外部圖磚）');
+  const ntut = L.divIcon({className:'', html:'<div class="ntut-marker"><div class="lbl">北科大</div><div class="pin"></div></div>', iconSize:[60,40], iconAnchor:[30,40]});
+  L.marker([25.0422,121.5355],{icon:ntut, title:'北科大'}).addTo(map);
+  layerGroup = L.layerGroup().addTo(map);
+  drawRoads('raw');
+}
+function drawRoads(mode){
+  if(!layerGroup) return;
+  layerGroup.clearLayers();
+  ROADS.forEach(r=>{
+    const a = modeAdjust(r, mode);
+    const col = spdColor(a.spd);
+    const w = widthFor(a.vol);
+    // glow underlay
+    L.polyline(r.coords,{color:col, weight:w+7, opacity:0.16, lineCap:'round', lineJoin:'round'}).addTo(layerGroup);
+    // bright line
+    const line = L.polyline(r.coords,{color:col, weight:w, opacity:0.95, lineCap:'round', lineJoin:'round'}).addTo(layerGroup);
+    const sm = a.spd<=0?'無資料':a.spd<=15?'壅塞':a.spd<=30?'普通':'暢通';
+    line.bindPopup(
+      '<div class="pop-name">'+r.name+'</div>'+
+      '<div class="pop-id mono">'+r.id+' · '+({raw:'原始',pred:'預測',opt:'優化'}[mode])+'</div>'+
+      '<div class="pop-grid">'+
+        '<span class="l">平均車速</span><b style="color:'+col+'">'+a.spd+' km/h</b>'+
+        '<span class="l">車流量</span><b>'+a.vol+' 輛</b>'+
+        '<span class="l">佔有率</span><b>'+r.occ+'%</b>'+
+        '<span class="l">研判</span><b>'+sm+'</b>'+
+      '</div>'
+    );
+  });
+}
+
+/* ---------- mode tabs ---------- */
+const modeLbl = {raw:'原始車流模式', pred:'預測車流模式', opt:'優化車流模式'};
+document.querySelectorAll('.seg button').forEach(b=>{
+  b.addEventListener('click',()=>{
+    document.querySelectorAll('.seg button').forEach(x=>{x.classList.remove('active');x.setAttribute('aria-selected','false');});
+    b.classList.add('active'); b.setAttribute('aria-selected','true');
+    const m = b.dataset.mode;
+    drawRoads(m);
+    document.getElementById('modeBadge').textContent = modeLbl[m];
+    const panel=document.getElementById('map');
+    if(panel) panel.setAttribute('aria-labelledby', b.id);
+  });
+});
+
+/* ---------- road table ---------- */
+const STAT_LBL={free:'暢通',normal:'普通',congested:'壅塞'};
+function occColor(o){return o>=60?'var(--red)':o>=30?'var(--amber)':'var(--green)';}
+function renderTable(filter=''){
+  const body=document.getElementById('roadBody');
+  const f=filter.trim().toLowerCase();
+  body.innerHTML='';
+  ROADS.filter(r=>!f||r.name.toLowerCase().includes(f)||r.id.toLowerCase().includes(f)).forEach(r=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML=
+      '<td><div class="rd-name">'+r.name+'</div><div class="rd-id mono">'+r.id+'</div></td>'+
+      '<td class="r spd-cell" style="color:'+spdColor(r.spd)+'">'+r.spd+'</td>'+
+      '<td class="r">'+r.vol+'</td>'+
+      '<td><span class="occ-bar"><i style="width:'+r.occ+'%;background:'+occColor(r.occ)+'"></i></span>'+r.occ+'%</td>'+
+      '<td><span class="pill '+r.status+'"><span class="pd"></span>'+STAT_LBL[r.status]+'</span></td>';
+    tr.addEventListener('click',()=>{ map.setView(r.coords[0],16,{animate:!prefersReducedMotion()}); });
+    body.appendChild(tr);
+  });
+}
+document.getElementById('roadSearch').addEventListener('input',e=>renderTable(e.target.value));
+
+/* ---------- signals ---------- */
+const SIG_STAT={optimized:{lbl:'已優化',cls:'optimized'},normal:{lbl:'正常',cls:'normal'},congested:{lbl:'壅塞中',cls:'congestedSig'}};
+// build runtime state: each signal cycles through phases
+const sigState = SIGNALS.map(s=>{
+  const total=s.phases.reduce((a,p)=>a+p.dur,0);
+  return {ref:s, total, t:Math.floor(Math.random()*total)};
+});
+let selectedSig=0;
+
+function curPhase(st){
+  let acc=0;
+  for(let i=0;i<st.ref.phases.length;i++){
+    acc+=st.ref.phases[i].dur;
+    if(st.t<acc) return {idx:i, phase:st.ref.phases[i], remain:acc-st.t};
+  }
+  const last=st.ref.phases.length-1;
+  return {idx:last, phase:st.ref.phases[last], remain:1};
+}
+const PH_LBL={green:'綠燈',amber:'黃燈',red:'紅燈'};
+const PH_CLS={green:'green',amber:'amber',red:'red'};
+
+// Build the DOM once and keep live-node references; tick() then mutates text/classes
+// in place (no innerHTML rebuild) so focus on a .jx is preserved and the GC isn't thrashed.
+let sigNodes=[];
+function renderSigList(){
+  const list=document.getElementById('sigList');
+  list.innerHTML='';
+  sigNodes=[];
+  sigState.forEach((st,i)=>{
+    const cp=curPhase(st);
+    const active=cp.phase.c;
+    const stt=SIG_STAT[st.ref.status];
+    const el=document.createElement('div');
+    el.className='jx'+(i===selectedSig?' sel':'');
+    el.setAttribute('role','button');
+    el.setAttribute('tabindex','0');
+    el.setAttribute('aria-label', st.ref.name+' 路口');
+    el.innerHTML=
+      '<div class="minitl">'+
+        '<div class="tl-dot red'+(active==='red'?' on red':'')+'"></div>'+
+        '<div class="tl-dot amber'+(active==='amber'?' on amber':'')+'"></div>'+
+        '<div class="tl-dot green'+(active==='green'?' on green':'')+'"></div>'+
+      '</div>'+
+      '<div class="jx-info"><div class="jx-name">'+st.ref.name+'</div><div class="jx-id mono">'+st.ref.id+'</div></div>'+
+      '<div class="jx-right">'+
+        '<div class="jx-count '+PH_CLS[active]+' tnum">'+cp.remain+'s</div>'+
+        '<span class="pill '+stt.cls+'"><span class="pd"></span>'+stt.lbl+'</span>'+
+      '</div>';
+    el.addEventListener('click',()=>{selectedSig=i;renderSigList();renderSigDetail();});
+    el.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();selectedSig=i;renderSigList();renderSigDetail();}});
+    list.appendChild(el);
+    const dots=el.querySelectorAll('.minitl .tl-dot');
+    sigNodes.push({el, dotRed:dots[0], dotAmber:dots[1], dotGreen:dots[2], count:el.querySelector('.jx-count')});
+  });
+}
+// Per-second in-place update: only touches the countdown text + active dot/colour classes.
+function updateSigListLive(){
+  if(sigNodes.length!==sigState.length){ renderSigList(); return; }
+  sigState.forEach((st,i)=>{
+    const cp=curPhase(st);
+    const active=cp.phase.c;
+    const n=sigNodes[i];
+    n.dotRed.className   = 'tl-dot red'  +(active==='red'  ?' on red'  :'');
+    n.dotAmber.className = 'tl-dot amber'+(active==='amber'?' on amber':'');
+    n.dotGreen.className = 'tl-dot green'+(active==='green'?' on green':'');
+    n.count.className    = 'jx-count '+PH_CLS[active]+' tnum';
+    n.count.textContent  = cp.remain+'s';
+  });
+}
+function renderSigDetail(){
+  const st=sigState[selectedSig];
+  const cp=curPhase(st);
+  const s=st.ref;
+  document.getElementById('sdName').textContent=s.name;
+  document.getElementById('sdId').textContent=s.id;
+  document.getElementById('sdCycle').textContent=s.cycle+'s';
+  document.getElementById('sdPhaseN').textContent=s.phases.length;
+  const stt=SIG_STAT[s.status];
+  const stEl=document.getElementById('sdStatus');
+  stEl.textContent=stt.lbl;
+  stEl.style.color = s.status==='optimized'?'#a5f3fc':s.status==='normal'?'#fcd34d':'#fca5a5';
+  document.getElementById('sdHint').textContent=stt.lbl;
+  // build phase bar
+  const bar=document.getElementById('sdBar');
+  bar.innerHTML='';
+  s.phases.forEach((p,i)=>{
+    const d=document.createElement('div');
+    d.className = p.c==='green'?'pg':p.c==='amber'?'pa':'pr';
+    d.style.flex=p.dur;
+    d.textContent = p.dur>=8? p.dur+'s':'';
+    if(i===cp.idx) d.style.boxShadow='inset 0 0 0 2px rgba(255,255,255,0.7)';
+    bar.appendChild(d);
+  });
+  updateSigDetailLive();
+}
+function updateSigDetailLive(){
+  const st=sigState[selectedSig];
+  const cp=curPhase(st);
+  const active=cp.phase.c;
+  const col = active==='green'?'#22c55e':active==='amber'?'#f59e0b':'#ef4444';
+  document.getElementById('sdCount').textContent=cp.remain;
+  document.getElementById('sdCount').style.color=col;
+  document.getElementById('sdPhaseLbl').textContent=PH_LBL[active];
+  document.getElementById('sdPhase').textContent=PH_LBL[active];
+  // ring: fraction of current phase remaining
+  const ring=document.getElementById('sdRing');
+  const C=2*Math.PI*42;
+  const frac=cp.remain/cp.phase.dur;
+  ring.style.strokeDashoffset = C*(1-frac);
+  ring.style.stroke=col;
+  ring.style.filter='drop-shadow(0 0 6px '+col+')';
+}
+
+/* ---------- sparklines ---------- */
+function drawSparks(){
+  const colMap={green:'#22c55e',cyan:'#22d3ee',amber:'#f59e0b',blue:'#60a5fa'};
+  document.querySelectorAll('svg.spark').forEach(svg=>{
+    const pts=svg.dataset.pts.split(',').map(Number);
+    const c=colMap[svg.dataset.spark]||'#22d3ee';
+    const min=Math.min(...pts),max=Math.max(...pts),rng=(max-min)||1;
+    const W=120,H=38,pad=4;
+    const step=(W)/(pts.length-1);
+    const xy=pts.map((v,i)=>[i*step,(H-pad)-((v-min)/rng)*(H-pad*2)]);
+    const d=xy.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ');
+    const area=d+' L'+W+' '+H+' L0 '+H+' Z';
+    const gid='g'+Math.random().toString(36).slice(2,7);
+    svg.innerHTML=
+      '<defs><linearGradient id="'+gid+'" x1="0" y1="0" x2="0" y2="1">'+
+        '<stop offset="0%" stop-color="'+c+'" stop-opacity="0.32"/>'+
+        '<stop offset="100%" stop-color="'+c+'" stop-opacity="0"/></linearGradient></defs>'+
+      '<path d="'+area+'" fill="url(#'+gid+')"/>'+
+      '<path d="'+d+'" fill="none" stroke="'+c+'" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="filter:drop-shadow(0 0 4px '+c+'88)"/>'+
+      '<circle cx="'+xy[xy.length-1][0].toFixed(1)+'" cy="'+xy[xy.length-1][1].toFixed(1)+'" r="2.6" fill="'+c+'" style="filter:drop-shadow(0 0 5px '+c+')"/>';
+  });
+}
+
+/* ---------- clock + tick ---------- */
+function two(n){return String(n).padStart(2,'0');}
+function tick(){
+  const d=new Date();
+  const t=two(d.getHours())+':'+two(d.getMinutes())+':'+two(d.getSeconds());
+  document.getElementById('clock').textContent=t;
+  // advance signal timers
+  sigState.forEach(st=>{ st.t=(st.t+1)%st.total; });
+  updateSigListLive();   // in-place text/class update — no innerHTML rebuild, preserves focus
+  updateSigDetailLive();
+}
+function setLastUpdate(){
+  const d=new Date();
+  document.getElementById('lastUpdate').textContent=two(d.getHours())+':'+two(d.getMinutes())+':'+two(d.getSeconds());
+}
+
+/* ---------- nav / views ---------- */
+const ALT={
+  roads:{title:'路段監控',desc:'完整路段監控提供 64 條路段的詳細時序、佔有率熱力圖與歷史回放。本設計稿主視圖（總覽）已內含即時路段表。',ic:'<path d="M4 19 9 5M20 19 15 5" stroke-linecap="round"/>'},
+  signals:{title:'號誌控制',desc:'號誌控制中心可逐路口檢視相位、手動覆寫綠燈秒數並推送至 SUMO。總覽已提供四路口即時相位倒數。',ic:'<rect x="8" y="2" width="8" height="20" rx="3"/><circle cx="12" cy="7" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="12" cy="17" r="1.4"/>'},
+  forecast:{title:'流量預測',desc:'GRU 模型輸出未來 5 分鐘（15 步）逐路段車流與車速預測，並比較原始 / 預測 / 優化三模式。',ic:'<path d="M3 17 9 11l4 4 8-8" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 7h5v5"/>'},
+  ai:{title:'AI 助理',desc:'gemma-4 微調模型針對即時交通數據提供壅塞歸因與號誌調整建議。總覽右下已嵌入對話面板。',ic:'<rect x="4" y="6" width="16" height="12" rx="3"/><path d="M12 6V3"/>'},
+  export:{title:'匯出報告',desc:'將路段指標、號誌策略與優化收益匯出為 PDF / CSV 報表，供交通工程團隊存查。',ic:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/>'}
+};
+function showView(v){
+  document.querySelectorAll('.nav-item').forEach(n=>{
+    const on=n.dataset.view===v;
+    n.classList.toggle('active',on);
+    n.setAttribute('aria-selected',on?'true':'false');
+  });
+  const overview = v==='overview';
+  document.querySelectorAll('[data-overview]').forEach(el=>{el.style.display = overview?'':'none';});
+  const alt=document.getElementById('altView');
+  if(overview){
+    alt.classList.remove('show');
+    document.getElementById('pageTitle').textContent='總覽儀表板';
+    setTimeout(()=>map&&map.invalidateSize(),60);
+  }else{
+    alt.classList.add('show');
+    const a=ALT[v];
+    document.getElementById('pageTitle').textContent=a.title;
+    document.getElementById('altTitle').textContent=a.title;
+    document.getElementById('altDesc').textContent=a.desc;
+    document.getElementById('altIc').innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">'+a.ic+'</svg>';
+    alt.setAttribute('aria-label', a.title);  // keep tabpanel label in sync with active tab
+  }
+}
+document.querySelectorAll('.nav-item').forEach(n=>n.addEventListener('click',()=>showView(n.dataset.view)));
+
+/* refresh + opt buttons */
+document.getElementById('refreshBtn').addEventListener('click',()=>{
+  setLastUpdate();
+  if(prefersReducedMotion()) return;        // skip the spin for motion-sensitive users
+  const btn=document.getElementById('refreshBtn');
+  const svg=btn.querySelector('svg');
+  svg.style.transition='transform .6s'; svg.style.transform='rotate(360deg)';
+  setTimeout(()=>{svg.style.transition='none';svg.style.transform='rotate(0deg)';},620);
+});
+document.getElementById('optBtn').addEventListener('click',()=>{
+  const m='opt';
+  document.querySelectorAll('.seg button').forEach(x=>{const on=x.dataset.mode===m;x.classList.toggle('active',on);x.setAttribute('aria-selected',on?'true':'false');});
+  drawRoads(m);
+  document.getElementById('modeBadge').textContent=modeLbl[m];
+});
+
+/* AI chips + input */
+document.querySelectorAll('.chip').forEach(c=>c.addEventListener('click',()=>{
+  document.getElementById('aiInput').value=c.textContent;
+  document.getElementById('aiInput').focus();
+}));
+
+/* ---------- boot ---------- */
+window.addEventListener('load',()=>{
+  initMap();
+  renderTable();
+  renderSigList();
+  renderSigDetail();
+  drawSparks();
+  setLastUpdate();
+  tick();
+  setInterval(tick,1000);
+});
+</script>
+</body>
+</html>

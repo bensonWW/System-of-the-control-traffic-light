@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TrafficVision · 重新設計樣稿比較</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#020617; --surf:#0a0f1e; --surf2:#0f1629; --border:rgba(120,160,240,0.18);
+    --txt:#f1f5f9; --txt2:#94a3b8; --muted:#7488ab; --cyan:#22d3ee; --blue:#3b82f6; --blue2:#60a5fa; --green:#22c55e;
+    --ff:'Inter',system-ui,sans-serif; --body:'Noto Sans TC','PingFang TC',sans-serif; --mono:'JetBrains Mono',monospace;
+    --glass:rgba(15,22,41,0.55);
+  }
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{background:
+      radial-gradient(900px 500px at 18% -10%, rgba(34,211,238,0.10), transparent 60%),
+      radial-gradient(900px 500px at 100% 0%, rgba(59,130,246,0.10), transparent 55%),
+      var(--bg);
+    color:var(--txt);font-family:var(--body);-webkit-font-smoothing:antialiased;display:flex;flex-direction:column;overflow:hidden}
+  header{display:flex;align-items:center;gap:16px;padding:14px 22px;border-bottom:1px solid var(--border);
+    background:var(--glass);backdrop-filter:blur(18px) saturate(140%);-webkit-backdrop-filter:blur(18px) saturate(140%);flex-shrink:0}
+  .logo{width:34px;height:34px;border-radius:9px;background:rgba(34,211,238,0.12);border:1px solid rgba(34,211,238,0.30);
+    display:flex;align-items:center;justify-content:center;box-shadow:0 0 16px rgba(34,211,238,0.22)}
+  .brand{font-family:var(--ff);font-size:15px;font-weight:700;letter-spacing:-0.02em}
+  .sub{font-size:11px;color:var(--muted);margin-top:1px}
+  .spacer{flex:1}
+  .hint{font-family:var(--mono);font-size:11px;color:var(--muted)}
+  .tabs{display:flex;gap:8px;padding:12px 22px;flex-shrink:0;flex-wrap:wrap}
+  .tab{display:flex;flex-direction:column;gap:3px;min-width:172px;text-align:left;cursor:pointer;
+    padding:9px 14px;border-radius:11px;border:1px solid var(--border);background:rgba(15,22,41,0.45);
+    color:var(--txt2);font-family:var(--body);transition:transform .18s,border-color .18s,color .18s,box-shadow .18s}
+  .tab:hover{border-color:rgba(34,211,238,0.45);color:var(--txt);transform:translateY(-1px)}
+  .tab:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+  .tab .k{font-family:var(--mono);font-size:10px;color:var(--muted)}
+  .tab .nm{font-size:13px;font-weight:600}
+  .tab .sc{font-family:var(--mono);font-size:10px;color:var(--muted)}
+  .tab[aria-selected="true"]{color:var(--txt);border-color:rgba(34,211,238,0.6);background:rgba(34,211,238,0.10);
+    box-shadow:0 0 0 1px rgba(34,211,238,0.35),0 0 20px rgba(34,211,238,0.18)}
+  main{flex:1;display:grid;grid-template-columns:1fr 322px;gap:14px;padding:0 22px 16px;min-height:0}
+  .stage{border-radius:14px;border:1px solid var(--border);overflow:hidden;background:#000;position:relative;
+    box-shadow:0 8px 32px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.05)}
+  .stage iframe{width:100%;height:100%;border:0;display:block}
+  .corner{position:absolute;width:16px;height:16px;border:1.5px solid rgba(34,211,238,0.5);pointer-events:none}
+  .corner.tl{top:8px;left:8px;border-right:0;border-bottom:0}
+  .corner.tr{top:8px;right:8px;border-left:0;border-bottom:0}
+  .corner.bl{bottom:8px;left:8px;border-right:0;border-top:0}
+  .corner.br{bottom:8px;right:8px;border-left:0;border-top:0}
+  aside{border-radius:14px;border:1px solid var(--border);padding:18px;overflow-y:auto;
+    background:var(--glass);backdrop-filter:blur(18px) saturate(140%);-webkit-backdrop-filter:blur(18px) saturate(140%)}
+  aside h2{font-family:var(--ff);font-size:16px;font-weight:700;letter-spacing:-0.01em;margin-bottom:4px}
+  aside .pitch{font-size:12.5px;line-height:1.7;color:var(--txt2);margin:10px 0 14px}
+  .scores{display:flex;gap:8px;margin-bottom:14px}
+  .chip{flex:1;border:1px solid var(--border);border-radius:9px;padding:8px 10px;background:rgba(15,22,41,0.5)}
+  .chip .lab{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em}
+  .chip .val{font-family:var(--ff);font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;margin-top:2px}
+  .feats{list-style:none;display:flex;flex-direction:column;gap:9px}
+  .feats li{font-size:12px;line-height:1.6;color:var(--txt2);padding-left:18px;position:relative}
+  .feats li::before{content:"";position:absolute;left:0;top:7px;width:7px;height:7px;border-radius:2px;
+    background:var(--cyan);box-shadow:0 0 8px rgba(34,211,238,0.6)}
+  .open{display:inline-flex;align-items:center;gap:7px;margin-top:16px;text-decoration:none;
+    font-family:var(--body);font-size:12px;font-weight:600;color:#04121b;background:var(--cyan);
+    border-radius:8px;padding:8px 14px;box-shadow:0 0 18px rgba(34,211,238,0.35);transition:transform .18s}
+  .open:hover{transform:translateY(-1px)}
+  .open:focus-visible{outline:2px solid #fff;outline-offset:2px}
+  @media (max-width:1080px){ main{grid-template-columns:1fr} aside{display:none} }
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#22d3ee" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 15.5 14.5"/></svg>
+  </div>
+  <div>
+    <div class="brand">TrafficVision · 重新設計樣稿比較</div>
+    <div class="sub">玻璃擬態 + 霓虹 HUD · 4 個方向 · 共用同一套資料與設計語言</div>
+  </div>
+  <div class="spacer"></div>
+  <div class="hint">按 1–4 切換 · 點「開新分頁」看完整版</div>
+</header>
+
+<div class="tabs" role="tablist" aria-label="重新設計樣稿">
+  <button class="tab" role="tab" aria-selected="true"  data-i="0" id="tab0"><span class="k">A</span><span class="nm">沉浸式指揮牆</span><span class="sc">design 8.5 · fit 9.0</span></button>
+  <button class="tab" role="tab" aria-selected="false" data-i="1" id="tab1"><span class="k">B</span><span class="nm">霓虹 Bento HUD</span><span class="sc">design 8.5 · fit 9.0</span></button>
+  <button class="tab" role="tab" aria-selected="false" data-i="2" id="tab2"><span class="k">C</span><span class="nm">全像座艙</span><span class="sc">design 8.5 · fit 9.5</span></button>
+  <button class="tab" role="tab" aria-selected="false" data-i="3" id="tab3"><span class="k">D</span><span class="nm">沉穩玻璃聚焦</span><span class="sc">design 8.0 · fit 9.0</span></button>
+</div>
+
+<main>
+  <div class="stage">
+    <iframe id="frame" title="樣稿預覽" src="variant-a-mission-wall.html"></iframe>
+    <span class="corner tl"></span><span class="corner tr"></span><span class="corner bl"></span><span class="corner br"></span>
+  </div>
+  <aside aria-live="polite">
+    <h2 id="v-title">A · 沉浸式指揮牆</h2>
+    <p class="pitch" id="v-pitch"></p>
+    <div class="scores">
+      <div class="chip"><div class="lab">Design</div><div class="val" id="v-d">8.5</div></div>
+      <div class="chip"><div class="lab">Aesthetic Fit</div><div class="val" id="v-f">9.0</div></div>
+    </div>
+    <ul class="feats" id="v-feats"></ul>
+    <a class="open" id="v-open" href="variant-a-mission-wall.html" target="_blank" rel="noopener">
+      開新分頁看完整版
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+    </a>
+  </aside>
+</main>
+
+<script>
+const V = [
+  { file:'variant-a-mission-wall.html', title:'A · 沉浸式指揮牆', d:'8.5', f:'9.0',
+    pitch:'把整個城市路網變成一面玻璃霓虹指揮牆——全幅地圖作為基底畫布，所有 HUD 面板懸浮其上。最沉浸、最像城市交通作戰中心大屏。',
+    feats:['全幅 Leaflet 地圖當底層畫布，路段依車速雙層發光著色','玻璃 HUD 浮層：72px 圖示導覽軌、頂部狀態列、左上 KPI 膠囊、右側號誌、底部可上滑路段抽屜','每秒時鐘 / LIVE 脈動 / 號誌相位倒數重新著色','三段式地圖模式（原始/預測/優化）連動重繪'] },
+  { file:'variant-b-bento-hud.html', title:'B · 霓虹 Bento HUD 網格', d:'8.5', f:'9.0',
+    pitch:'為指揮中心打造的霓虹 Bento 網格戰情儀表板，把地圖、KPI、號誌、AI 助理一屏盡覽。最完整、一眼掌握全局，也是最貼近現有多面板佈局的演進。',
+    feats:['12 欄 Bento 玻璃網格，單屏全覽，HUD 角括號 + 掃描線','大型地圖格 + 六枚 KPI 條 + 號誌列表/詳情/AI/趨勢格','號誌迷你紅黃綠燈僅亮當前相位、SVG 倒數環 + 相位條','內嵌 inline SVG 漸層 sparkline 趨勢格'] },
+  { file:'variant-c-cockpit.html', title:'C · 全像座艙', d:'8.5', f:'9.5',
+    pitch:'戰鬥機座艙式即時監控：左側遙測軌（六個 SVG 徑向儀表環）、中央地圖、右側號誌相位＋系統健康。最戲劇化、最適合簡報「哇」效果，美學契合度最高。',
+    feats:['三欄座艙佈局：左遙測軌 + 中央地圖 + 右作戰軌','六個 SVG 徑向儀表環顯示 KPI','全像 HUD 裝飾：面板四角括號 + 動畫掃描線 + LIVE 脈動','所有真實文字維持 ≥4.5:1 對比，輝光只是裝飾'] },
+  { file:'variant-d-glass-stack.html', title:'D · 沉穩玻璃聚焦', d:'8.0', f:'9.0',
+    pitch:'克制版高級玻璃：大焦點地圖 + 頂部精緻 KPI strip + 右側可滑出的細節抽屜。霓虹只點綴在即時/狀態元素，久看不累，是前三個重霓虹方案的沉穩對照組。',
+    feats:['大焦點地圖 + 頂部薄玻璃 KPI strip + 乾淨左導覽','右側 slide-in 細節抽屜顯示選定路段/路口','霓虹僅用於 LIVE / 狀態點綴，視覺更安靜','號誌每秒倒數動畫、相位條、AI 助理對話'] },
+];
+const frame=document.getElementById('frame');
+const tabs=[...document.querySelectorAll('.tab')];
+function show(i){
+  const v=V[i];
+  frame.src=v.file;
+  document.getElementById('v-title').textContent=v.title;
+  document.getElementById('v-pitch').textContent=v.pitch;
+  document.getElementById('v-d').textContent=v.d;
+  document.getElementById('v-f').textContent=v.f;
+  document.getElementById('v-open').href=v.file;
+  const ul=document.getElementById('v-feats'); ul.innerHTML='';
+  v.feats.forEach(f=>{const li=document.createElement('li');li.textContent=f;ul.appendChild(li);});
+  tabs.forEach((t,k)=>t.setAttribute('aria-selected', k===i?'true':'false'));
+}
+tabs.forEach((t,i)=>{
+  t.addEventListener('click',()=>{show(i);t.focus();});
+  t.addEventListener('keydown',e=>{
+    if(e.key==='ArrowRight'||e.key==='ArrowDown'){e.preventDefault();const n=(i+1)%tabs.length;tabs[n].focus();show(n);}
+    if(e.key==='ArrowLeft'||e.key==='ArrowUp'){e.preventDefault();const n=(i-1+tabs.length)%tabs.length;tabs[n].focus();show(n);}
+  });
+});
+window.addEventListener('keydown',e=>{ if(e.key>='1'&&e.key<='4'){const i=+e.key-1;tabs[i].focus();show(i);} });
+show(0);
+</script>
+</body>
+</html>

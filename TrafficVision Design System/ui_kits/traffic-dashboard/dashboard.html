@@ -13,28 +13,608 @@
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
 <style>
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body, #root { height: 100%; width: 100%; }
-  body { background: #020617; color: #f1f5f9; font-family: 'Noto Sans TC', 'PingFang TC', sans-serif; -webkit-font-smoothing: antialiased; overflow: hidden; }
-  ::-webkit-scrollbar { width: 5px; }
-  ::-webkit-scrollbar-track { background: #0a0f1e; }
-  ::-webkit-scrollbar-thumb { background: rgba(99,130,200,0.30); border-radius: 3px; }
-  button { cursor: pointer; font-family: inherit; }
-  input  { font-family: inherit; }
+/* ============================================================
+   TrafficVision — Variant D "Glass Stack Focus" (沉穩玻璃聚焦)
+   Restrained premium glassmorphism on a deep-navy OLED base.
+   Neon is used ONLY as small accents on live/status elements.
+   Class-based, React-drop-in stylesheet (no  wrapper).
+   ============================================================ */
 
-  /* ── Leaflet overrides (v2) ── */
-  .leaflet-container { background: #060c1a !important; }
-  .leaflet-control-attribution { background: rgba(2,6,23,0.85) !important; color: rgba(99,130,200,0.35) !important; font-size: 9px !important; }
-  .leaflet-control-attribution a { color: rgba(99,130,200,0.50) !important; }
-  .leaflet-control-zoom a { background: #0f1629 !important; color: #94a3b8 !important; border-color: rgba(99,130,200,0.25) !important; }
-  .leaflet-control-zoom a:hover { background: #162036 !important; color: #f1f5f9 !important; }
-  .leaflet-popup-content-wrapper { background: #0f1629 !important; border: 1px solid rgba(99,130,200,0.25) !important; border-radius: 10px !important; box-shadow: 0 0 0 1px rgba(99,130,200,0.25), 0 6px 24px rgba(0,0,0,0.7) !important; color: #f1f5f9 !important; padding: 0 !important; }
-  .leaflet-popup-content { margin: 0 !important; }
-  .leaflet-popup-tip-container { display: none; }
-  .leaflet-popup-close-button { color: #4e6080 !important; top: 8px !important; right: 8px !important; font-size: 16px !important; }
+/* ============ TOKENS ============ */
+:root{
+  --bg:#020617; --bg-deep:#060c1a; --surf:#0a0f1e; --surf2:#0f1629; --elev:#162036;
+  --txt:#f1f5f9; --txt2:#94a3b8; --muted:#8595b8;
+  --cyan:#22d3ee; --blue:#3b82f6; --blue2:#60a5fa; --green:#22c55e; --amber:#f59e0b; --red:#ef4444; --magenta:#d946ef;
+  /* status aliases (free=暢通 / normal=普通 / cong=壅塞) */
+  --free:#22c55e; --normal:#f59e0b; --cong:#ef4444;
+  /* glass recipe */
+  --glass:rgba(15,22,41,0.55); --glass-float:rgba(8,13,28,0.62);
+  --glass-bd:rgba(120,160,240,0.18);
+  --glass-sh:0 8px 32px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.06);
+  --r-panel:15px; --r-ctrl:10px;
+  --accent:var(--blue2); --accent-rgb:96,165,250;
+}
 
-  @keyframes bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
-  @keyframes spin { to { transform: rotate(360deg); } }
+/* ============ BASE / RESET ============ */
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:'Inter','Noto Sans TC',system-ui,sans-serif;
+  background:var(--bg); color:var(--txt);
+  font-size:14px; line-height:1.5; overflow:hidden;
+  -webkit-font-smoothing:antialiased;
+}
+.tnum{font-variant-numeric:tabular-nums}
+.mono{font-family:'JetBrains Mono',monospace}
+/* a11y-only label, kept off-screen but readable to AT */
+.visually-hidden{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+
+/* ============ AMBIENT BACKDROP GLOW ============ */
+/* fixed radial wash behind everything; pure decoration, no pointer events */
+.bg-glow{
+  position:fixed; inset:0; z-index:0; pointer-events:none;
+  background:
+    radial-gradient(900px 600px at 78% -8%, rgba(34,211,238,0.10), transparent 60%),
+    radial-gradient(800px 700px at 12% 110%, rgba(59,130,246,0.12), transparent 60%),
+    radial-gradient(600px 500px at 95% 95%, rgba(217,70,239,0.06), transparent 60%);
+}
+/* faint scanline overlay (above content, below modals) */
+.scanlines{
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:30; opacity:.35;
+  background:repeating-linear-gradient(0deg, transparent 0, transparent 2px, rgba(120,160,240,0.018) 3px, transparent 4px);
+}
+
+/* app shell: 248px sidebar + fluid main */
+.app{position:relative; z-index:1; display:grid; grid-template-columns:248px 1fr; height:100vh; width:100vw}
+
+/* ============ SCROLLBARS ============ */
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:rgba(120,160,240,0.22);border-radius:8px;border:2px solid transparent;background-clip:padding-box}
+::-webkit-scrollbar-thumb:hover{background:rgba(120,160,240,0.4);background-clip:padding-box}
+
+/* ============ GLASS RECIPES ============ */
+.glass{
+  background:var(--glass);
+  -webkit-backdrop-filter:blur(18px) saturate(140%);
+  backdrop-filter:blur(18px) saturate(140%);
+  border:1px solid var(--glass-bd);
+  border-radius:var(--r-panel);
+  box-shadow:var(--glass-sh);
+}
+.glass-float{
+  background:var(--glass-float);
+  -webkit-backdrop-filter:blur(18px) saturate(140%);
+  backdrop-filter:blur(18px) saturate(140%);
+  border:1px solid var(--glass-bd);
+  border-radius:var(--r-panel);
+  box-shadow:var(--glass-sh);
+}
+
+/* ============ SIDEBAR ============ */
+.sidebar{
+  background:linear-gradient(180deg, rgba(10,15,30,0.82), rgba(6,12,26,0.92));
+  -webkit-backdrop-filter:blur(18px) saturate(140%);
+  backdrop-filter:blur(18px) saturate(140%);
+  border-right:1px solid rgba(120,160,240,0.12);
+  display:flex; flex-direction:column; padding:20px 16px;
+  position:relative;
+}
+.brand{display:flex; align-items:center; gap:12px; padding:6px 8px 22px}
+.brand-logo{
+  width:42px; height:42px; border-radius:12px; flex-shrink:0;
+  display:grid; place-items:center;
+  background:linear-gradient(135deg, rgba(34,211,238,0.22), rgba(59,130,246,0.18));
+  border:1px solid rgba(34,211,238,0.35);
+  box-shadow:0 0 0 1px rgba(34,211,238,0.18), 0 0 18px rgba(34,211,238,0.18);
+}
+.brand-logo svg{width:24px;height:24px}
+.brand-txt h1{font-size:16px; font-weight:700; letter-spacing:.2px}
+.brand-txt p{font-size:11px; color:var(--txt2); font-weight:400; margin-top:1px}
+
+/* nav */
+.nav{display:flex; flex-direction:column; gap:4px; margin-top:8px}
+.nav-label{font-size:10px; letter-spacing:1.4px; text-transform:uppercase; color:var(--muted); padding:8px 12px 6px; font-weight:600}
+.nav-item{
+  display:flex; align-items:center; gap:12px;
+  padding:11px 12px; border-radius:var(--r-ctrl);
+  color:var(--txt2); cursor:pointer; position:relative;
+  font-size:13.5px; font-weight:500; border:1px solid transparent;
+  transition:background .2s, color .2s, transform .15s;
+  background:none; width:100%; text-align:left; font-family:inherit;
+}
+.nav-item svg{width:19px;height:19px;flex-shrink:0; transition:transform .2s}
+.nav-item:hover{background:rgba(120,160,240,0.08); color:var(--txt); transform:translateX(2px)}
+.nav-item:hover svg{transform:scale(1.05)}
+.nav-item.active{
+  color:#fff; background:linear-gradient(90deg, rgba(59,130,246,0.22), rgba(34,211,238,0.08));
+  border:1px solid rgba(96,165,250,0.3);
+}
+/* neon spine on the active nav item — one of the few neon accents */
+.nav-item.active::before{
+  content:""; position:absolute; left:-16px; top:50%; transform:translateY(-50%);
+  width:3px; height:22px; border-radius:0 4px 4px 0;
+  background:linear-gradient(180deg,var(--cyan),var(--blue));
+  box-shadow:0 0 12px rgba(34,211,238,0.6);
+}
+.nav-spacer{flex:1}
+
+/* sidebar live status card */
+.side-status{
+  margin-top:14px; padding:12px; border-radius:12px;
+  background:rgba(8,13,28,0.5); border:1px solid rgba(120,160,240,0.12);
+  font-size:11px; color:var(--txt2);
+}
+.side-status .row{display:flex; align-items:center; gap:8px}
+.side-status .dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);animation:pulse 2.4s infinite}
+.side-status .sub{margin-top:6px;color:var(--muted);font-size:10.5px}
+
+/* ============ MAIN COLUMN ============ */
+.main{display:flex; flex-direction:column; min-width:0; height:100vh; overflow:hidden}
+
+/* ============ TOPBAR ============ */
+.topbar{
+  display:flex; align-items:center; gap:16px;
+  padding:16px 26px; flex-shrink:0;
+  border-bottom:1px solid rgba(120,160,240,0.1);
+  background:rgba(6,12,26,0.4);
+  -webkit-backdrop-filter:blur(12px);
+  backdrop-filter:blur(12px);
+}
+.topbar .titles h2{font-size:20px;font-weight:700;letter-spacing:.2px}
+.topbar .titles p{font-size:12px;color:var(--txt2);margin-top:2px}
+.topbar .titles p .mono{color:var(--blue2)}
+.tb-spacer{flex:1}
+
+/* LIVE pill — neon green accent on live status */
+.live-pill{
+  display:inline-flex;align-items:center;gap:8px;
+  padding:7px 13px;border-radius:999px;font-size:12px;font-weight:600;
+  color:#bbf7d0; background:rgba(34,197,94,0.1);
+  border:1px solid rgba(34,197,94,0.35);
+  box-shadow:0 0 0 1px rgba(34,197,94,0.12), 0 0 16px rgba(34,197,94,0.12);
+}
+.live-dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 10px var(--green);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.45;transform:scale(.7)}}
+
+/* monospace clock */
+.clock{
+  font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:500;
+  color:var(--cyan); padding:7px 13px; border-radius:var(--r-ctrl);
+  background:rgba(34,211,238,0.06); border:1px solid rgba(34,211,238,0.2);
+  letter-spacing:1px;
+}
+
+/* buttons */
+.btn{
+  display:inline-flex;align-items:center;gap:8px;
+  padding:9px 16px;border-radius:var(--r-ctrl);font-size:13px;font-weight:600;
+  cursor:pointer;border:1px solid var(--glass-bd);color:var(--txt);
+  background:rgba(22,32,54,0.6); font-family:inherit;
+  transition:background .2s, transform .15s, box-shadow .2s, color .2s;
+}
+.btn svg{width:16px;height:16px}
+.btn:hover{background:rgba(34,46,74,0.8); transform:translateY(-1px)}
+.btn:active{transform:translateY(0)}
+.btn-primary{
+  background:linear-gradient(135deg, var(--blue), var(--cyan));
+  border:1px solid rgba(34,211,238,0.5); color:#03121a; font-weight:700;
+  box-shadow:0 0 0 1px rgba(34,211,238,0.25), 0 6px 20px rgba(34,211,238,0.22);
+}
+.btn-primary:hover{box-shadow:0 0 0 1px rgba(34,211,238,0.4), 0 8px 26px rgba(34,211,238,0.34); transform:translateY(-1px)}
+
+/* content scroll area + view transitions */
+.content{flex:1; overflow-y:auto; padding:20px 26px 28px; position:relative}
+.view{display:none}
+.view.active{display:block; animation:fade .35s ease}
+@keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+/* spinner for refresh / optimize buttons while a request is in flight */
+@keyframes spin{to{transform:rotate(360deg)}}
+/* typing-indicator dots in the AI chat loading state */
+@keyframes bounce{0%,80%,100%{transform:translateY(0);opacity:.4}40%{transform:translateY(-4px);opacity:1}}
+
+/* ============ KPI STRIP ============ */
+.kpi-strip{display:grid; grid-template-columns:repeat(6,1fr); gap:14px; margin-bottom:20px}
+.kpi{
+  padding:14px 16px; position:relative; overflow:hidden;
+  transition:transform .2s, box-shadow .2s, border-color .2s;
+}
+/* per-card accent uses --kc / --kc-rgb set inline by the React component */
+.kpi::after{
+  content:""; position:absolute; top:0; left:0; right:0; height:2px;
+  background:linear-gradient(90deg, transparent, var(--kc,var(--blue2)), transparent);
+  opacity:.7;
+}
+.kpi:hover{transform:translateY(-3px); border-color:rgba(120,160,240,0.32)}
+.kpi-top{display:flex; align-items:center; justify-content:space-between; margin-bottom:8px}
+.kpi-label{font-size:11.5px; color:var(--txt2); font-weight:500}
+.kpi-ico{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;
+  background:rgba(var(--kc-rgb,96,165,250),0.12); color:var(--kc,var(--blue2))}
+.kpi-ico svg{width:16px;height:16px}
+.kpi-num{font-size:30px; font-weight:700; letter-spacing:-.5px; line-height:1; color:#fff}
+.kpi-unit{font-size:12px; color:var(--txt2); font-weight:500; margin-left:4px}
+.kpi-bar{height:4px; border-radius:3px; background:rgba(120,160,240,0.12); margin-top:11px; overflow:hidden}
+.kpi-bar span{display:block; height:100%; border-radius:3px; background:var(--kc,var(--blue2));
+  box-shadow:0 0 8px var(--kc,var(--blue2)); transition:width .8s cubic-bezier(.3,.8,.3,1)}
+
+/* ============ CONTENT GRIDS ============ */
+.grid-2{display:grid; grid-template-columns:1.55fr 1fr; gap:18px; margin-bottom:18px}
+.grid-2b{display:grid; grid-template-columns:1fr 1fr; gap:18px}
+
+/* ============ PANEL CHROME ============ */
+.panel-head{display:flex; align-items:center; gap:10px; padding:14px 18px 12px; border-bottom:1px solid rgba(120,160,240,0.1)}
+.panel-head h3{font-size:14.5px; font-weight:600; display:flex; align-items:center; gap:9px}
+.panel-head h3 svg{width:17px;height:17px;color:var(--cyan)}
+.ph-spacer{flex:1}
+.panel-sub{font-size:11px; color:var(--muted)}
+
+/* ============ MAP PANEL ============ */
+.map-panel{display:flex; flex-direction:column; min-height:480px}
+/* segmented mode switch (原始 / 預測 / 優化); per-seg accent via --seg-rgb */
+.seg{display:inline-flex; gap:3px; padding:3px; border-radius:10px; background:rgba(8,13,28,0.6); border:1px solid rgba(120,160,240,0.12)}
+.seg button{
+  font-family:inherit; font-size:12px; font-weight:600; cursor:pointer;
+  padding:6px 13px; border-radius:7px; border:1px solid transparent; color:var(--txt2);
+  background:none; transition:background .2s, color .2s, box-shadow .2s; display:flex; align-items:center; gap:6px;
+}
+.seg button .swatch{width:8px;height:8px;border-radius:2px}
+.seg button:hover{color:var(--txt)}
+.seg button.on{color:#fff; background:rgba(var(--seg-rgb,59,130,246),0.16);
+  border:1px solid rgba(var(--seg-rgb,59,130,246),0.4);
+  box-shadow:0 0 0 1px rgba(var(--seg-rgb,59,130,246),0.2), 0 0 14px rgba(var(--seg-rgb,59,130,246),0.18)}
+
+.map-wrap{flex:1; position:relative; margin:14px 16px 16px; border-radius:13px; overflow:hidden;
+  border:1px solid rgba(120,160,240,0.16); min-height:420px}
+.map-canvas{position:absolute; inset:0; background:#0a0f1e}
+
+/* HUD corner brackets framing the map */
+.corner{position:absolute; width:18px; height:18px; z-index:500; pointer-events:none; border-color:rgba(34,211,238,0.5)}
+.c-tl{top:8px;left:8px;border-top:2px solid;border-left:2px solid;border-radius:3px 0 0 0}
+.c-tr{top:8px;right:8px;border-top:2px solid;border-right:2px solid;border-radius:0 3px 0 0}
+.c-bl{bottom:8px;left:8px;border-bottom:2px solid;border-left:2px solid;border-radius:0 0 0 3px}
+.c-br{bottom:8px;right:8px;border-bottom:2px solid;border-right:2px solid;border-radius:0 0 3px 0}
+
+/* speed legend overlay (bottom-left) */
+.legend{position:absolute; left:14px; bottom:14px; z-index:600; padding:11px 13px; border-radius:12px; min-width:182px}
+.legend h4{font-size:11px; color:var(--txt); margin-bottom:9px; font-weight:600; display:flex; align-items:center; gap:6px}
+.legend .mode-tag{font-size:9.5px; padding:2px 7px; border-radius:6px; font-weight:700; letter-spacing:.4px}
+.legend .scale{height:8px; border-radius:4px; background:linear-gradient(90deg,#ef4444,#f97316,#f59e0b,#84cc16,#22c55e)}
+.legend .scale-lbls{display:flex; justify-content:space-between; font-size:9.5px; color:var(--txt2); margin-top:4px; font-family:'JetBrains Mono',monospace}
+.legend .width-note{font-size:10px;color:var(--muted);margin-top:8px;display:flex;align-items:center;gap:7px}
+.legend .width-note .ln{height:3px;width:30px;border-radius:2px;background:var(--blue2)}
+.legend .width-note .ln.big{height:6px}
+
+/* mode banner (top-right of map) */
+.map-banner{position:absolute; right:14px; top:14px; z-index:600; padding:9px 13px; border-radius:11px; font-size:11px; display:flex; align-items:center; gap:9px}
+.map-banner .mb-dot{width:8px;height:8px;border-radius:50%;background:var(--cyan);box-shadow:0 0 8px var(--cyan)}
+.map-banner b{font-size:12px}
+
+/* ============ LEAFLET OVERRIDES (dark glass theme) ============ */
+/* self-contained neon-grid basemap so polylines never float on void */
+.leaflet-container{
+  background:
+    radial-gradient(700px 500px at 60% 35%, rgba(34,211,238,0.05), transparent 70%),
+    radial-gradient(600px 600px at 20% 85%, rgba(59,130,246,0.06), transparent 70%),
+    linear-gradient(rgba(120,160,240,0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(120,160,240,0.06) 1px, transparent 1px),
+    linear-gradient(rgba(120,160,240,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(120,160,240,0.03) 1px, transparent 1px),
+    #0a0f1e !important;
+  background-size:auto, auto, 64px 64px, 64px 64px, 16px 16px, 16px 16px !important;
+  background-position:center, center, center, center, center, center !important;
+  font-family:'Inter','Noto Sans TC',sans-serif !important;
+}
+/* glass popup */
+.leaflet-popup-content-wrapper{
+  background:rgba(8,13,28,0.88) !important;
+  -webkit-backdrop-filter:blur(16px) saturate(140%); backdrop-filter:blur(16px) saturate(140%);
+  border:1px solid rgba(120,160,240,0.28) !important; border-radius:12px !important;
+  box-shadow:0 8px 32px rgba(0,0,0,0.6) !important; color:var(--txt) !important;
+}
+.leaflet-popup-tip{background:rgba(8,13,28,0.88) !important; border:1px solid rgba(120,160,240,0.28) !important}
+.leaflet-popup-content{margin:12px 14px !important; font-family:'Inter','Noto Sans TC',sans-serif !important}
+.leaflet-popup-close-button{color:var(--txt2) !important}
+.leaflet-popup-close-button:hover{color:#fff !important}
+/* zoom control as glass chips */
+.leaflet-bar,
+.leaflet-control-zoom{border:1px solid rgba(120,160,240,0.2) !important; box-shadow:0 4px 18px rgba(0,0,0,0.5) !important; border-radius:9px !important; overflow:hidden}
+.leaflet-bar a,
+.leaflet-control-zoom a{
+  background:rgba(8,13,28,0.82) !important; color:var(--txt) !important;
+  border-bottom:1px solid rgba(120,160,240,0.16) !important;
+  -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px);
+  width:30px !important; height:30px !important; line-height:30px !important; font-size:17px !important;
+}
+.leaflet-bar a:hover,
+.leaflet-control-zoom a:hover{background:rgba(34,211,238,0.16) !important; color:var(--cyan) !important}
+.leaflet-bar a:last-child,
+.leaflet-control-zoom a:last-child{border-bottom:none !important}
+.leaflet-control-zoom a.leaflet-disabled{background:rgba(8,13,28,0.5) !important; color:var(--muted) !important}
+/* attribution */
+.leaflet-control-attribution{
+  background:rgba(8,13,28,0.7) !important; color:var(--muted) !important;
+  border-radius:7px 0 0 0 !important; font-size:10px !important; padding:2px 7px !important;
+}
+.leaflet-control-attribution a{color:var(--txt2) !important}
+
+/* popup inner text helpers */
+.pop-name{font-weight:700; font-size:13px; color:#fff; margin-bottom:2px}
+.pop-id{font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--cyan); margin-bottom:8px}
+.pop-grid{display:grid; grid-template-columns:1fr 1fr; gap:6px 14px}
+.pop-grid .k{font-size:10px;color:var(--txt2)}
+.pop-grid .v{font-size:13px;font-weight:700;font-variant-numeric:tabular-nums}
+
+/* NTUT campus marker */
+.marker-ntut{
+  display:flex;align-items:center;gap:6px; white-space:nowrap;
+  background:rgba(8,13,28,0.85); border:1px solid rgba(34,211,238,0.5);
+  padding:5px 10px; border-radius:999px; font-size:11px; font-weight:700; color:#fff;
+  box-shadow:0 0 0 1px rgba(34,211,238,0.25), 0 0 18px rgba(34,211,238,0.3);
+  -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px);
+}
+.marker-ntut .pin{width:9px;height:9px;border-radius:50%;background:var(--cyan);box-shadow:0 0 10px var(--cyan)}
+
+/* ============ ROAD TABLE ============ */
+.table-panel{display:flex; flex-direction:column; min-height:480px}
+.search-box{display:flex; align-items:center; gap:8px; padding:7px 12px; border-radius:9px;
+  background:rgba(8,13,28,0.6); border:1px solid rgba(120,160,240,0.16); width:200px}
+.search-box svg{width:15px;height:15px;color:var(--muted);flex-shrink:0}
+.search-box input{background:none; border:none; outline:none; color:var(--txt); font-family:inherit; font-size:12.5px; width:100%}
+.search-box input::placeholder{color:var(--muted)}
+.tbl-scroll{flex:1; overflow-y:auto; padding:6px 8px 10px}
+.tbl{width:100%; border-collapse:collapse}
+.tbl thead th{
+  position:sticky; top:0; z-index:2; text-align:left; font-size:10.5px; letter-spacing:.6px; text-transform:uppercase;
+  color:var(--txt2); font-weight:600; padding:9px 12px;
+  background:rgba(10,15,30,0.96); -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px);
+  border-bottom:1px solid rgba(120,160,240,0.14);
+}
+.tbl thead th.r{text-align:right}
+.tbl tbody tr{cursor:pointer; transition:background .15s; border-bottom:1px solid rgba(120,160,240,0.05)}
+.tbl tbody tr:hover{background:rgba(96,165,250,0.07)}
+.tbl tbody tr.sel{background:rgba(34,211,238,0.08); box-shadow:inset 2px 0 0 var(--cyan)}
+.tbl tbody td{padding:11px 12px; font-size:12.5px}
+.tbl td.r{text-align:right; font-variant-numeric:tabular-nums; font-weight:600}
+.road-name{font-weight:500}
+.road-id{font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--muted); margin-top:1px}
+/* occupancy mini-bar cell */
+.occ-cell{display:flex; align-items:center; gap:8px; justify-content:flex-end}
+.occ-track{width:46px;height:5px;border-radius:3px;background:rgba(120,160,240,0.14);overflow:hidden}
+.occ-track span{display:block;height:100%;border-radius:3px}
+.spd-val{display:inline-flex;align-items:baseline;gap:3px}
+.spd-val small{font-size:10px;color:var(--txt2);font-weight:400}
+
+/* ============ STATUS PILLS ============ */
+/* base pill; modifier classes pick the neon accent */
+.pill{display:inline-flex; align-items:center; gap:6px; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:600}
+.pill .pd{width:6px;height:6px;border-radius:50%}
+.pill.sm{padding:2px 8px;font-size:10px}
+/* 暢通 (free / ok) — green */
+.pill-ok,.pill.free{color:#bbf7d0; background:rgba(34,197,94,0.12); border:1px solid rgba(34,197,94,0.3)}
+.pill-ok .pd,.pill.free .pd{background:var(--green);box-shadow:0 0 7px var(--green)}
+/* 普通 (normal) — amber */
+.pill-normal,.pill.normal{color:#fde68a; background:rgba(245,158,11,0.12); border:1px solid rgba(245,158,11,0.3)}
+.pill-normal .pd,.pill.normal .pd{background:var(--amber);box-shadow:0 0 7px var(--amber)}
+/* 壅塞 (congested / cong) — red */
+.pill-cong,.pill.congested{color:#fecaca; background:rgba(239,68,68,0.12); border:1px solid rgba(239,68,68,0.3)}
+.pill-cong .pd,.pill.congested .pd{background:var(--red);box-shadow:0 0 7px var(--red)}
+/* 已優化 (optimized) — cyan */
+.pill.optimized{color:#a5f3fc; background:rgba(34,211,238,0.12); border:1px solid rgba(34,211,238,0.3)}
+.pill.optimized .pd{background:var(--cyan);box-shadow:0 0 7px var(--cyan)}
+
+/* ============ SIGNAL PANEL ============ */
+.sig-panel{display:flex; flex-direction:column}
+.sig-scroll{padding:12px 14px; display:flex; flex-direction:column; gap:10px; max-height:380px; overflow-y:auto}
+.sig-card{
+  display:flex; align-items:center; gap:14px; padding:12px 14px; border-radius:12px; cursor:pointer;
+  background:rgba(8,13,28,0.45); border:1px solid rgba(120,160,240,0.1);
+  transition:background .2s, border-color .2s, transform .15s;
+}
+.sig-card:hover{background:rgba(96,165,250,0.07); transform:translateX(2px)}
+.sig-card.sel{border-color:rgba(34,211,238,0.4); background:rgba(34,211,238,0.06);
+  box-shadow:0 0 0 1px rgba(34,211,238,0.2), 0 0 16px rgba(34,211,238,0.12)}
+
+/* mini traffic light — lamps glow only when .on */
+.mini-light{
+  display:flex; flex-direction:column; gap:5px; padding:7px 6px; border-radius:9px; flex-shrink:0;
+  background:rgba(2,6,18,0.7); border:1px solid rgba(120,160,240,0.14);
+}
+.mini-light .lamp{width:13px;height:13px;border-radius:50%;background:rgba(80,90,110,0.35);transition:background .3s, box-shadow .3s}
+.mini-light .lamp.red.on{background:var(--red); box-shadow:0 0 10px var(--red),0 0 4px var(--red)}
+.mini-light .lamp.amber.on{background:var(--amber); box-shadow:0 0 10px var(--amber),0 0 4px var(--amber)}
+.mini-light .lamp.green.on{background:var(--green); box-shadow:0 0 10px var(--green),0 0 4px var(--green)}
+
+.sig-info{flex:1; min-width:0}
+.sig-info .nm{font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.sig-info .id{font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--muted); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.sig-right{display:flex; flex-direction:column; align-items:flex-end; gap:6px; flex-shrink:0}
+.sig-count{font-family:'JetBrains Mono',monospace; font-size:18px; font-weight:500; font-variant-numeric:tabular-nums}
+
+/* selected-signal detail card */
+.sig-detail{margin:0 14px 14px; padding:16px; border-radius:13px;
+  background:linear-gradient(135deg, rgba(34,211,238,0.06), rgba(59,130,246,0.04));
+  border:1px solid rgba(34,211,238,0.22)}
+.sd-top{display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:14px}
+.sd-top .nm{font-size:14px;font-weight:700}
+.sd-top .id{font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--cyan);margin-top:3px}
+.sd-count{text-align:center; flex-shrink:0}
+.sd-count .big{font-family:'JetBrains Mono',monospace; font-size:38px; font-weight:500; line-height:1; font-variant-numeric:tabular-nums}
+.sd-count .lbl{font-size:10px;color:var(--txt2);margin-top:2px;text-transform:uppercase;letter-spacing:.6px}
+/* phase ribbon */
+.phase-bar{display:flex; height:14px; border-radius:7px; overflow:hidden; border:1px solid rgba(120,160,240,0.12)}
+.phase-bar .seg-p{height:100%; transition:filter .3s}
+.phase-bar .seg-p.green{background:linear-gradient(180deg,#34d399,#22c55e)}
+.phase-bar .seg-p.amber{background:linear-gradient(180deg,#fbbf24,#f59e0b)}
+.phase-bar .seg-p.red{background:linear-gradient(180deg,#f87171,#ef4444)}
+.phase-bar .seg-p.active{filter:brightness(1.3) saturate(1.3); box-shadow:inset 0 0 8px rgba(255,255,255,0.5)}
+.phase-meta{display:flex; justify-content:space-between; margin-top:8px; font-size:10.5px; color:var(--txt2)}
+.phase-meta .mono{color:var(--cyan)}
+
+/* ============ AI PANEL ============ */
+.ai-panel{display:flex; flex-direction:column; min-height:380px}
+.ai-head{display:flex; align-items:center; gap:11px; padding:14px 18px; border-bottom:1px solid rgba(120,160,240,0.1)}
+/* magenta+cyan avatar — a rare magenta accent reserved for the AI identity */
+.ai-avatar{
+  width:38px;height:38px;border-radius:11px; flex-shrink:0; display:grid; place-items:center;
+  background:linear-gradient(135deg, rgba(217,70,239,0.25), rgba(34,211,238,0.2));
+  border:1px solid rgba(34,211,238,0.35); box-shadow:0 0 14px rgba(34,211,238,0.2);
+}
+.ai-avatar svg{width:21px;height:21px}
+.ai-head .nm{font-size:14px; font-weight:700; display:flex; align-items:center; gap:8px}
+.gemma-tag{font-size:9.5px; font-weight:700; letter-spacing:.4px; padding:2px 8px; border-radius:6px;
+  color:#a5f3fc; background:rgba(34,211,238,0.12); border:1px solid rgba(34,211,238,0.3); font-family:'JetBrains Mono',monospace}
+.ai-head .st{font-size:11px;color:var(--txt2);margin-top:2px;display:flex;align-items:center;gap:6px}
+.ai-head .st .d{width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 7px var(--green);animation:pulse 2.4s infinite}
+
+/* chat transcript */
+.chat{flex:1; padding:16px 18px; display:flex; flex-direction:column; gap:13px; overflow-y:auto; max-height:300px}
+.msg{display:flex; gap:10px; max-width:88%}
+.msg.user{align-self:flex-end; flex-direction:row-reverse}
+.msg .bub{
+  padding:10px 13px; border-radius:14px; font-size:12.5px; line-height:1.55;
+  background:rgba(15,22,41,0.7); border:1px solid rgba(120,160,240,0.16);
+  -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px);
+}
+.msg.assistant .bub{border-top-left-radius:5px}
+.msg.user .bub{border-top-right-radius:5px; background:rgba(59,130,246,0.16); border-color:rgba(96,165,250,0.32)}
+.msg .bub b{color:var(--cyan); font-weight:700}
+.msg .av{width:28px;height:28px;border-radius:8px;flex-shrink:0;display:grid;place-items:center;font-size:11px;font-weight:700}
+.msg.assistant .av{background:rgba(34,211,238,0.14);border:1px solid rgba(34,211,238,0.3);color:var(--cyan)}
+.msg.user .av{background:rgba(96,165,250,0.16);border:1px solid rgba(96,165,250,0.3);color:var(--blue2)}
+
+/* suggestion chips */
+.chips{display:flex; gap:8px; padding:0 18px 12px; flex-wrap:wrap}
+.chip{
+  font-family:inherit; font-size:11.5px; font-weight:500; cursor:pointer;
+  padding:7px 12px; border-radius:999px; color:var(--txt2);
+  background:rgba(8,13,28,0.5); border:1px solid rgba(120,160,240,0.16);
+  transition:background .2s, color .2s, border-color .2s, transform .15s;
+}
+.chip:hover{color:#fff; background:rgba(96,165,250,0.12); border-color:rgba(96,165,250,0.4); transform:translateY(-1px)}
+
+/* input row */
+.ai-input{display:flex; gap:9px; padding:12px 18px 16px; border-top:1px solid rgba(120,160,240,0.1)}
+.ai-input input{
+  flex:1; padding:11px 14px; border-radius:11px; font-family:inherit; font-size:13px;
+  background:rgba(8,13,28,0.6); border:1px solid rgba(120,160,240,0.18); color:var(--txt); outline:none;
+  transition:border-color .2s, box-shadow .2s;
+}
+.ai-input input:focus{border-color:rgba(34,211,238,0.45); box-shadow:0 0 0 3px rgba(34,211,238,0.12)}
+.ai-input input::placeholder{color:var(--muted)}
+.send-btn{
+  width:44px; flex-shrink:0; border-radius:11px; cursor:pointer; display:grid; place-items:center;
+  background:linear-gradient(135deg,var(--blue),var(--cyan)); border:1px solid rgba(34,211,238,0.5);
+  color:#03121a; transition:transform .15s, box-shadow .2s;
+}
+.send-btn svg{width:18px;height:18px}
+.send-btn:hover{transform:translateY(-1px) scale(1.03); box-shadow:0 6px 18px rgba(34,211,238,0.3)}
+
+/* ============ DETAIL DRAWER (slide-in + scrim) ============ */
+.drawer-scrim{position:fixed; inset:0; z-index:1400; background:rgba(2,6,18,0.55);
+  -webkit-backdrop-filter:blur(2px); backdrop-filter:blur(2px); opacity:0; pointer-events:none; transition:opacity .3s}
+.drawer-scrim.open{opacity:1; pointer-events:auto}
+.drawer{
+  position:fixed; top:0; right:0; bottom:0; width:380px; z-index:1500;
+  background:linear-gradient(180deg, rgba(12,18,36,0.92), rgba(7,12,26,0.95));
+  -webkit-backdrop-filter:blur(24px) saturate(140%); backdrop-filter:blur(24px) saturate(140%);
+  border-left:1px solid rgba(34,211,238,0.25);
+  box-shadow:-16px 0 50px rgba(0,0,0,0.6);
+  transform:translateX(100%); transition:transform .35s cubic-bezier(.3,.8,.3,1);
+  display:flex; flex-direction:column;
+}
+.drawer.open{transform:translateX(0)}
+.drawer-head{display:flex; align-items:flex-start; gap:12px; padding:20px 20px 16px; border-bottom:1px solid rgba(120,160,240,0.12)}
+.drawer-head .dh-ico{width:40px;height:40px;border-radius:11px;flex-shrink:0;display:grid;place-items:center;
+  background:rgba(34,211,238,0.12);border:1px solid rgba(34,211,238,0.3);color:var(--cyan)}
+.drawer-head .dh-ico svg{width:21px;height:21px}
+.drawer-head .nm{font-size:16px;font-weight:700;line-height:1.3}
+.drawer-head .id{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--cyan);margin-top:4px}
+.drawer-close{
+  margin-left:auto; width:32px;height:32px;border-radius:9px; cursor:pointer; flex-shrink:0;
+  background:rgba(8,13,28,0.6); border:1px solid rgba(120,160,240,0.16); color:var(--txt2);
+  display:grid; place-items:center; transition:background .2s, color .2s, transform .15s;
+}
+.drawer-close:hover{background:rgba(239,68,68,0.14); color:#fecaca; border-color:rgba(239,68,68,0.3); transform:rotate(90deg)}
+.drawer-close svg{width:16px;height:16px}
+.drawer-body{flex:1; overflow-y:auto; padding:20px}
+
+/* drawer content blocks */
+.dr-status{display:flex; justify-content:center; margin-bottom:18px}
+.dr-metrics{display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:20px}
+.dr-metric{padding:14px; border-radius:12px; background:rgba(8,13,28,0.5); border:1px solid rgba(120,160,240,0.12)}
+.dr-metric .k{font-size:11px;color:var(--txt2);margin-bottom:7px}
+.dr-metric .v{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1}
+.dr-metric .v small{font-size:12px;color:var(--txt2);font-weight:500;margin-left:3px}
+.dr-section-t{font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);font-weight:600;margin:4px 0 12px;display:flex;align-items:center;gap:8px}
+.dr-section-t::after{content:"";flex:1;height:1px;background:rgba(120,160,240,0.12)}
+.dr-occ-big{margin-bottom:20px}
+.dr-occ-big .track{height:9px;border-radius:5px;background:rgba(120,160,240,0.14);overflow:hidden;margin-top:8px}
+.dr-occ-big .track span{display:block;height:100%;border-radius:5px}
+.dr-rec{padding:14px; border-radius:12px; font-size:12.5px; line-height:1.6;
+  background:linear-gradient(135deg, rgba(34,211,238,0.07), rgba(59,130,246,0.04));
+  border:1px solid rgba(34,211,238,0.22)}
+.dr-rec .rh{display:flex;align-items:center;gap:8px;font-weight:700;color:var(--cyan);font-size:12px;margin-bottom:8px}
+.dr-rec .rh svg{width:15px;height:15px}
+.dr-rec b{color:#fff}
+
+/* ============ SIMPLE / SECONDARY VIEWS ============ */
+.simple-hero{padding:40px; text-align:center; max-width:560px; margin:40px auto}
+.simple-hero .sh-ico{width:72px;height:72px;border-radius:20px;margin:0 auto 22px;display:grid;place-items:center;
+  background:linear-gradient(135deg, rgba(34,211,238,0.18), rgba(59,130,246,0.12));
+  border:1px solid rgba(34,211,238,0.3); box-shadow:0 0 30px rgba(34,211,238,0.18)}
+.simple-hero .sh-ico svg{width:36px;height:36px;color:var(--cyan)}
+.simple-hero h3{font-size:22px;font-weight:700;margin-bottom:10px}
+.simple-hero p{color:var(--txt2);font-size:14px;line-height:1.7}
+.simple-hero .tag{display:inline-block;margin-top:18px;padding:7px 16px;border-radius:999px;font-size:12px;font-weight:600;
+  color:var(--cyan);background:rgba(34,211,238,0.1);border:1px solid rgba(34,211,238,0.3)}
+/* forecast cards */
+.forecast-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:20px}
+.fc-card{padding:18px;text-align:center}
+.fc-card .t{font-size:12px;color:var(--txt2);margin-bottom:10px}
+.fc-card .bars{display:flex;align-items:flex-end;justify-content:center;gap:5px;height:70px;margin-bottom:10px}
+.fc-card .bars span{width:9px;border-radius:3px 3px 0 0;background:linear-gradient(180deg,var(--cyan),rgba(59,130,246,0.3))}
+.fc-card .v{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums}
+.fc-card .v small{font-size:11px;color:var(--txt2)}
+
+/* ============ BANNERS (error / warn / info) ============ */
+.banner{
+  display:flex; align-items:flex-start; gap:11px; padding:12px 15px; border-radius:12px;
+  font-size:12.5px; line-height:1.55; margin-bottom:16px;
+  -webkit-backdrop-filter:blur(12px) saturate(140%); backdrop-filter:blur(12px) saturate(140%);
+}
+.banner svg{width:18px;height:18px;flex-shrink:0;margin-top:1px}
+.banner b{font-weight:700}
+.banner .b-close{margin-left:auto;background:none;border:none;cursor:pointer;color:inherit;opacity:.7;padding:2px}
+.banner .b-close:hover{opacity:1}
+.banner-error{color:#fecaca; background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.32)}
+.banner-error svg{color:var(--red)}
+.banner-warn{color:#fde68a; background:rgba(245,158,11,0.1); border:1px solid rgba(245,158,11,0.32)}
+.banner-warn svg{color:var(--amber)}
+.banner-info{color:#a5f3fc; background:rgba(34,211,238,0.08); border:1px solid rgba(34,211,238,0.28)}
+.banner-info svg{color:var(--cyan)}
+
+/* ============ FOCUS VISIBILITY ============ */
+:focus-visible{outline:2px solid var(--cyan); outline-offset:2px; border-radius:6px}
+button:focus-visible, .nav-item:focus-visible, input:focus-visible, a:focus-visible{outline:2px solid var(--cyan); outline-offset:2px}
+
+/* ============ RESPONSIVE ============ */
+@media (max-width:1240px){
+  .kpi-strip{grid-template-columns:repeat(3,1fr)}
+  .grid-2{grid-template-columns:1fr}
+  .grid-2b{grid-template-columns:1fr}
+  .forecast-grid{grid-template-columns:repeat(2,1fr)}
+}
+@media (max-width:760px){
+  .app{grid-template-columns:1fr}
+  .kpi-strip{grid-template-columns:repeat(2,1fr)}
+  .drawer{width:100%}
+}
+
+/* ============ REDUCED MOTION ============ */
+@media (prefers-reduced-motion: reduce){
+  *{animation:none !important; transition:none !important}
+  .view.active{animation:none}
+}
 </style>
 </head>
 <body>
@@ -118,105 +698,24 @@ function polylineMidpoint(pts) {
   return pts[Math.floor(pts.length/2)];
 }
 
-/* ══════════════════════════════════════════════════
-   SIDEBAR
-══════════════════════════════════════════════════ */
-const _S = {
-  ff:"'Inter',system-ui,sans-serif", body:"'Noto Sans TC','PingFang TC',sans-serif", mono:"'JetBrains Mono',monospace",
-  bgSurf:'#0a0f1e', borderMed:'rgba(99,130,200,0.25)', blueSubtle:'rgba(59,130,246,0.09)',
-  blue400:'#60a5fa', blue500:'#3b82f6', blueBar:'0 0 10px rgba(59,130,246,0.5)',
-  green500:'#22c55e', greenGlow:'0 0 8px rgba(34,197,94,0.5), 0 0 3px #22c55e',
-  fg:'#f1f5f9', fg2:'#94a3b8', fg3:'#4e6080',
-};
-const navItems = [
-  { id:'dashboard', icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>, label:'總覽儀表板' },
-  { id:'roads',     icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>, label:'路段監控' },
-  { id:'signals',   icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>, label:'號誌控制' },
-  { id:'predict',   icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>, label:'流量預測' },
-  { id:'chat',      icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>, label:'AI 助理' },
-  { id:'export',    icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>, label:'匯出報告' },
-];
-function Sidebar({ active, onNav }) {
-  return (
-    <aside style={{ background:_S.bgSurf, borderRight:`1px solid ${_S.borderMed}`, display:'flex', flexDirection:'column', height:'100%', flexShrink:0 }}>
-      <div style={{ display:'flex', alignItems:'center', gap:10, padding:'16px', borderBottom:`1px solid ${_S.borderMed}` }}>
-        <div style={{ width:34,height:34,borderRadius:9,background:'rgba(59,130,246,0.12)',border:'1px solid rgba(59,130,246,0.22)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 15.5 14.5"/></svg>
-        </div>
-        <div>
-          <div style={{ fontFamily:_S.ff,fontSize:14,fontWeight:700,color:_S.fg,letterSpacing:'-0.02em' }}>TrafficVision</div>
-          <div style={{ fontFamily:_S.body,fontSize:10,color:_S.fg3,marginTop:2 }}>NTUT 交通監控</div>
-        </div>
-      </div>
-      <div style={{ padding:'14px 16px 6px',fontFamily:_S.body,fontSize:10,fontWeight:500,letterSpacing:'0.08em',textTransform:'uppercase',color:_S.fg3 }}>主選單</div>
-      <nav style={{ flex:1,padding:'0 8px',display:'flex',flexDirection:'column',gap:1 }}>
-        {navItems.map(item => {
-          const on = (active||'dashboard') === item.id;
-          return (
-            <button key={item.id} onClick={() => onNav && onNav(item.id)} aria-current={on?'page':undefined} aria-label={item.label} style={{ display:'flex',alignItems:'center',gap:10,height:36,padding:'0 10px',borderRadius:8,border:'none',background:on?_S.blueSubtle:'transparent',color:on?_S.blue400:_S.fg2,fontFamily:_S.body,fontSize:13,fontWeight:on?500:400,width:'100%',textAlign:'left',position:'relative',transition:'background 150ms,color 150ms' }}>
-              {on && <div style={{ position:'absolute',left:0,top:'22%',bottom:'22%',width:3,background:_S.blue500,borderRadius:'0 2px 2px 0',boxShadow:_S.blueBar }}/>}
-              <span style={{ color:on?_S.blue400:_S.fg3,display:'flex',flexShrink:0 }}>{item.icon}</span>
-              {item.label}
-            </button>
-          );
-        })}
-      </nav>
-      <div style={{ padding:'12px 16px',borderTop:`1px solid ${_S.borderMed}`,display:'flex',alignItems:'center',gap:10 }}>
-        <div style={{ width:8,height:8,borderRadius:'50%',background:_S.green500,boxShadow:_S.greenGlow,flexShrink:0 }}/>
-        <div>
-          <div style={{ fontFamily:_S.body,fontSize:12,color:_S.fg2 }}>系統運行中</div>
-          <div style={{ fontFamily:_S.mono,fontSize:10,color:_S.fg3,marginTop:2 }}>更新週期 5 分鐘</div>
-        </div>
-      </div>
-    </aside>
-  );
-}
 
-/* ══════════════════════════════════════════════════
-   TOP BAR
-══════════════════════════════════════════════════ */
-function TopBar({ time, lastFetch, refreshing, onRefresh, simStatus, onStartOptimize }) {
-  const ff="'Inter',system-ui,sans-serif", body="'Noto Sans TC','PingFang TC',sans-serif", mono="'JetBrains Mono',monospace";
-  return (
-    <div style={{ height:52,background:'#0a0f1e',borderBottom:'1px solid rgba(99,130,200,0.25)',display:'flex',alignItems:'center',justifyContent:'space-between',padding:'0 20px',flexShrink:0 }}>
-      <div style={{ display:'flex',alignItems:'center',gap:16 }}>
-        <div style={{ fontFamily:ff,fontSize:15,fontWeight:600,color:'#f1f5f9',letterSpacing:'-0.01em' }}>總覽儀表板</div>
-        {lastFetch && (
-          <div style={{ display:'flex',alignItems:'center',gap:5 }}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#4e6080" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-            <span style={{ fontFamily:mono,fontSize:11,color:'#4e6080' }}>最後更新：{lastFetch}</span>
-          </div>
-        )}
-      </div>
-      <div style={{ display:'flex',alignItems:'center',gap:8 }}>
-        <div style={{ display:'flex',alignItems:'center',gap:6,background:'rgba(34,197,94,0.10)',border:'1px solid rgba(34,197,94,0.25)',borderRadius:6,padding:'4px 10px' }}>
-          <div style={{ width:6,height:6,borderRadius:'50%',background:'#22c55e',boxShadow:'0 0 5px rgba(34,197,94,0.7)' }}/>
-          <span style={{ fontFamily:body,fontSize:11,color:'#4ade80' }}>即時資料</span>
-        </div>
-        <span style={{ fontFamily:mono,fontSize:11,color:'#4e6080' }}>{time}</span>
-        <button onClick={onRefresh} disabled={refreshing} style={{ display:'inline-flex',alignItems:'center',gap:6,height:30,padding:'0 12px',borderRadius:6,border:'1px solid rgba(99,130,200,0.25)',background:'#0f1629',color:refreshing?'#4e6080':'#94a3b8',fontFamily:body,fontSize:12,transition:'background 150ms,color 150ms' }}
-          onMouseEnter={e=>{ if(!refreshing){e.currentTarget.style.background='rgba(99,130,200,0.08)';e.currentTarget.style.color='#f1f5f9';} }}
-          onMouseLeave={e=>{ e.currentTarget.style.background='#0f1629';e.currentTarget.style.color=refreshing?'#4e6080':'#94a3b8'; }}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" style={refreshing?{animation:'spin 1s linear infinite'}:{}}><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-.08-7.49"/></svg>
-          {refreshing ? '更新中…' : '立即更新'}
-        </button>
-        <button onClick={onStartOptimize} disabled={simStatus==='running'} style={{ display:'inline-flex',alignItems:'center',gap:6,height:30,padding:'0 14px',borderRadius:6,border:'none',background:simStatus==='running'?'rgba(59,130,246,0.4)':'#3b82f6',color:'#fff',fontFamily:body,fontSize:12,fontWeight:500,transition:'background 150ms,box-shadow 150ms',cursor:simStatus==='running'?'not-allowed':'pointer' }}
-          onMouseEnter={e=>{ if(simStatus!=='running'){e.currentTarget.style.background='#60a5fa';e.currentTarget.style.boxShadow='0 0 12px rgba(59,130,246,0.40)';} }}
-          onMouseLeave={e=>{ e.currentTarget.style.background=simStatus==='running'?'rgba(59,130,246,0.4)':'#3b82f6';e.currentTarget.style.boxShadow='none'; }}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={simStatus==='running'?{animation:'spin 1s linear infinite'}:{}}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-          {simStatus==='running'?'模擬中…':'啟動優化'}
-        </button>
-      </div>
-    </div>
-  );
-}
+/* ════════ RESTYLED LEAF COMPONENTS ════════ */
+/* ============================================================
+   TrafficVision — Variant D "Glass Stack Focus" LEAF components
+   Restyled (presentation only) from dashboard.html.
+   All hooks / fetch / WebSocket / derived logic are preserved
+   verbatim; only className usage, presentational inline styles,
+   and JSX layout wrappers changed. Data-driven colors
+   (speedColor / status / phase / bar widths) are kept computed.
+   Pair these with redesign-mockups/_frag/style.css.
+   ============================================================ */
 
-/* ══════════════════════════════════════════════════
-   METRICS PANEL (computed from live roads)
-══════════════════════════════════════════════════ */
+
+/* ==== MetricsPanel ==== */
+/* KPI strip — six thin glass cards. avgSpd / totalVol / congested / free /
+   sigCount computations preserved byte-for-byte from the original. Only the
+   per-card accent (--kc / --kc-rgb) and bar width are presentational. */
 function MetricsPanel({ roads, dataKey = 'cur' }) {
-  const ff="'Inter',system-ui,sans-serif", body="'Noto Sans TC','PingFang TC',sans-serif";
-  const bgCard='#0f1629', bgElev='#162036', borderMed='rgba(99,130,200,0.25)', shadow='0 0 0 1px rgba(99,130,200,0.25),0 1px 3px rgba(0,0,0,0.40)';
   const n = roads.length;
   /* 依當前模式 (cur / pred / opt) 取對應的指標欄位；
      不然 pred / opt 模式下 edgeMonitorRoads 的 cur 是空殼，所有統計都會變 -- */
@@ -246,78 +745,594 @@ function MetricsPanel({ roads, dataKey = 'cur' }) {
   };
   const s = _src[dataKey] || _src.cur;
 
+  const _spdIco = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/><path d="M12 4v2M4.9 7.5l1.4 1.4M2 14h2M20 14h2M18.7 7.5l-1.4 1.4M13.4 12.6 16 8"/></svg>;
+  const _roadIco = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 19V5M20 19V5M12 19v-3"/></svg>;
+  const _volIco = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 17h14M5 17a2 2 0 0 1-2-2v-3l2-5h14l2 5v3a2 2 0 0 1-2 2M7 17v2M17 17v2"/><circle cx="7.5" cy="14" r="1"/><circle cx="16.5" cy="14" r="1"/></svg>;
+  const _congIco = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h0"/></svg>;
+  const _freeIco = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 6 9 17l-5-5"/></svg>;
+  const _sigIco = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/><circle cx="12" cy="12" r="4"/></svg>;
+
   const cards = [
-    { label:'監控路段', value:String(n),                            unit:'條',   accent:'#3b82f6', barW: 1.0, delta:null, tip:`${dataKey==='cur'?'VD 偵測器':'SUMO + GRU'} 覆蓋的路段/邊數` },
-    { label:'平均車速', value:avgSpd!==null?String(avgSpd):'--',    unit:'km/h', accent:'#f59e0b', barW: avgSpd!==null?avgSpd/60:0, delta:null, tip:`${s.spd} (僅含 spd>0 的路段, 排除 SUMO 沒測到速度的邊)` },
-    { label:'總車流量', value:totalVol!==null?totalVol.toLocaleString():'--', unit:'輛', accent:'#ef4444', barW:totalVol!==null?Math.min(1,totalVol/2000):0, delta:null, tip:s.vol },
-    { label:'壅塞路段', value:congested!==null?String(congested):'--', unit:'條', accent:'#ef4444', barW:congested!==null&&n>0?congested/n:0, delta:null, tip:'MOE = 2 的路段數 (車速 < 10 km/h, 或 VD 回報的 MOELevel)' },
-    { label:'暢通路段', value:free!==null?String(free):'--',        unit:'條',   accent:'#22c55e', barW:free!==null&&n>0?free/n:0, delta:null, tip:'MOE = 0 的路段數 (車速 ≥ 30 km/h, 或 VD 回報的 MOELevel)' },
-    { label:'號誌優化', value:String(sigCount),                     unit:'組',   accent:'#3b82f6', barW: sigCount/10, delta:null, tip:'本輪有產出 signal plan 的路口數 (來自 signal_plan_summary.csv)' },
+    { label:'監控路段', value:String(n),                            unit:'條',   accent:'#3b82f6', rgb:'59,130,246',  ico:_roadIco, barW: 1.0, tip:`${dataKey==='cur'?'VD 偵測器':'SUMO + GRU'} 覆蓋的路段/邊數` },
+    { label:'平均車速', value:avgSpd!==null?String(avgSpd):'--',    unit:'km/h', accent:'#22d3ee', rgb:'34,211,238',  ico:_spdIco,  barW: avgSpd!==null?avgSpd/60:0, tip:`${s.spd} (僅含 spd>0 的路段, 排除 SUMO 沒測到速度的邊)` },
+    { label:'總車流量', value:totalVol!==null?totalVol.toLocaleString():'--', unit:'輛', accent:'#3b82f6', rgb:'59,130,246', ico:_volIco, barW:totalVol!==null?Math.min(1,totalVol/2000):0, tip:s.vol },
+    { label:'壅塞路段', value:congested!==null?String(congested):'--', unit:'條', accent:'#ef4444', rgb:'239,68,68',   ico:_congIco, barW:congested!==null&&n>0?congested/n:0, tip:'MOE = 2 的路段數 (車速 < 10 km/h, 或 VD 回報的 MOELevel)' },
+    { label:'暢通路段', value:free!==null?String(free):'--',        unit:'條',   accent:'#22c55e', rgb:'34,197,94',   ico:_freeIco, barW:free!==null&&n>0?free/n:0, tip:'MOE = 0 的路段數 (車速 ≥ 30 km/h, 或 VD 回報的 MOELevel)' },
+    { label:'號誌優化', value:String(sigCount),                     unit:'組',   accent:'#f59e0b', rgb:'245,158,11',  ico:_sigIco,  barW: sigCount/10, tip:'本輪有產出 signal plan 的路口數 (來自 signal_plan_summary.csv)' },
   ];
   return (
-    <div style={{ display:'grid',gridTemplateColumns:'repeat(6,1fr)',gap:10,padding:'10px 14px 0',flexShrink:0 }}>
+    <div className="kpi-strip">
       {cards.map((c,i) => (
-        <div key={i} title={c.tip || ''} style={{ background:bgCard,border:`1px solid ${borderMed}`,borderRadius:12,padding:'14px 16px',boxShadow:shadow,display:'flex',flexDirection:'column',cursor:c.tip?'help':'default' }}>
-          <div style={{ fontFamily:body,fontSize:11,fontWeight:500,letterSpacing:'0.06em',textTransform:'uppercase',color:'#4e6080',marginBottom:8,display:'flex',alignItems:'center',gap:4 }}>
-            {c.label}
-            {c.tip && <span aria-hidden="true" style={{fontSize:9,opacity:0.5}}>ⓘ</span>}
+        <div key={i} className="kpi glass" title={c.tip || ''} style={{['--kc']:c.accent,['--kc-rgb']:c.rgb,cursor:c.tip?'help':'default'}}>
+          <div className="kpi-top">
+            <span className="kpi-label">{c.label}</span>
+            <span className="kpi-ico" aria-hidden="true">{c.ico}</span>
           </div>
-          <div style={{ display:'flex',alignItems:'baseline',gap:5,marginBottom:19 }}>
-            <span style={{ fontFamily:ff,fontSize:28,fontWeight:700,lineHeight:1,letterSpacing:'-0.03em',fontVariantNumeric:'tabular-nums',color:'#f1f5f9' }}>{c.value}</span>
-            <span style={{ fontFamily:body,fontSize:12,color:'#94a3b8' }}>{c.unit}</span>
+          <div>
+            <span className="kpi-num tnum">{c.value}</span>
+            <span className="kpi-unit">{c.unit}</span>
           </div>
-          <div style={{ height:3,borderRadius:2,background:bgElev,overflow:'hidden' }}>
-            <div style={{ height:'100%',borderRadius:2,width:`${Math.max(0,Math.min(1,c.barW||0))*100}%`,background:c.accent,transition:'width 600ms cubic-bezier(0.2,0,0,1)' }}/>
-          </div>
+          <div className="kpi-bar"><span style={{width:`${Math.max(0,Math.min(1,c.barW||0))*100}%`}}/></div>
         </div>
       ))}
     </div>
   );
 }
 
-/* ══════════════════════════════════════════════════
-   SPEED & HEATMAP LEGENDS
-══════════════════════════════════════════════════ */
+/* ==== SpeedLegend ==== */
+/* Speed gradient stops are still produced by speedColor() — data-driven. */
 function SpeedLegend() {
   const stops=[0,10,20,30,40,50,60];
   return (
     <div style={{ display:'flex',alignItems:'center',gap:8 }}>
-      <span style={{ fontFamily:"'Noto Sans TC',sans-serif",fontSize:10,color:'#4e6080',whiteSpace:'nowrap' }}>車速</span>
+      <span style={{ fontFamily:"'Noto Sans TC',sans-serif",fontSize:10,color:'var(--muted)',whiteSpace:'nowrap' }}>車速</span>
       <div style={{ display:'flex',alignItems:'center' }}>
         {stops.map((spd,i)=>i<stops.length-1&&(
           <div key={spd} style={{ display:'flex',flexDirection:'column',alignItems:'center' }}>
             <div style={{ width:24,height:4,background:`linear-gradient(90deg,${speedColor(spd)},${speedColor(stops[i+1])})`,borderRadius:i===0?'3px 0 0 3px':i===stops.length-2?'0 3px 3px 0':'0' }}/>
-            <span style={{ fontFamily:"'JetBrains Mono',monospace",fontSize:8,color:'#4e6080',marginTop:1 }}>{spd}</span>
+            <span style={{ fontFamily:"'JetBrains Mono',monospace",fontSize:8,color:'var(--muted)',marginTop:1 }}>{spd}</span>
           </div>
         ))}
-        <span style={{ fontFamily:"'JetBrains Mono',monospace",fontSize:8,color:'#4e6080',marginTop:5,marginLeft:2 }}>60+</span>
+        <span style={{ fontFamily:"'JetBrains Mono',monospace",fontSize:8,color:'var(--muted)',marginTop:5,marginLeft:2 }}>60+</span>
       </div>
-      <span style={{ fontFamily:"'Noto Sans TC',sans-serif",fontSize:10,color:'#4e6080' }}>km/h · 線寬=車流量</span>
+      <span style={{ fontFamily:"'Noto Sans TC',sans-serif",fontSize:10,color:'var(--muted)' }}>km/h · 線寬=車流量</span>
     </div>
   );
 }
+
+/* ==== HeatmapLegend ==== */
+/* countColorMode() drives every swatch — data-driven, untouched. */
 function HeatmapLegend({ maxCount, mode }) {
   const stops=[0,0.25,0.5,0.75,1.0]; const mc=maxCount||1;
   const cf=v=>countColorMode(v*mc,mc,mode);
   return (
     <div style={{ display:'flex',alignItems:'center',gap:8 }}>
-      <span style={{ fontFamily:"'Noto Sans TC',sans-serif",fontSize:10,color:'#4e6080',whiteSpace:'nowrap' }}>車次密度</span>
+      <span style={{ fontFamily:"'Noto Sans TC',sans-serif",fontSize:10,color:'var(--muted)',whiteSpace:'nowrap' }}>車次密度</span>
       <div style={{ display:'flex',alignItems:'center' }}>
         {stops.map((t,i)=>i<stops.length-1&&(
           <div key={t} style={{ display:'flex',flexDirection:'column',alignItems:'center' }}>
             <div style={{ width:28,height:4,background:`linear-gradient(90deg,${cf(t)},${cf(stops[i+1])})`,borderRadius:i===0?'3px 0 0 3px':i===stops.length-2?'0 3px 3px 0':'0' }}/>
-            <span style={{ fontFamily:"'JetBrains Mono',monospace",fontSize:8,color:'#4e6080',marginTop:1 }}>{Math.round(t*mc)}</span>
+            <span style={{ fontFamily:"'JetBrains Mono',monospace",fontSize:8,color:'var(--muted)',marginTop:1 }}>{Math.round(t*mc)}</span>
           </div>
         ))}
-        <span style={{ fontFamily:"'JetBrains Mono',monospace",fontSize:8,color:'#4e6080',marginTop:5,marginLeft:2 }}>{mc}+</span>
+        <span style={{ fontFamily:"'JetBrains Mono',monospace",fontSize:8,color:'var(--muted)',marginTop:5,marginLeft:2 }}>{mc}+</span>
       </div>
-      <span style={{ fontFamily:"'Noto Sans TC',sans-serif",fontSize:10,color:'#4e6080' }}>車次</span>
+      <span style={{ fontFamily:"'Noto Sans TC',sans-serif",fontSize:10,color:'var(--muted)' }}>車次</span>
     </div>
   );
 }
 
+/* ==== RoadTable ==== */
+/* search filter, noData branch, _moeFromSpd-derived level, speedColor(d.spd),
+   selected/hover row logic all preserved. Chrome -> classes; the speed color
+   and occupancy mini-bar fill stay computed inline. */
+function RoadTable({ roads, dataKey, selectedId, onSelectRoad, collapsed, onToggleCollapse }) {
+  const [hovered, setHovered] = useState(null);
+  const [search, setSearch] = useState('');
+  const filtered = search ? roads.filter(r => r.name.includes(search) || r.id.toUpperCase().includes(search.toUpperCase())) : roads;
+  /* moe → pill modifier class + dot color (the only data-driven status mapping) */
+  const moeCfg = {
+    0:{ label:'暢通', cls:'pill-ok',     sc:'#4ade80' },
+    1:{ label:'普通', cls:'pill-normal', sc:'#f1f5f9' },
+    2:{ label:'壅塞', cls:'pill-cong',   sc:'#f87171' },
+  };
+  return (
+    <div className="table-panel glass" style={{minHeight:0,flex:1}}>
+      <div className="panel-head">
+        <button onClick={onToggleCollapse} aria-label={collapsed?'展開路段監控列表':'收合路段監控列表'} aria-expanded={!collapsed} title={collapsed?'展開列表':'收合列表，讓地圖更大'} style={{ display:'flex',alignItems:'center',gap:9,background:'none',border:'none',cursor:'pointer',padding:0,color:'inherit' }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--cyan)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform:collapsed?'rotate(0deg)':'rotate(180deg)',transition:'transform 150ms',flexShrink:0 }}><polyline points="6 9 12 15 18 9"/></svg>
+          <h3 style={{margin:0}}>路段監控列表</h3>
+          <span className="panel-sub" style={{marginLeft:2}}>{roads.length} 路段</span>
+        </button>
+        <div className="ph-spacer"></div>
+        {!collapsed && (
+        <div className="search-box">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="搜尋路段…" aria-label="搜尋路段"/>
+          {search && <button onClick={()=>setSearch('')} aria-label="清除搜尋" style={{ background:'none',border:'none',color:'var(--muted)',cursor:'pointer',padding:0,fontSize:15,lineHeight:1 }}>×</button>}
+        </div>
+        )}
+      </div>
+      <div className="tbl-scroll" style={{display:collapsed?'none':'block'}}>
+        <table className="tbl">
+          <thead>
+            <tr>
+              <th>路段名稱</th><th className="r">平均車速</th><th className="r">車流量</th><th className="r">佔有率</th><th className="r">狀態</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map(row => {
+              const d = row[dataKey]||row.cur;
+              const noData = d.spd === null && d.vol === null;
+              // 顏色與狀態一律由顯示的車速推導，避免與 VD worstMoe 聚合脫節（高均速卻標紅）。
+              const lvl = noData ? null : (d.spd === null ? (d.moe ?? 1) : _moeFromSpd(d.spd));
+              const m = noData ? null : moeCfg[lvl];
+              const spdCol = noData ? null : (d.spd === null ? m.sc : speedColor(d.spd));
+              const occVal = (noData || d.occ === null || d.occ === undefined) ? null : d.occ;
+              const occCol = occVal === null ? null : (occVal>=55?'#ef4444':occVal>=30?'#f59e0b':'#22c55e');
+              const isSel=selectedId===row.id;
+              return (
+                <tr key={row.id} className={isSel?'sel':undefined} onClick={()=>onSelectRoad&&onSelectRoad(row)} onMouseEnter={()=>setHovered(row.id)} onMouseLeave={()=>setHovered(null)}>
+                  <td>
+                    <div className="road-name">{row.name}</div>
+                    <div className="road-id">{row.id}</div>
+                  </td>
+                  <td className="r">
+                    {(noData || d.spd === null || d.spd === undefined)
+                      ? <span className="mono" style={{ color:'var(--muted)' }}>---</span>
+                      : <span className="spd-val" style={{color:spdCol}}>{d.spd}<small>km/h</small></span>}
+                  </td>
+                  <td className="r">
+                    {(noData || d.vol === null || d.vol === undefined)
+                      ? <span className="mono" style={{ color:'var(--muted)' }}>---</span>
+                      : <span className="tnum">{d.vol}<small style={{fontWeight:400,color:'var(--txt2)',marginLeft:3}}>輛</small></span>}
+                  </td>
+                  <td className="r">
+                    {occVal === null
+                      ? <span className="mono" style={{ color:'var(--muted)' }}>---</span>
+                      : <div className="occ-cell"><div className="occ-track"><span style={{width:`${Math.min(100,occVal)}%`,background:occCol,boxShadow:`0 0 6px ${occCol}`}}/></div>{occVal}%</div>}
+                  </td>
+                  <td className="r">
+                    {noData
+                      ? <span style={{ color:'var(--muted)',fontWeight:400 }}>等待數據</span>
+                      : <span className={`pill ${m.cls}`}><span className="pd"/>{m.label}</span>}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* ==== phaseStyle (VERBATIM) ==== */
+function phaseStyle(state){
+  if(!state) return {bg:'#4e6080',label:'未知'};
+  const g=(state.match(/[Gg]/g)||[]).length;
+  const y=(state.match(/y/g)||[]).length;
+  if(y>0) return {bg:'#d97706',label:'黃燈清道'};
+  if(g>0) return {bg:'#16a34a',label:'放行通車'};
+  return {bg:'#dc2626',label:'全紅間隔'};
+}
+
+/* ==== signalData (VERBATIM) ==== */
+const signalData=[
+  {id:'655375241',name:'八德路一段/忠孝東路二段',lat:25.043478,lon:121.528958,cycle:90,offset:0,status:'normal',
+   phases:[{dur:86,state:'GG'},{dur:3,state:'yy'},{dur:1,state:'rr'}]},
+  {id:'cluster655375228_655375240',name:'八德路一段/金山北路',lat:25.043684,lon:121.529884,cycle:90,offset:0,status:'normal',
+   phases:[{dur:37,state:'rrrrrGGgggGGGGGr'},{dur:5,state:'rrrrrGGgggGGGrrr'},{dur:3,state:'rrrrryyyyyyyyrrr'},{dur:37,state:'ggGGGrrrrrrrrrrG'},{dur:5,state:'ggGGGrrrrrrrrrrr'},{dur:3,state:'yyyyyrrrrrrrrrrr'}]},
+  {id:'cluster_2038168688_655375573',name:'忠孝東路二段/臨沂街',lat:25.042920,lon:121.530753,cycle:90,offset:0,status:'normal',
+   phases:[{dur:37,state:'rrrrrrrrgGGGgrrrgGGGGgGrGr'},{dur:5,state:'rrrrrrrrgGGGgrrrgGGGGgrrrr'},{dur:3,state:'rrrrrrrryyyyyrrryyyyyyrrrr'},{dur:37,state:'gggggGggrrrrrgGgrrrrrrrGrG'},{dur:5,state:'gggggGggrrrrrgGgrrrrrrrrrr'},{dur:3,state:'yyyyyyyyrrrrryyyrrrrrrrrrr'}]},
+  {id:'cluster_5372642442_631668976_631668981_631669076',name:'忠孝東路三段/忠孝東路二段',lat:25.042329,lon:121.532928,cycle:90,offset:0,status:'normal',
+   phases:[{dur:37,state:'rrrrrrrrGGGGgggggggrrrrrrrrrrgGGGGGGggggrrrr'},{dur:3,state:'rrrrrrrryyyyyyyggggrrrrrrrrrryyyyyyyggggrrrr'},{dur:6,state:'rrrrrrrrrrrrrrrGGGGrrrrrrrrrrrrrrrrrGGGGrrrr'},{dur:3,state:'rrrrrrrrrrrrrrryyyyrrrrrrrrrrrrrrrrryyyyrrrr'},{dur:1,state:'rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr'},{dur:37,state:'GGGGGGGgrrrrrrrrrrrGGGGGGGgggrrrrrrrrrrrrrrr'},{dur:3,state:'yyyyyyyyrrrrrrrrrrryyyyyyyyyyrrrrrrrrrrrrrrr'}]},
+  {id:'cluster_2528018119_655375236',name:'八德路一段/八德路二段',lat:25.044398,lon:121.533022,cycle:90,offset:0,status:'normal',
+   phases:[{dur:37,state:'rrrrrrrrgggggrrrrrrrggggGgrrrr'},{dur:3,state:'rrrrrrrryyyyyrrrrrrryyyyyyrrrr'},{dur:1,state:'rrrrrrrrrrrrrrrrrrrrrrrrrrrrrr'},{dur:37,state:'GGGGggggrrrrrGGGGGGgrrrrrrrrrr'},{dur:3,state:'yyyyggggrrrrryyyyyygrrrrrrrrrr'},{dur:6,state:'rrrrGGGGrrrrrrrrrrrGrrrrrrrrrr'},{dur:3,state:'rrrryyyyrrrrrrrrrrryrrrrrrrrrr'}]},
+  {id:'cluster655375336_end_0_655375336_end_1_655375336_end_10_655375336_end_11_#8more',name:'市民大道三段/新生北路一段',lat:25.045467,lon:121.533018,cycle:190,offset:0,status:'normal',
+   phases:[{dur:5,state:'rrrgggGGGGggGrrrrrrrrrgggGGGggGrrrrrrrrGrG'},{dur:3,state:'rrryyyyyyyyyyrrrrrrrrryyyyyyyyyrrrrrrrryry'},{dur:2,state:'rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr'},{dur:37,state:'GGGrrrrrrrrrrgggGGGGGGrrrrrrrrrggGggGGGrGr'},{dur:4,state:'yyyrrrrrrrrrryyyyyyyyyrrrrrrrrryyyyyyyyryr'},{dur:4,state:'rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr'},{dur:45,state:'rrrgggGGGGggGrrrrrrrrrgggGGGggGrrrrrrrrGrG'},{dur:4,state:'rrryyyyyyyyyyrrrrrrrrryyyyyyyyyrrrrrrrryry'},{dur:4,state:'rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr'},{dur:9,state:'GGGrrrrrrrrrrgggGGGGGGrrrrrrrrrggGggGGGrGr'},{dur:3,state:'yyyrrrrrrrrrryyyyyyyyyrrrrrrrrryyyyyyyyryr'},{dur:2,state:'rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr'},{dur:51,state:'rrrgggGGGGggGrrrrrrrrrgggGGGggGrrrrrrrrGrG'},{dur:4,state:'rrryyyyyyyyyyrrrrrrrrryyyyyyyyyrrrrrrrryry'},{dur:4,state:'rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr'},{dur:1,state:'GGGrrrrrrrrrrgggGGGGGGrrrrrrrrrggGggGGGrGr'},{dur:4,state:'yyyrrrrrrrrrryyyyyyyyyrrrrrrrrryyyyyyyyryr'},{dur:4,state:'rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr'}]},
+  {id:'cluster_3431431575_4777363357_655375231_6982059025',name:'八德路二段/渭水路',lat:25.045663,lon:121.535898,cycle:190,offset:0,status:'normal',
+   phases:[{dur:3,state:'rrrrrrrrrrrrG'},{dur:3,state:'rrrrrrrrrrrry'},{dur:2,state:'rrrrrrrrrrrrr'},{dur:115,state:'gGGGgGGgggGGr'},{dur:3,state:'yyyyyyyyyyyyr'},{dur:3,state:'rrrrrrrrrrrrr'},{dur:11,state:'rrrrrrrrrrrrG'},{dur:3,state:'rrrrrrrrrrrry'},{dur:2,state:'rrrrrrrrrrrrr'},{dur:40,state:'gGGGgGGgggGGr'},{dur:3,state:'yyyyyyyyyyyyr'},{dur:2,state:'rrrrrrrrrrrrr'}]},
+  {id:'cluster_623980090_623980094',name:'八德路二段/建國南路一段',lat:25.046114,lon:121.537194,cycle:234,offset:0,status:'normal',
+   phases:[{dur:85,state:'rrrrgGGGrrrr'},{dur:3,state:'rrrryyyyrrrr'},{dur:2,state:'rrrrrrrrrrrr'},{dur:60,state:'gGGGrrrrGGGG'},{dur:3,state:'yyyyrrrryyyy'},{dur:3,state:'rrrrrrrrrrrr'},{dur:71,state:'rrrrgGGGrrrr'},{dur:3,state:'rrrryyyyrrrr'},{dur:4,state:'rrrrrrrrrrrr'}]},
+  {id:'cluster_623980147_623980152',name:'八德路二段/建國南路一段(北)',lat:25.046016,lon:121.536663,cycle:234,offset:0,status:'normal',
+   phases:[{dur:85,state:'gGGGGGrrrrrrrrrG'},{dur:3,state:'yyyyyyrrrrrrrrry'},{dur:2,state:'rrrrrrrrrrrrrrrr'},{dur:60,state:'rrrrrrGGGGgGGGGr'},{dur:3,state:'rrrrrryyyyyyyyyr'},{dur:3,state:'rrrrrrrrrrrrrrrr'},{dur:71,state:'gGGGGGrrrrrrrrrG'},{dur:3,state:'yyyyyyrrrrrrrrry'},{dur:4,state:'rrrrrrrrrrrrrrrr'}]},
+  {id:'3208478121',name:'建國南路一段/迴轉道(南)',lat:25.043673,lon:121.536581,cycle:90,offset:0,status:'normal',
+   phases:[{dur:37,state:'GrrrG'},{dur:5,state:'Grrrr'},{dur:3,state:'yrrrr'},{dur:42,state:'rGGGr'},{dur:3,state:'ryyyr'}]},
+  {id:'619136999',name:'建國南路一段/迴轉道(北)',lat:25.043700,lon:121.537130,cycle:90,offset:0,status:'normal',
+   phases:[{dur:27,state:'GGGrrrrr'},{dur:3,state:'yyyrrrrr'},{dur:27,state:'rrrGGGrr'},{dur:3,state:'rrryyyrr'},{dur:27,state:'rrrrrrGG'},{dur:3,state:'rrrrrryy'}]},
+  {id:'J0',name:'建國南路一段/忠孝東路三段',lat:25.041592,lon:121.538154,cycle:90,offset:0,status:'normal',
+   phases:[{dur:76,state:'GGGGGGGGggr'},{dur:3,state:'yyyyyyyyyyr'},{dur:1,state:'rrrrrrrrrrr'},{dur:5,state:'rrrrrrrrrrG'},{dur:5,state:'rrrrrrrrrrr'}]},
+  {id:'cluster619136899_619136900_cluster_619136929_619136942',name:'建國南路一段/忠孝東路三段(東)',lat:25.041691,lon:121.537116,cycle:90,offset:0,status:'normal',
+   phases:[{dur:18,state:'GGGrrrrrrrrrrrrrrrrrrrrrrrrr'},{dur:3,state:'yyyrrrrrrrrrrrrrrrrrrrrrrrrr'},{dur:1,state:'rrrrrrrrrrrrrrrrrrrrrrrrrrrr'},{dur:19,state:'rrrGGGGGGrrrrrrrrrrrrrrrrrrr'},{dur:3,state:'rrryyyyyyrrrrrrrrrrrrrrrrrrr'},{dur:19,state:'rrrrrrrrrGGGGGggGGrrrrrrrrrr'},{dur:3,state:'rrrrrrrrryyyyyyyyyrrrrrrrrrr'},{dur:1,state:'rrrrrrrrrrrrrrrrrrrrrrrrrrrr'},{dur:19,state:'rrrrrrrrrrrrrrrrrrgggggggrrr'},{dur:3,state:'rrrrrrrrrrrrrrrrrryyyyyyyrrr'},{dur:1,state:'rrrrrrrrrrrrrrrrrrrrrrrrrrrr'}]},
+  {id:'cluster3086736522_655375108_655375247_655375401_#1more',name:'市民大道三段/市民大道二段',lat:25.046080,lon:121.530783,cycle:90,offset:0,status:'normal',
+   phases:[{dur:18,state:'rrrrrrrgGGGrrrrrrrgGGGrrrrrrGrGr'},{dur:5,state:'rrrrrrrgGGGrrrrrrrgGGGrrrrrrrrrr'},{dur:3,state:'rrrrrrryyyyrrrrrrryyyyrrrrrrrrrr'},{dur:1,state:'rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr'},{dur:18,state:'rrrrrrrrrrrGGGrrrrrrrrGGGrrrGrGr'},{dur:5,state:'rrrrrrrrrrrGGGrrrrrrrrGGGrrrrrrr'},{dur:3,state:'rrrrrrrrrrryyyrrrrrrrryyyrrrrrrr'},{dur:18,state:'gggGgggrrrrrrrGGGGrrrrrrrrrrrrrG'},{dur:5,state:'gggGgggrrrrrrrGGGGrrrrrrrrrrrrrr'},{dur:3,state:'yyyyyyyrrrrrrryyyyrrrrrrrrrrrrrr'},{dur:1,state:'rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr'},{dur:5,state:'rrrrrrrrrrrrrrrrrrrrrrrrrrrrGGGG'},{dur:5,state:'rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr'}]},
+  {id:'cluster_4374470814_4374470816_656132411_656132475',name:'松江路/松江路25巷',lat:25.047188,lon:121.533095,cycle:190,offset:0,status:'normal',
+   phases:[{dur:3,state:'rrrrgGGrrr'},{dur:3,state:'rrrryyyrrr'},{dur:2,state:'rrrrrrrrrr'},{dur:92,state:'GGGrrrrggG'},{dur:3,state:'yyyrrrryyy'},{dur:2,state:'rrrrrrrrrr'},{dur:5,state:'rrrrgGGrrr'},{dur:3,state:'rrrryyyrrr'},{dur:2,state:'rrrrrrrrrr'},{dur:69,state:'GGGrrrrggG'},{dur:3,state:'yyyrrrryyy'},{dur:3,state:'rrrrrrrrrr'}]},
+];
+
+/* ==== sigStatusCfg (VERBATIM values; pill modifier class chosen in render) ==== */
+const sigStatusCfg={
+  optimized:{label:'已優化',cls:'pill optimized'},
+  normal:   {label:'正常',  cls:'pill optimized'},
+  congested:{label:'壅塞中',cls:'pill pill-cong'},
+};
+
+/* ==== SignalControl ==== */
+/* mergedSignals useMemo, getPhase wall-clock math, lightState, selected state,
+   the 1-second re-render interval — ALL preserved verbatim. Only the panel,
+   list cards, mini-light, and detail markup were reclassed. Lamp glow and
+   phase colors stay computed from phaseStyle(...)/lightState(...). */
+function SignalControl({ apiRecords = [], liveSignals = null }){
+  /* 合併：號誌計畫(apiRecords) 決定相位/狀態；即時串流(liveSignals) 提供當前燈號 */
+  const mergedSignals = useMemo(() => {
+    const liveKeys = liveSignals ? Object.keys(liveSignals) : [];
+    const matchToken = (id, sid) => id === sid || id.split(/[^A-Za-z0-9]+/).includes(sid);
+    const findLive = (sid) => {
+      const k = liveKeys.find(k => matchToken(k, sid));
+      return k ? liveSignals[k] : null;
+    };
+    return signalData.map(s => {
+      const live = findLive(s.id);
+      const rec = apiRecords.find(r => {
+        const id = String(r.tl_id || r.tls_id || r.junction_id || r.id || '');
+        return id ? matchToken(id, s.id) : false;
+      });
+      let out = s;
+      if (rec) {
+        const keys = Object.keys(rec);
+        const phases = s.phases.map((p, i) => {
+          const durKey = keys.find(k => new RegExp(`phase[_\\s]?${i}[_\\s]?dur`, 'i').test(k)) ||
+                         keys.find(k => new RegExp(`phase${i}`, 'i').test(k));
+          const dur = durKey ? Math.max(5, parseInt(rec[durKey]) || p.dur) : p.dur;
+          return { ...p, dur };
+        });
+        const cycle = phases.reduce((acc, p) => acc + p.dur, 0);
+        // 號誌計畫的 score 是壅塞優先度分數：高分代表該路口較壅塞
+        const score = parseFloat(rec.score);
+        const status = (!isNaN(score) && score >= 1.3) ? 'congested' : 'optimized';
+        out = { ...s, phases, cycle, status };
+      }
+      if (live) out = { ...out, live };
+      return out;
+    });
+  }, [apiRecords, liveSignals]);
+
+  const [selected,setSelected]=useState('655375241');
+  const [,setClock]=useState(0);   // 僅用來每秒觸發重繪；相位以 Date.now() 計算
+  useEffect(()=>{ const id=setInterval(()=>setClock(c=>c+1),1000); return()=>clearInterval(id); },[]);
+
+  function getPhase(sig){
+    // 以牆上時鐘（秒）計算相位，背景頁籤被 throttle 也不會漂移
+    const nowSec=Math.floor(Date.now()/1000);
+    const elapsed=(nowSec+(sig.offset||0))%sig.cycle;
+    let acc=0;
+    for(let i=0;i<sig.phases.length;i++){
+      if(elapsed<acc+sig.phases[i].dur) return{idx:i,phase:sig.phases[i],remaining:sig.phases[i].dur-(elapsed-acc)};
+      acc+=sig.phases[i].dur;
+    }
+    return{idx:0,phase:sig.phases[0],remaining:sig.phases[0].dur};
+  }
+  /* 燈號狀態：從 SUMO state 字串判斷 */
+  function lightState(state){
+    if(!state) return 'red';
+    if((state.match(/y/g)||[]).length>0) return 'amber';
+    if((state.match(/[Gg]/g)||[]).length>0) return 'green';
+    return 'red';
+  }
+
+  const sel=mergedSignals.find(s=>s.id===selected);
+  const selInfo=sel?getPhase(sel):null;
+
+  return(
+    <div className="sig-panel glass" style={{flex:1,minHeight:0}}>
+
+      {/* ── Header ── */}
+      <div className="panel-head">
+        <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="2" width="6" height="20" rx="3"/><circle cx="12" cy="7" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="17" r="1"/></svg>號誌控制</h3>
+        <div className="ph-spacer"></div>
+        <span className="panel-sub mono">{signalData.length} 個路口</span>
+      </div>
+
+      {/* ── Signal list ── */}
+      <div className="sig-scroll">
+        {mergedSignals.map(s=>{
+          const cfg=sigStatusCfg[s.status]; const isAct=selected===s.id;
+          const info=getPhase(s);
+          // 有 WS 即時燈號時優先採用，否則用相位時鐘推算
+          const ls = s.live ? lightState(s.live.state) : lightState(info.phase.state);
+          return(
+            <div key={s.id} className={isAct?'sig-card sel':'sig-card'} onClick={()=>setSelected(s.id)}>
+              {/* Mini traffic light — lamps glow via .on, driven by ls */}
+              <div className="mini-light">
+                <span className={ls==='red'?'lamp red on':'lamp red'}/>
+                <span className={ls==='amber'?'lamp amber on':'lamp amber'}/>
+                <span className={ls==='green'?'lamp green on':'lamp green'}/>
+              </div>
+              <div className="sig-info">
+                <div className="nm">{s.name}</div>
+                <div className="id">{s.id}</div>
+              </div>
+              <div className="sig-right">
+                <span className="sig-count" style={{color:phaseStyle(info.phase.state).bg}}>{info.remaining}s</span>
+                <span className={`${cfg.cls} sm`}><span className="pd"/>{cfg.label}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ── Detail panel ── */}
+      {sel&&selInfo&&(
+        <div className="sig-detail">
+          <div className="sd-top">
+            <div>
+              <div className="nm">{sel.name}</div>
+              <div className="id mono">{sel.id}</div>
+              <div style={{display:'flex',alignItems:'center',gap:6,marginTop:8}}>
+                <span style={{width:8,height:8,borderRadius:'50%',background:phaseStyle(selInfo.phase.state).bg,flexShrink:0,boxShadow:`0 0 6px ${phaseStyle(selInfo.phase.state).bg}`}}/>
+                <span style={{fontSize:13,fontWeight:600,color:phaseStyle(selInfo.phase.state).bg}}>{phaseStyle(selInfo.phase.state).label}</span>
+              </div>
+              <div className="panel-sub" style={{marginTop:6}}>週期 {sel.cycle}s · {sel.id}</div>
+            </div>
+            <div className="sd-count">
+              <div className="big mono" style={{color:phaseStyle(selInfo.phase.state).bg}} aria-live="polite" aria-atomic="true">{selInfo.remaining}</div>
+              <div className="lbl">秒</div>
+            </div>
+          </div>
+
+          {/* 四相位色條 — phase fill from phaseStyle(p.state).bg */}
+          <div className="phase-bar">
+            {sel.phases.map((p,i)=>(
+              <div key={i} title={`${phaseStyle(p.state).label} ${p.dur}s`}
+                style={{width:`${(p.dur/sel.cycle)*100}%`,background:phaseStyle(p.state).bg,filter:i===selInfo.idx?'brightness(1.3) saturate(1.3)':'none',opacity:i===selInfo.idx?1:0.32,boxShadow:i===selInfo.idx?'inset 0 0 8px rgba(255,255,255,0.5)':'none',transition:'opacity 300ms,filter 300ms'}}/>
+            ))}
+          </div>
+
+          {/* 當前相位進度條 */}
+          <div className="phase-meta">
+            <span>{phaseStyle(selInfo.phase.state).label}</span>
+            <span className="mono">{selInfo.remaining}s / {selInfo.phase.dur}s</span>
+          </div>
+          <div style={{height:3,background:'rgba(120,160,240,0.14)',borderRadius:2,overflow:'hidden',margin:'8px 0 12px'}}>
+            <div style={{height:'100%',borderRadius:2,background:phaseStyle(selInfo.phase.state).bg,
+              width:`${Math.max(0,((selInfo.phase.dur-selInfo.remaining)/selInfo.phase.dur)*100)}%`,
+              transition:'width 900ms linear'}}/>
+          </div>
+
+          {/* 四相位圖例 */}
+          <div style={{display:'flex',flexWrap:'wrap',gap:'4px 10px'}}>
+            {sel.phases.map((p,i)=>(
+              <div key={i} style={{display:'flex',alignItems:'center',gap:4,fontSize:10,color:i===selInfo.idx?phaseStyle(p.state).bg:'var(--muted)',transition:'color 300ms'}}>
+                <span style={{width:6,height:6,borderRadius:'50%',background:phaseStyle(p.state).bg,display:'inline-block',opacity:i===selInfo.idx?1:0.4}}/>
+                {phaseStyle(p.state).label} {p.dur}s
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ==== SAMPLE_MSGS (VERBATIM) ==== */
+const SAMPLE_MSGS=[
+  {role:'assistant',text:'您好！我是 TrafficVision AI 助理。請問有什麼關於目前交通數據或號誌控制的問題？',time:new Date().toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'})},
+];
+
+/* ==== parseMarkdown (VERBATIM logic; emphasis uses .bub b styling via <strong>) ==== */
+function parseMarkdown(text){
+  return text.split(/\*\*(.*?)\*\*/g).map((part,i)=>i%2===1?<strong key={i} style={{color:'var(--cyan)',fontWeight:700}}>{part}</strong>:part);
+}
+
+/* ==== LLMChat ==== */
+/* send() + AbortController + 125s timeout + /api/chat fetch + history mapping +
+   scroll-to-bottom effect — ALL preserved verbatim. Presentation -> AI-panel
+   classes (.ai-head/.chat/.msg/.chips/.ai-input/.send-btn). */
+function LLMChat({ msgs, setMsgs }){
+  const [input,setInput]=useState('');
+  const [loading,setLoading]=useState(false);
+  const bottomRef=useRef(null);
+  const abortRef=useRef(null);
+  const now=()=>new Date().toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'});
+  const send=()=>{
+    if(!input.trim()||loading) return;
+    const t=input;
+    setMsgs(m=>[...m,{role:'user',text:t,time:now()}]);
+    setInput(''); setLoading(true);
+    const history = msgs
+      .filter(m => m.role==='user' || m.role==='assistant')
+      .map(m => ({role: m.role, content: m.text}));
+    // 中斷前一個未完成的請求，避免先發後到覆蓋；並設 125s 逾時
+    if(abortRef.current) abortRef.current.abort();
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    const timer = setTimeout(()=>ctrl.abort(), 125000);
+    fetch('/api/chat',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({message:t, history}),
+      signal: ctrl.signal
+    })
+    .then(r=>r.json())
+    .then(data=>{
+      clearTimeout(timer);
+      setMsgs(m=>[...m,{role:'assistant',text:data.reply||'無法取得回應',time:now()}]);
+      setLoading(false);
+    })
+    .catch(err=>{
+      clearTimeout(timer);
+      if(err && err.name==='AbortError') { setLoading(false); return; }
+      setMsgs(m=>[...m,{role:'assistant',text:'連線失敗，請確認 API 伺服器已啟動。',time:now()}]);
+      setLoading(false);
+    });
+  };
+  useEffect(()=>{ bottomRef.current?.scrollIntoView({behavior:'smooth'}); },[msgs,loading]);
+  return (
+    <div className="ai-panel glass" style={{flex:1,minHeight:0}}>
+      <div className="ai-head">
+        <div className="ai-avatar" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#22d3ee" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="8" width="16" height="11" rx="3"/><path d="M12 8V4M8 4h8"/><circle cx="9" cy="13.5" r="1.2" fill="#22d3ee" stroke="none"/><circle cx="15" cy="13.5" r="1.2" fill="#22d3ee" stroke="none"/></svg>
+        </div>
+        <div>
+          <div className="nm">AI 數據助理 <span className="gemma-tag">gemma-4</span></div>
+          <div className="st"><span className="d"></span>線上 · 即時分析交通數據</div>
+        </div>
+      </div>
+      <div className="chat">
+        {msgs.map((m,i)=>{
+          const isUser=m.role==='user';
+          return (
+            <div key={i} className={isUser?'msg user':'msg assistant'}>
+              <div className="av">{isUser?'您':'AI'}</div>
+              <div style={{display:'flex',flexDirection:'column',gap:3,alignItems:isUser?'flex-end':'flex-start',minWidth:0}}>
+                <div className="bub">
+                  {m.text.split('\n').filter(Boolean).map((ln,j)=><p key={j} style={{margin:j>0?'6px 0 0':0}}>{parseMarkdown(ln)}</p>)}
+                </div>
+                <div className="mono" style={{fontSize:10,color:'var(--muted)'}}>{m.time}</div>
+              </div>
+            </div>
+          );
+        })}
+        {loading&&(
+          <div className="msg assistant">
+            <div className="av">AI</div>
+            <div className="bub" style={{display:'flex',gap:5,alignItems:'center'}}>
+              {[0,1,2].map(i=><div key={i} style={{width:5,height:5,borderRadius:'50%',background:'var(--txt2)',animation:`bounce 1.2s ${i*0.2}s ease-in-out infinite`}}/>)}
+            </div>
+          </div>
+        )}
+        <div ref={bottomRef}/>
+      </div>
+      <div className="chips">
+        {['壅塞原因分析','號誌優化建議'].map(s=>(
+          <button key={s} className="chip" onClick={()=>setInput(s)}>{s}</button>
+        ))}
+      </div>
+      <div className="ai-input">
+        <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&!e.shiftKey&&send()} placeholder="詢問交通狀況、號誌建議…" aria-label="輸入訊息給 AI 助理"/>
+        <button className="send-btn" onClick={send} disabled={loading||!input.trim()} aria-label="送出訊息">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ==== PredictPanel ==== */
+/* delta / arrow / moe label+color computations preserved verbatim. Panel ->
+   .table-panel glass; table -> .tbl; status chip -> data-driven pill modifier. */
+function PredictPanel({ predRoads, predRecords }) {
+  return (
+    <div className="table-panel glass" style={{flex:1,minHeight:0}}>
+      <div className="panel-head">
+        <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M17 7h4v4"/></svg>GRU 5 分鐘流量預測</h3>
+        <div className="ph-spacer"></div>
+        {predRecords.length === 0 && <span className="panel-sub">尚無數據 — 請先執行 runtime_pipeline.py</span>}
+        {predRecords.length > 0  && <span className="panel-sub mono">{predRecords.length} 筆記錄</span>}
+      </div>
+      <div className="tbl-scroll">
+        <table className="tbl">
+          <thead>
+            <tr>
+              {['路段','當前車速','預測車速 (5 min)','當前車流','預測車流','預測狀態'].map(h => (
+                <th key={h} className={h==='路段'?undefined:'r'}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {predRoads.map(r => {
+              const noData = r.cur.spd === null || r.pred.spd === null;
+              const delta = noData ? 0 : r.pred.spd - r.cur.spd;
+              const arrowCol = delta > 1 ? '#4ade80' : delta < -3 ? '#f87171' : '#fbbf24';
+              const arrow    = delta > 1 ? '↑' : delta < -3 ? '↓' : '→';
+              const moeLabel = r.pred.moe === 2 ? '壅塞' : r.pred.moe === 1 ? '普通' : '暢通';
+              const moeCls   = r.pred.moe === 2 ? 'pill-cong' : r.pred.moe === 1 ? 'pill-normal' : 'pill-ok';
+              return (
+                <tr key={r.id} style={{cursor:'default'}}>
+                  <td><span className="road-name">{r.name}</span></td>
+                  <td className="r" style={{color:'var(--txt2)',fontWeight:600}}>{r.cur.spd === null ? '---' : `${r.cur.spd} km/h`}</td>
+                  <td className="r" style={{color:noData?'var(--muted)':arrowCol,whiteSpace:'nowrap',fontWeight:700}}>{noData ? '---' : `${arrow} ${r.pred.spd} km/h`}{!noData && r.pred.estimated && <span title="無模擬資料，依當前車況推估" className="pill pill-normal sm" style={{ marginLeft:6 }}>推估</span>}</td>
+                  <td className="r" style={{color:'var(--txt2)',fontWeight:600}}>{r.cur.vol === null ? '---' : `${r.cur.vol} 輛`}</td>
+                  <td className="r" style={{color:'#fff',fontWeight:600}}>{r.pred.vol === null ? '---' : `${r.pred.vol} 輛`}</td>
+                  <td className="r">
+                    {noData
+                      ? <span style={{ color:'var(--muted)',fontWeight:400 }}>等待數據</span>
+                      : <span className={`pill ${moeCls}`}><span className="pd"/>{moeLabel}</span>}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* ==== ExportPanel ==== */
+/* /api/handoff fetch + status state machine preserved verbatim. Empty/error
+   states use .simple-hero; the file list uses glass rows. */
+function ExportPanel() {
+  const [handoff, setHandoff] = useState(null);
+  const [status, setStatus] = useState('loading');
+  useEffect(() => {
+    fetch('/api/handoff')
+      .then(r => r.json())
+      .then(d => { setHandoff(d); setStatus(d.error ? 'empty' : 'ok'); })
+      .catch(() => setStatus('error'));
+  }, []);
+  const fileEntries = handoff?.files ? Object.entries(handoff.files) : [];
+  if (status === 'loading') {
+    return (
+      <div className="table-panel glass" style={{flex:1,minHeight:0,justifyContent:'center',alignItems:'center'}}>
+        <div className="panel-sub">載入中…</div>
+      </div>
+    );
+  }
+  if (status === 'empty' || status === 'error') {
+    return (
+      <div className="table-panel glass" style={{flex:1,minHeight:0,overflow:'auto'}}>
+        <div className="simple-hero">
+          <div className="sh-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M12 18v-6M9 15l3 3 3-3"/></svg></div>
+          <h3>Handoff 匯出檔案</h3>
+          <p>尚無 handoff 數據，請先執行 runtime_pipeline.py。</p>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="table-panel glass" style={{flex:1,minHeight:0,overflow:'auto'}}>
+      <div className="panel-head">
+        <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>Handoff 匯出檔案</h3>
+        <div className="ph-spacer"></div>
+        <span className="panel-sub">執行時間 <span className="mono" style={{color:'var(--blue2)'}}>{handoff.run_time || '—'}</span></span>
+      </div>
+      <div style={{ display:'flex', flexDirection:'column', gap:8, padding:'14px 18px' }}>
+        {fileEntries.map(([key]) => (
+          <div key={key} style={{ background:'rgba(8,13,28,0.5)', border:'1px solid rgba(120,160,240,0.12)', borderRadius:'var(--r-ctrl)', padding:'11px 14px', display:'flex', alignItems:'center', gap:11 }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--cyan)" strokeWidth="1.5" strokeLinecap="round" style={{flexShrink:0}}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            <span className="mono" style={{ fontSize:11, color:'var(--txt2)', flex:1 }}>{key}.csv</span>
+            <a href={`/api/handoff/download?name=${encodeURIComponent(key + '.csv')}`} download aria-label={`下載 ${key}.csv`} className="pill optimized" style={{ textDecoration:'none', flexShrink:0 }}>下載</a>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ════════ RESTYLED MAP ════════ */
+// ==== TrafficMap ====
 /* ══════════════════════════════════════════════════
-   LEAFLET TRAFFIC MAP
+   LEAFLET TRAFFIC MAP — Variant D "Glass Stack Focus" restyle
+   Logic (init, tile layer, layer drawing/sorting, _entryHasData/
+   hasData, speedColor, polyline weights, glow layers, label
+   collision, both render branches, all useEffect deps) is PRESERVED
+   byte-for-byte. Only the popup HTML strings, the divIcon label
+   HTML, the NTUT marker chrome and the container className have
+   been restyled to the deep-navy glass + neon-accent theme. The
+   global .leaflet-* / .pop-* / .marker-ntut CSS overrides do the
+   rest of the chrome (container basemap, popup wrapper, zoom chips).
 ══════════════════════════════════════════════════ */
 function TrafficMap({ viewMode, roads, heatmapData, baselineHeatmapData, currentHeatmapData }) {
   const containerRef   = useRef(null);
@@ -356,8 +1371,8 @@ function TrafficMap({ viewMode, roads, heatmapData, baselineHeatmapData, current
       subdomains:'abcd', maxZoom:19,
     }).addTo(map);
     L.marker([25.0422,121.5355], { icon: L.divIcon({
-      html:`<div style="background:rgba(30,58,138,0.85);backdrop-filter:blur(6px);color:#93c5fd;font-family:'Inter',system-ui,sans-serif;font-size:10px;font-weight:700;padding:3px 8px;border-radius:5px;border:1px solid rgba(59,130,246,0.40);white-space:nowrap;box-shadow:0 0 0 1px rgba(59,130,246,0.20),0 2px 10px rgba(0,0,0,0.6)">北科大</div>`,
-      className:'', iconAnchor:[28,12],
+      html:`<div class="marker-ntut"><span class="pin"></span>北科大</div>`,
+      className:'', iconAnchor:[34,13],
     })}).addTo(map);
     labelHandlerRef.current = applyLabelCollision;
     map.on('zoomend', () => { if (labelHandlerRef.current) labelHandlerRef.current(); });
@@ -468,19 +1483,21 @@ function TrafficMap({ viewMode, roads, heatmapData, baselineHeatmapData, current
         const line=L.polyline(ed.shape,{color:col,weight:w,  opacity:0.90,lineCap:'round',lineJoin:'round'}).addTo(map);
         layersRef.current.push(g1,g2,line);
 
-        /* ── 彈窗（含真實速度/佔有率/車流量） ── */
+        /* ── 彈窗（含真實速度/佔有率/車流量）— glass + neon 重新樣式，
+              色彩仍由資料計算的 col 決定（speedColor / countColorMode）。 */
+        const status = dispSpd!==null ? (dispSpd<10?'壅塞':dispSpd<20?'緩慢':dispSpd<35?'普通':'暢通') : '';
         const spdLine = dispSpd !== null
-          ? `<div style="display:flex;align-items:baseline;gap:5px;background:${col}18;border:1px solid ${col}44;border-radius:6px;padding:6px 10px;margin-bottom:8px">
-               <span style="font-family:'Inter',system-ui,sans-serif;font-size:28px;font-weight:700;color:${col};line-height:1;font-variant-numeric:tabular-nums">${dispSpd}</span>
-               <span style="font-family:'Noto Sans TC',sans-serif;font-size:11px;color:#94a3b8">km/h</span>
-               <span style="margin-left:auto;font-family:'Noto Sans TC',sans-serif;font-size:11px;font-weight:600;color:${col};background:${col}22;border-radius:4px;padding:2px 7px">${dispSpd<10?'壅塞':dispSpd<20?'緩慢':dispSpd<35?'普通':'暢通'}</span>
+          ? `<div style="display:flex;align-items:baseline;gap:6px;background:${col}1f;border:1px solid ${col}4d;border-radius:8px;padding:7px 11px;margin-bottom:9px">
+               <span style="font-family:'JetBrains Mono',monospace;font-size:28px;font-weight:700;color:${col};line-height:1;font-variant-numeric:tabular-nums">${dispSpd}</span>
+               <span style="font-family:'Inter','Noto Sans TC',sans-serif;font-size:11px;color:#94a3b8">km/h</span>
+               <span style="margin-left:auto;font-family:'Inter','Noto Sans TC',sans-serif;font-size:11px;font-weight:700;color:${col};background:${col}29;border:1px solid ${col}4d;border-radius:999px;padding:2px 9px">${status}</span>
              </div>`
           : '';
-        const popup = `<div style="padding:10px 14px;min-width:190px">
-          <div style="font-family:'Noto Sans TC',sans-serif;font-size:10px;color:#4e6080;margin-bottom:3px">${modeLabel} · ${isCur ? 'VD 車速 · 路網車流' : 'SUMO 模擬'}</div>
-          <div style="font-family:'Noto Sans TC',sans-serif;font-size:12px;font-weight:600;color:#f1f5f9;margin-bottom:8px">${ed.name||'未命名路段'}</div>
+        const popup = `<div style="min-width:190px">
+          <div class="pop-name">${ed.name||'未命名路段'}</div>
+          <div style="font-family:'Inter','Noto Sans TC',sans-serif;font-size:10px;color:#8595b8;margin-bottom:8px">${modeLabel} · ${isCur ? 'VD 車速 · 路網車流' : 'SUMO 模擬'}</div>
           ${spdLine}
-          <div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#4e6080">${eid}</div>
+          <div class="pop-id">${eid}</div>
         </div>`;
         line.bindPopup(popup,{maxWidth:220,minWidth:190});
         g2.bindPopup(popup,{maxWidth:220,minWidth:190});
@@ -502,11 +1519,11 @@ function TrafficMap({ viewMode, roads, heatmapData, baselineHeatmapData, current
       const mainLine=L.polyline(road.coords,{color:col,weight:baseW,opacity:0.93,lineCap:'round',lineJoin:'round'}).addTo(map);
       const mid=polylineMidpoint(road.coords);
       const labelTextCol=d.spd<20?'#fca5a5':d.spd<35?'#fcd34d':'#86efac';
-      const labelHtml=`<div style="background:rgba(2,6,23,0.85);border:1px solid ${col}55;border-radius:5px;padding:2px 7px;font-family:'Inter',system-ui,sans-serif;font-size:11px;font-weight:700;font-variant-numeric:tabular-nums;color:${labelTextCol};white-space:nowrap;box-shadow:0 0 8px ${col}33,0 1px 4px rgba(0,0,0,0.6);line-height:1.4;pointer-events:none;backdrop-filter:blur(4px)">${d.spd}<span style="font-size:8px;font-weight:400;opacity:0.72;margin-left:1px">km/h</span></div>`;
+      const labelHtml=`<div style="background:rgba(8,13,28,0.85);border:1px solid ${col}55;border-radius:7px;padding:2px 8px;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;font-variant-numeric:tabular-nums;color:${labelTextCol};white-space:nowrap;box-shadow:0 0 10px ${col}33,0 1px 4px rgba(0,0,0,0.6);line-height:1.4;pointer-events:none;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)">${d.spd}<span style="font-size:8px;font-weight:400;opacity:0.72;margin-left:2px">km/h</span></div>`;
       const labelMarker=L.marker(mid,{icon:L.divIcon({html:labelHtml,className:'',iconAnchor:[26,11]}),interactive:false,zIndexOffset:50}).addTo(map);
       const statusText=d.spd<10?'壅塞':d.spd<20?'緩慢':d.spd<35?'普通':'暢通';
       const modeLabel={cur:'當前車流',pred:'5分鐘預測',opt:'優化後預測'}[viewMode]||'當前車流';
-      const popupHtml=`<div style="padding:12px 14px;min-width:190px"><div style="font-family:'Noto Sans TC',sans-serif;font-size:9px;color:#4e6080;margin-bottom:4px">${modeLabel}</div><div style="font-family:'Inter',system-ui,sans-serif;font-size:13px;font-weight:700;color:#f1f5f9;margin-bottom:10px;line-height:1.3">${road.name}</div><div style="display:flex;align-items:center;gap:8px;background:${col}18;border:1px solid ${col}44;border-radius:7px;padding:8px 10px;margin-bottom:10px"><div style="font-family:'Inter',system-ui,sans-serif;font-size:28px;font-weight:700;color:${col};line-height:1;font-variant-numeric:tabular-nums">${d.spd}</div><div><div style="font-family:'Noto Sans TC',sans-serif;font-size:11px;color:#94a3b8">平均車速</div><div style="font-family:'Inter',system-ui,sans-serif;font-size:12px;color:${col};font-weight:600">km/h</div></div><div style="margin-left:auto;font-family:'Noto Sans TC',sans-serif;font-size:11px;background:${col}22;color:${col};border-radius:4px;padding:2px 7px;font-weight:600">${statusText}</div></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px"><div style="background:#0a0f1e;border-radius:6px;padding:7px 9px"><div style="font-family:'Noto Sans TC',sans-serif;font-size:9px;color:#4e6080;margin-bottom:2px">車流量</div><div style="font-family:'Inter',system-ui,sans-serif;font-size:16px;font-weight:700;color:#f1f5f9;font-variant-numeric:tabular-nums">${d.vol} <span style="font-size:10px;color:#94a3b8;font-weight:400">輛</span></div></div><div style="background:#0a0f1e;border-radius:6px;padding:7px 9px"><div style="font-family:'Noto Sans TC',sans-serif;font-size:9px;color:#4e6080;margin-bottom:2px">路段佔有率</div><div style="font-family:'Inter',system-ui,sans-serif;font-size:16px;font-weight:700;color:#f1f5f9;font-variant-numeric:tabular-nums">${d.occ} <span style="font-size:10px;color:#94a3b8;font-weight:400">%</span></div></div></div><div style="margin-top:8px"><div style="display:flex;justify-content:space-between;margin-bottom:3px"><span style="font-family:'Noto Sans TC',sans-serif;font-size:9px;color:#4e6080">壅塞程度</span><span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#4e6080">${road.id}</span></div><div style="height:5px;background:#162036;border-radius:3px;overflow:hidden"><div style="width:${Math.min(100,d.occ*2)}%;height:100%;background:${col};border-radius:3px"></div></div></div></div>`;
+      const popupHtml=`<div style="min-width:190px"><div class="pop-name">${road.name}</div><div style="font-family:'Inter','Noto Sans TC',sans-serif;font-size:10px;color:#8595b8;margin-bottom:9px">${modeLabel}</div><div style="display:flex;align-items:center;gap:9px;background:${col}1f;border:1px solid ${col}4d;border-radius:8px;padding:8px 11px;margin-bottom:10px"><div style="font-family:'JetBrains Mono',monospace;font-size:28px;font-weight:700;color:${col};line-height:1;font-variant-numeric:tabular-nums">${d.spd}</div><div><div style="font-family:'Inter','Noto Sans TC',sans-serif;font-size:10px;color:#94a3b8">平均車速</div><div style="font-family:'Inter','Noto Sans TC',sans-serif;font-size:12px;color:${col};font-weight:600">km/h</div></div><div style="margin-left:auto;font-family:'Inter','Noto Sans TC',sans-serif;font-size:11px;background:${col}29;border:1px solid ${col}4d;color:${col};border-radius:999px;padding:2px 9px;font-weight:700">${statusText}</div></div><div class="pop-grid" style="margin-bottom:10px"><div style="background:rgba(8,13,28,0.55);border:1px solid rgba(120,160,240,0.12);border-radius:8px;padding:7px 10px"><div class="k" style="margin-bottom:3px">車流量</div><div class="v">${d.vol} <span style="font-size:10px;color:#94a3b8;font-weight:400">輛</span></div></div><div style="background:rgba(8,13,28,0.55);border:1px solid rgba(120,160,240,0.12);border-radius:8px;padding:7px 10px"><div class="k" style="margin-bottom:3px">路段佔有率</div><div class="v">${d.occ} <span style="font-size:10px;color:#94a3b8;font-weight:400">%</span></div></div></div><div><div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-family:'Inter','Noto Sans TC',sans-serif;font-size:9px;color:#8595b8">壅塞程度</span><span class="pop-id" style="margin-bottom:0">${road.id}</span></div><div style="height:5px;background:rgba(120,160,240,0.14);border-radius:3px;overflow:hidden"><div style="width:${Math.min(100,d.occ*2)}%;height:100%;background:${col};box-shadow:0 0 8px ${col}80;border-radius:3px"></div></div></div></div>`;
       mainLine.bindPopup(popupHtml,{maxWidth:220,minWidth:200});
       glow2.bindPopup(popupHtml,{maxWidth:220,minWidth:200});
       layersRef.current.push(glow1,glow2,mainLine,labelMarker);
@@ -516,429 +1533,21 @@ function TrafficMap({ viewMode, roads, heatmapData, baselineHeatmapData, current
     requestAnimationFrame(()=>{ if(labelHandlerRef.current) labelHandlerRef.current(); });
   }, [viewMode, roads, heatmapData, baselineHeatmapData, currentHeatmapData]);
 
-  return <div ref={containerRef} style={{ position:'absolute',top:0,left:0,right:0,bottom:0 }}/>;
+  return <div ref={containerRef} className="map-canvas" />;
 }
 
-/* ══════════════════════════════════════════════════
-   ROAD TABLE (driven by live roads data)
-══════════════════════════════════════════════════ */
-function RoadTable({ roads, dataKey, selectedId, onSelectRoad, collapsed, onToggleCollapse }) {
-  const ff="'Inter',system-ui,sans-serif", body="'Noto Sans TC','PingFang TC',sans-serif", mono="'JetBrains Mono',monospace";
-  const bgCard='#0f1629', bgSurf='#0a0f1e', borderMed='rgba(99,130,200,0.25)', divider='rgba(99,130,200,0.08)', shadow='0 0 0 1px rgba(99,130,200,0.25),0 1px 3px rgba(0,0,0,0.40)', blueSubtle='rgba(59,130,246,0.08)';
-  const [hovered, setHovered] = useState(null);
-  const [search, setSearch] = useState('');
-  const filtered = search ? roads.filter(r => r.name.includes(search) || r.id.toUpperCase().includes(search.toUpperCase())) : roads;
-  const moeCfg = {
-    0:{ label:'暢通', tc:'#4ade80', bg:'rgba(34,197,94,0.10)',  bd:'rgba(34,197,94,0.25)',  dot:'#22c55e', sc:'#4ade80' },
-    1:{ label:'普通', tc:'#fbbf24', bg:'rgba(245,158,11,0.10)', bd:'rgba(245,158,11,0.25)', dot:'#f59e0b', sc:'#f1f5f9' },
-    2:{ label:'壅塞', tc:'#f87171', bg:'rgba(239,68,68,0.10)',  bd:'rgba(239,68,68,0.25)',  dot:'#ef4444', sc:'#f87171' },
-  };
-  return (
-    <div style={{ background:bgCard,border:`1px solid ${borderMed}`,borderRadius:12,boxShadow:shadow,overflow:'hidden',flex:1,display:'flex',flexDirection:'column' }}>
-      <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',padding:'11px 16px',borderBottom: collapsed?'none':`1px solid ${borderMed}` }}>
-        <button onClick={onToggleCollapse} aria-label={collapsed?'展開路段監控列表':'收合路段監控列表'} aria-expanded={!collapsed} title={collapsed?'展開列表':'收合列表，讓地圖更大'} style={{ display:'flex',alignItems:'center',gap:8,background:'none',border:'none',cursor:'pointer',padding:0 }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform:collapsed?'rotate(0deg)':'rotate(180deg)',transition:'transform 150ms',flexShrink:0 }}><polyline points="6 9 12 15 18 9"/></svg>
-          <span style={{ fontFamily:ff,fontSize:13,fontWeight:600,color:'#f1f5f9',letterSpacing:'-0.01em' }}>路段監控列表</span>
-          <span style={{ fontFamily:body,fontSize:11,color:'#4e6080' }}>{roads.length} 路段</span>
-        </button>
-        {!collapsed && (
-        <div style={{ display:'flex',alignItems:'center',gap:6,background:bgSurf,border:`1px solid ${borderMed}`,borderRadius:6,padding:'4px 10px' }}>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#4e6080" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="搜尋路段..." style={{ background:'transparent',border:'none',outline:'none',fontFamily:body,fontSize:12,color:'#f1f5f9',width:100 }} onFocus={e=>e.target.style.color='#f1f5f9'} onBlur={e=>e.target.style.color=search?'#f1f5f9':'#4e6080'}/>
-          {search && <button onClick={()=>setSearch('')} style={{ background:'none',border:'none',color:'#4e6080',cursor:'pointer',padding:0,fontSize:14,lineHeight:1 }}>×</button>}
-        </div>
-        )}
-      </div>
-      <div style={{ overflowY:'auto',flex:1,display:collapsed?'none':'block' }}>
-        <table style={{ width:'100%',borderCollapse:'collapse' }}>
-          <thead>
-            <tr style={{ background:bgSurf }}>
-              {['路段名稱','平均車速','車流量','佔有率','狀態'].map(h=>(
-                <th key={h} style={{ fontFamily:body,fontSize:10,fontWeight:500,letterSpacing:'0.07em',textTransform:'uppercase',color:'#4e6080',padding:'7px 14px',textAlign:'left',borderBottom:`1px solid ${borderMed}`,whiteSpace:'nowrap' }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map(row => {
-              const d = row[dataKey]||row.cur;
-              const noData = d.spd === null && d.vol === null;
-              // 顏色與狀態一律由顯示的車速推導，避免與 VD worstMoe 聚合脫節（高均速卻標紅）。
-              const lvl = noData ? null : (d.spd === null ? (d.moe ?? 1) : _moeFromSpd(d.spd));
-              const m = noData ? null : moeCfg[lvl];
-              const spdCol = noData ? null : (d.spd === null ? m.sc : speedColor(d.spd));
-              const isSel=selectedId===row.id, isHov=hovered===row.id;
-              return (
-                <tr key={row.id} onClick={()=>onSelectRoad&&onSelectRoad(row)} onMouseEnter={()=>setHovered(row.id)} onMouseLeave={()=>setHovered(null)} style={{ cursor:'pointer',background:isSel?blueSubtle:isHov?'rgba(99,130,200,0.05)':'transparent',borderBottom:`1px solid ${divider}`,transition:'background 120ms' }}>
-                  <td style={{ padding:'9px 14px' }}>
-                    <div style={{ fontFamily:body,fontSize:13,fontWeight:500,color:'#f1f5f9' }}>{row.name}</div>
-                    <div style={{ fontFamily:mono,fontSize:10,color:'#4e6080',marginTop:2 }}>{row.id}</div>
-                  </td>
-                  <td style={{ padding:'9px 14px',whiteSpace:'nowrap' }}>
-                    {(noData || d.spd === null || d.spd === undefined)
-                      ? <span style={{ fontFamily:mono,fontSize:13,color:'#2d3d55' }}>---</span>
-                      : <><span style={{ fontFamily:ff,fontWeight:600,fontSize:14,fontVariantNumeric:'tabular-nums',color:spdCol }}>{d.spd}</span>
-                          <span style={{ fontFamily:body,fontSize:12,color:'#94a3b8',marginLeft:3 }}>km/h</span></>}
-                  </td>
-                  <td style={{ padding:'9px 14px',whiteSpace:'nowrap' }}>
-                    {(noData || d.vol === null || d.vol === undefined)
-                      ? <span style={{ fontFamily:mono,fontSize:13,color:'#2d3d55' }}>---</span>
-                      : <><span style={{ fontFamily:ff,fontWeight:500,fontSize:13,fontVariantNumeric:'tabular-nums',color:'#f1f5f9' }}>{d.vol}</span>
-                          <span style={{ fontFamily:body,fontSize:11,color:'#94a3b8',marginLeft:3 }}>輛</span></>}
-                  </td>
-                  <td style={{ padding:'9px 14px' }}>
-                    {(noData || d.occ === null || d.occ === undefined)
-                      ? <span style={{ fontFamily:mono,fontSize:13,color:'#2d3d55' }}>---</span>
-                      : <span style={{ fontFamily:mono,fontSize:12,fontVariantNumeric:'tabular-nums',color:'#94a3b8' }}>{d.occ}%</span>}
-                  </td>
-                  <td style={{ padding:'9px 14px' }}>
-                    {noData
-                      ? <span style={{ fontFamily:body,fontSize:12,color:'#2d3d55' }}>等待數據</span>
-                      : <span style={{ display:'inline-flex',alignItems:'center',gap:5,background:m.bg,color:m.tc,border:`1px solid ${m.bd}`,borderRadius:4,padding:'2px 9px',fontSize:12,fontWeight:500,fontFamily:body,whiteSpace:'nowrap' }}>
-                          <span style={{ width:6,height:6,borderRadius:'50%',background:m.dot,flexShrink:0 }}/>
-                          {m.label}
-                        </span>}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
+/* ════════ RESTYLED APP SHELL + DRAWER ════════ */
+/* ============================================================
+   TrafficVision — Variant D "Glass Stack Focus" — App shell fragment
+   Restyled App shell + layout + NEW right detail drawer.
+   Logic sections (MODES, _moeFromSpd, computePredRoads,
+   computeOptRoads) are VERBATIM from the original dashboard.html;
+   only className usage / presentational JSX wrappers changed in App.
+   Pairs with _frag/style.css (Variant D class catalogue).
+   ============================================================ */
 
-/* ══════════════════════════════════════════════════
-   SIGNAL CONTROL
-══════════════════════════════════════════════════ */
-const _SC = {
-  ff:"'Inter',system-ui,sans-serif", body:"'Noto Sans TC','PingFang TC',sans-serif", mono:"'JetBrains Mono',monospace",
-  bgCard:'#0f1629', bgSurf:'#0a0f1e', bgElev:'#162036',
-  borderMed:'rgba(99,130,200,0.25)', shadow:'0 0 0 1px rgba(99,130,200,0.25),0 1px 3px rgba(0,0,0,0.40)',
-  blue400:'#60a5fa', blueSubtle:'rgba(59,130,246,0.08)', blueBg:'rgba(59,130,246,0.10)', blueBd:'rgba(59,130,246,0.25)',
-  green400:'#4ade80', greenBg:'rgba(34,197,94,0.10)', greenBd:'rgba(34,197,94,0.25)',
-  red400:'#f87171', redBg:'rgba(239,68,68,0.10)', redBd:'rgba(239,68,68,0.25)',
-  fg:'#f1f5f9', fg2:'#94a3b8', fg3:'#4e6080',
-};
-/* ─── SUMO 路網真實號誌資料（來源：ntut_network_split.net copy.xml，座標已轉換為 WGS84） ─── */
-function phaseStyle(state){
-  if(!state) return {bg:'#4e6080',label:'未知'};
-  const g=(state.match(/[Gg]/g)||[]).length;
-  const y=(state.match(/y/g)||[]).length;
-  if(y>0) return {bg:'#d97706',label:'黃燈清道'};
-  if(g>0) return {bg:'#16a34a',label:'放行通車'};
-  return {bg:'#dc2626',label:'全紅間隔'};
-}
-const signalData=[
-  {id:'655375241',name:'八德路一段/忠孝東路二段',lat:25.043478,lon:121.528958,cycle:90,offset:0,status:'normal',
-   phases:[{dur:86,state:'GG'},{dur:3,state:'yy'},{dur:1,state:'rr'}]},
-  {id:'cluster655375228_655375240',name:'八德路一段/金山北路',lat:25.043684,lon:121.529884,cycle:90,offset:0,status:'normal',
-   phases:[{dur:37,state:'rrrrrGGgggGGGGGr'},{dur:5,state:'rrrrrGGgggGGGrrr'},{dur:3,state:'rrrrryyyyyyyyrrr'},{dur:37,state:'ggGGGrrrrrrrrrrG'},{dur:5,state:'ggGGGrrrrrrrrrrr'},{dur:3,state:'yyyyyrrrrrrrrrrr'}]},
-  {id:'cluster_2038168688_655375573',name:'忠孝東路二段/臨沂街',lat:25.042920,lon:121.530753,cycle:90,offset:0,status:'normal',
-   phases:[{dur:37,state:'rrrrrrrrgGGGgrrrgGGGGgGrGr'},{dur:5,state:'rrrrrrrrgGGGgrrrgGGGGgrrrr'},{dur:3,state:'rrrrrrrryyyyyrrryyyyyyrrrr'},{dur:37,state:'gggggGggrrrrrgGgrrrrrrrGrG'},{dur:5,state:'gggggGggrrrrrgGgrrrrrrrrrr'},{dur:3,state:'yyyyyyyyrrrrryyyrrrrrrrrrr'}]},
-  {id:'cluster_5372642442_631668976_631668981_631669076',name:'忠孝東路三段/忠孝東路二段',lat:25.042329,lon:121.532928,cycle:90,offset:0,status:'normal',
-   phases:[{dur:37,state:'rrrrrrrrGGGGgggggggrrrrrrrrrrgGGGGGGggggrrrr'},{dur:3,state:'rrrrrrrryyyyyyyggggrrrrrrrrrryyyyyyyggggrrrr'},{dur:6,state:'rrrrrrrrrrrrrrrGGGGrrrrrrrrrrrrrrrrrGGGGrrrr'},{dur:3,state:'rrrrrrrrrrrrrrryyyyrrrrrrrrrrrrrrrrryyyyrrrr'},{dur:1,state:'rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr'},{dur:37,state:'GGGGGGGgrrrrrrrrrrrGGGGGGGgggrrrrrrrrrrrrrrr'},{dur:3,state:'yyyyyyyyrrrrrrrrrrryyyyyyyyyyrrrrrrrrrrrrrrr'}]},
-  {id:'cluster_2528018119_655375236',name:'八德路一段/八德路二段',lat:25.044398,lon:121.533022,cycle:90,offset:0,status:'normal',
-   phases:[{dur:37,state:'rrrrrrrrgggggrrrrrrrggggGgrrrr'},{dur:3,state:'rrrrrrrryyyyyrrrrrrryyyyyyrrrr'},{dur:1,state:'rrrrrrrrrrrrrrrrrrrrrrrrrrrrrr'},{dur:37,state:'GGGGggggrrrrrGGGGGGgrrrrrrrrrr'},{dur:3,state:'yyyyggggrrrrryyyyyygrrrrrrrrrr'},{dur:6,state:'rrrrGGGGrrrrrrrrrrrGrrrrrrrrrr'},{dur:3,state:'rrrryyyyrrrrrrrrrrryrrrrrrrrrr'}]},
-  {id:'cluster655375336_end_0_655375336_end_1_655375336_end_10_655375336_end_11_#8more',name:'市民大道三段/新生北路一段',lat:25.045467,lon:121.533018,cycle:190,offset:0,status:'normal',
-   phases:[{dur:5,state:'rrrgggGGGGggGrrrrrrrrrgggGGGggGrrrrrrrrGrG'},{dur:3,state:'rrryyyyyyyyyyrrrrrrrrryyyyyyyyyrrrrrrrryry'},{dur:2,state:'rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr'},{dur:37,state:'GGGrrrrrrrrrrgggGGGGGGrrrrrrrrrggGggGGGrGr'},{dur:4,state:'yyyrrrrrrrrrryyyyyyyyyrrrrrrrrryyyyyyyyryr'},{dur:4,state:'rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr'},{dur:45,state:'rrrgggGGGGggGrrrrrrrrrgggGGGggGrrrrrrrrGrG'},{dur:4,state:'rrryyyyyyyyyyrrrrrrrrryyyyyyyyyrrrrrrrryry'},{dur:4,state:'rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr'},{dur:9,state:'GGGrrrrrrrrrrgggGGGGGGrrrrrrrrrggGggGGGrGr'},{dur:3,state:'yyyrrrrrrrrrryyyyyyyyyrrrrrrrrryyyyyyyyryr'},{dur:2,state:'rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr'},{dur:51,state:'rrrgggGGGGggGrrrrrrrrrgggGGGggGrrrrrrrrGrG'},{dur:4,state:'rrryyyyyyyyyyrrrrrrrrryyyyyyyyyrrrrrrrryry'},{dur:4,state:'rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr'},{dur:1,state:'GGGrrrrrrrrrrgggGGGGGGrrrrrrrrrggGggGGGrGr'},{dur:4,state:'yyyrrrrrrrrrryyyyyyyyyrrrrrrrrryyyyyyyyryr'},{dur:4,state:'rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr'}]},
-  {id:'cluster_3431431575_4777363357_655375231_6982059025',name:'八德路二段/渭水路',lat:25.045663,lon:121.535898,cycle:190,offset:0,status:'normal',
-   phases:[{dur:3,state:'rrrrrrrrrrrrG'},{dur:3,state:'rrrrrrrrrrrry'},{dur:2,state:'rrrrrrrrrrrrr'},{dur:115,state:'gGGGgGGgggGGr'},{dur:3,state:'yyyyyyyyyyyyr'},{dur:3,state:'rrrrrrrrrrrrr'},{dur:11,state:'rrrrrrrrrrrrG'},{dur:3,state:'rrrrrrrrrrrry'},{dur:2,state:'rrrrrrrrrrrrr'},{dur:40,state:'gGGGgGGgggGGr'},{dur:3,state:'yyyyyyyyyyyyr'},{dur:2,state:'rrrrrrrrrrrrr'}]},
-  {id:'cluster_623980090_623980094',name:'八德路二段/建國南路一段',lat:25.046114,lon:121.537194,cycle:234,offset:0,status:'normal',
-   phases:[{dur:85,state:'rrrrgGGGrrrr'},{dur:3,state:'rrrryyyyrrrr'},{dur:2,state:'rrrrrrrrrrrr'},{dur:60,state:'gGGGrrrrGGGG'},{dur:3,state:'yyyyrrrryyyy'},{dur:3,state:'rrrrrrrrrrrr'},{dur:71,state:'rrrrgGGGrrrr'},{dur:3,state:'rrrryyyyrrrr'},{dur:4,state:'rrrrrrrrrrrr'}]},
-  {id:'cluster_623980147_623980152',name:'八德路二段/建國南路一段(北)',lat:25.046016,lon:121.536663,cycle:234,offset:0,status:'normal',
-   phases:[{dur:85,state:'gGGGGGrrrrrrrrrG'},{dur:3,state:'yyyyyyrrrrrrrrry'},{dur:2,state:'rrrrrrrrrrrrrrrr'},{dur:60,state:'rrrrrrGGGGgGGGGr'},{dur:3,state:'rrrrrryyyyyyyyyr'},{dur:3,state:'rrrrrrrrrrrrrrrr'},{dur:71,state:'gGGGGGrrrrrrrrrG'},{dur:3,state:'yyyyyyrrrrrrrrry'},{dur:4,state:'rrrrrrrrrrrrrrrr'}]},
-  {id:'3208478121',name:'建國南路一段/迴轉道(南)',lat:25.043673,lon:121.536581,cycle:90,offset:0,status:'normal',
-   phases:[{dur:37,state:'GrrrG'},{dur:5,state:'Grrrr'},{dur:3,state:'yrrrr'},{dur:42,state:'rGGGr'},{dur:3,state:'ryyyr'}]},
-  {id:'619136999',name:'建國南路一段/迴轉道(北)',lat:25.043700,lon:121.537130,cycle:90,offset:0,status:'normal',
-   phases:[{dur:27,state:'GGGrrrrr'},{dur:3,state:'yyyrrrrr'},{dur:27,state:'rrrGGGrr'},{dur:3,state:'rrryyyrr'},{dur:27,state:'rrrrrrGG'},{dur:3,state:'rrrrrryy'}]},
-  {id:'J0',name:'建國南路一段/忠孝東路三段',lat:25.041592,lon:121.538154,cycle:90,offset:0,status:'normal',
-   phases:[{dur:76,state:'GGGGGGGGggr'},{dur:3,state:'yyyyyyyyyyr'},{dur:1,state:'rrrrrrrrrrr'},{dur:5,state:'rrrrrrrrrrG'},{dur:5,state:'rrrrrrrrrrr'}]},
-  {id:'cluster619136899_619136900_cluster_619136929_619136942',name:'建國南路一段/忠孝東路三段(東)',lat:25.041691,lon:121.537116,cycle:90,offset:0,status:'normal',
-   phases:[{dur:18,state:'GGGrrrrrrrrrrrrrrrrrrrrrrrrr'},{dur:3,state:'yyyrrrrrrrrrrrrrrrrrrrrrrrrr'},{dur:1,state:'rrrrrrrrrrrrrrrrrrrrrrrrrrrr'},{dur:19,state:'rrrGGGGGGrrrrrrrrrrrrrrrrrrr'},{dur:3,state:'rrryyyyyyrrrrrrrrrrrrrrrrrrr'},{dur:19,state:'rrrrrrrrrGGGGGggGGrrrrrrrrrr'},{dur:3,state:'rrrrrrrrryyyyyyyyyrrrrrrrrrr'},{dur:1,state:'rrrrrrrrrrrrrrrrrrrrrrrrrrrr'},{dur:19,state:'rrrrrrrrrrrrrrrrrrgggggggrrr'},{dur:3,state:'rrrrrrrrrrrrrrrrrryyyyyyyrrr'},{dur:1,state:'rrrrrrrrrrrrrrrrrrrrrrrrrrrr'}]},
-  {id:'cluster3086736522_655375108_655375247_655375401_#1more',name:'市民大道三段/市民大道二段',lat:25.046080,lon:121.530783,cycle:90,offset:0,status:'normal',
-   phases:[{dur:18,state:'rrrrrrrgGGGrrrrrrrgGGGrrrrrrGrGr'},{dur:5,state:'rrrrrrrgGGGrrrrrrrgGGGrrrrrrrrrr'},{dur:3,state:'rrrrrrryyyyrrrrrrryyyyrrrrrrrrrr'},{dur:1,state:'rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr'},{dur:18,state:'rrrrrrrrrrrGGGrrrrrrrrGGGrrrGrGr'},{dur:5,state:'rrrrrrrrrrrGGGrrrrrrrrGGGrrrrrrr'},{dur:3,state:'rrrrrrrrrrryyyrrrrrrrryyyrrrrrrr'},{dur:18,state:'gggGgggrrrrrrrGGGGrrrrrrrrrrrrrG'},{dur:5,state:'gggGgggrrrrrrrGGGGrrrrrrrrrrrrrr'},{dur:3,state:'yyyyyyyrrrrrrryyyyrrrrrrrrrrrrrr'},{dur:1,state:'rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr'},{dur:5,state:'rrrrrrrrrrrrrrrrrrrrrrrrrrrrGGGG'},{dur:5,state:'rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr'}]},
-  {id:'cluster_4374470814_4374470816_656132411_656132475',name:'松江路/松江路25巷',lat:25.047188,lon:121.533095,cycle:190,offset:0,status:'normal',
-   phases:[{dur:3,state:'rrrrgGGrrr'},{dur:3,state:'rrrryyyrrr'},{dur:2,state:'rrrrrrrrrr'},{dur:92,state:'GGGrrrrggG'},{dur:3,state:'yyyrrrryyy'},{dur:2,state:'rrrrrrrrrr'},{dur:5,state:'rrrrgGGrrr'},{dur:3,state:'rrrryyyrrr'},{dur:2,state:'rrrrrrrrrr'},{dur:69,state:'GGGrrrrggG'},{dur:3,state:'yyyrrrryyy'},{dur:3,state:'rrrrrrrrrr'}]},
-];
-const sigStatusCfg={
-  optimized:{label:'已優化',tc:_SC.green400,bg:_SC.greenBg,bd:_SC.greenBd},
-  normal:   {label:'正常',  tc:_SC.blue400, bg:_SC.blueBg, bd:_SC.blueBd },
-  congested:{label:'壅塞中',tc:_SC.red400,  bg:_SC.redBg,  bd:_SC.redBd  },
-};
-function SignalControl({ apiRecords = [], liveSignals = null }){
-  /* 合併：號誌計畫(apiRecords) 決定相位/狀態；即時串流(liveSignals) 提供當前燈號 */
-  const mergedSignals = useMemo(() => {
-    const liveKeys = liveSignals ? Object.keys(liveSignals) : [];
-    const matchToken = (id, sid) => id === sid || id.split(/[^A-Za-z0-9]+/).includes(sid);
-    const findLive = (sid) => {
-      const k = liveKeys.find(k => matchToken(k, sid));
-      return k ? liveSignals[k] : null;
-    };
-    return signalData.map(s => {
-      const live = findLive(s.id);
-      const rec = apiRecords.find(r => {
-        const id = String(r.tl_id || r.tls_id || r.junction_id || r.id || '');
-        return id ? matchToken(id, s.id) : false;
-      });
-      let out = s;
-      if (rec) {
-        const keys = Object.keys(rec);
-        const phases = s.phases.map((p, i) => {
-          const durKey = keys.find(k => new RegExp(`phase[_\\s]?${i}[_\\s]?dur`, 'i').test(k)) ||
-                         keys.find(k => new RegExp(`phase${i}`, 'i').test(k));
-          const dur = durKey ? Math.max(5, parseInt(rec[durKey]) || p.dur) : p.dur;
-          return { ...p, dur };
-        });
-        const cycle = phases.reduce((acc, p) => acc + p.dur, 0);
-        // 號誌計畫的 score 是壅塞優先度分數：高分代表該路口較壅塞
-        const score = parseFloat(rec.score);
-        const status = (!isNaN(score) && score >= 1.3) ? 'congested' : 'optimized';
-        out = { ...s, phases, cycle, status };
-      }
-      if (live) out = { ...out, live };
-      return out;
-    });
-  }, [apiRecords, liveSignals]);
-
-  const [selected,setSelected]=useState('655375241');
-  const [,setClock]=useState(0);   // 僅用來每秒觸發重繪；相位以 Date.now() 計算
-  const S=_SC;
-  useEffect(()=>{ const id=setInterval(()=>setClock(c=>c+1),1000); return()=>clearInterval(id); },[]);
-
-  function getPhase(sig){
-    // 以牆上時鐘（秒）計算相位，背景頁籤被 throttle 也不會漂移
-    const nowSec=Math.floor(Date.now()/1000);
-    const elapsed=(nowSec+(sig.offset||0))%sig.cycle;
-    let acc=0;
-    for(let i=0;i<sig.phases.length;i++){
-      if(elapsed<acc+sig.phases[i].dur) return{idx:i,phase:sig.phases[i],remaining:sig.phases[i].dur-(elapsed-acc)};
-      acc+=sig.phases[i].dur;
-    }
-    return{idx:0,phase:sig.phases[0],remaining:sig.phases[0].dur};
-  }
-  /* 燈號狀態：從 SUMO state 字串判斷 */
-  function lightState(state){
-    if(!state) return 'red';
-    if((state.match(/y/g)||[]).length>0) return 'amber';
-    if((state.match(/[Gg]/g)||[]).length>0) return 'green';
-    return 'red';
-  }
-
-  const sel=mergedSignals.find(s=>s.id===selected);
-  const selInfo=sel?getPhase(sel):null;
-
-  return(
-    <div style={{background:S.bgCard,border:`1px solid ${S.borderMed}`,borderRadius:12,boxShadow:S.shadow,overflow:'hidden',display:'flex',flexDirection:'column',flex:1,minHeight:0}}>
-
-      {/* ── Header ── */}
-      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'11px 14px',borderBottom:`1px solid ${S.borderMed}`,flexShrink:0}}>
-        <span style={{fontFamily:S.ff,fontSize:13,fontWeight:600,color:S.fg,letterSpacing:'-0.01em'}}>號誌控制</span>
-        <span style={{fontFamily:S.body,fontSize:11,fontWeight:500,color:S.green400,background:S.greenBg,border:`1px solid ${S.greenBd}`,borderRadius:4,padding:'2px 8px'}}>{signalData.length} 個路口</span>
-      </div>
-
-      {/* ── Signal list ── */}
-      <div style={{padding:'6px 8px',overflowY:'auto',flex:1}}>
-        {mergedSignals.map(s=>{
-          const cfg=sigStatusCfg[s.status]; const isAct=selected===s.id;
-          const info=getPhase(s);
-          // 有 WS 即時燈號時優先採用，否則用相位時鐘推算
-          const ls = s.live ? lightState(s.live.state) : lightState(info.phase.state);
-          return(
-            <div key={s.id} onClick={()=>setSelected(s.id)}
-              style={{display:'flex',alignItems:'center',padding:'8px 10px',borderRadius:8,cursor:'pointer',marginBottom:2,background:isAct?S.blueSubtle:'transparent',transition:'background 120ms',gap:8}}>
-              {/* Mini traffic light */}
-              <div style={{display:'flex',flexDirection:'column',gap:2.5,flexShrink:0}}>
-                {[['red','#ef4444'],['amber','#f59e0b'],['green','#22c55e']].map(([c,col])=>(
-                  <div key={c} style={{width:7,height:7,borderRadius:'50%',background:ls===c?col:'rgba(99,130,200,0.12)',boxShadow:ls===c?`0 0 7px ${col}BB`:'none',transition:'background 350ms,box-shadow 350ms'}}/>
-                ))}
-              </div>
-              <div style={{flex:1,minWidth:0}}>
-                <div style={{fontFamily:S.mono,fontSize:11,color:S.blue400,marginBottom:2}}>{s.id}</div>
-                <div style={{fontFamily:S.body,fontSize:12,color:S.fg2,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{s.name}</div>
-              </div>
-              <div style={{display:'flex',alignItems:'center',gap:6,flexShrink:0}}>
-                <span style={{fontFamily:S.mono,fontSize:12,fontWeight:700,color:phaseStyle(info.phase.state).bg,minWidth:24,textAlign:'right',fontVariantNumeric:'tabular-nums'}}>{info.remaining}s</span>
-                <span style={{fontFamily:S.body,fontSize:11,fontWeight:500,color:cfg.tc,background:cfg.bg,border:`1px solid ${cfg.bd}`,borderRadius:4,padding:'1px 7px'}}>{cfg.label}</span>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* ── Detail panel ── */}
-      {sel&&selInfo&&(
-        <div style={{borderTop:`1px solid ${S.borderMed}`,padding:'12px 14px',flexShrink:0}}>
-          <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:10}}>
-            {/* Traffic light */}
-            <div style={{background:'#060c1a',border:'1px solid rgba(99,130,200,0.20)',borderRadius:8,padding:'8px 10px',display:'flex',flexDirection:'column',gap:5,alignItems:'center',flexShrink:0}}>
-              {[['red','#ef4444','rgba(239,68,68,0.10)'],['amber','#f59e0b','rgba(245,158,11,0.10)'],['green','#22c55e','rgba(34,197,94,0.10)']].map(([c,col,dim])=>{
-                const on=lightState(selInfo.phase.state)===c;
-                return<div key={c} style={{width:18,height:18,borderRadius:'50%',background:on?col:dim,boxShadow:on?`0 0 12px ${col}CC,0 0 5px ${col}`:'none',transition:'background 350ms,box-shadow 350ms'}}/>;
-              })}
-            </div>
-            {/* Phase info */}
-            <div style={{flex:1}}>
-              <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:4}}>
-                <span style={{width:8,height:8,borderRadius:'50%',background:phaseStyle(selInfo.phase.state).bg,flexShrink:0,boxShadow:`0 0 6px ${phaseStyle(selInfo.phase.state).bg}`}}/>
-                <span style={{fontFamily:S.body,fontSize:13,fontWeight:600,color:phaseStyle(selInfo.phase.state).bg}}>{phaseStyle(selInfo.phase.state).label}</span>
-              </div>
-              <div style={{fontFamily:S.mono,fontSize:26,fontWeight:700,color:'#f1f5f9',lineHeight:1,fontVariantNumeric:'tabular-nums'}}>
-                {selInfo.remaining}<span style={{fontSize:13,fontWeight:400,color:S.fg3,marginLeft:4}}>秒</span>
-              </div>
-              <div style={{fontFamily:S.body,fontSize:10,color:S.fg3,marginTop:4}}>週期 {sel.cycle}s · {sel.id}</div>
-            </div>
-          </div>
-
-          {/* 四相位色條 */}
-          <div style={{display:'flex',borderRadius:5,overflow:'hidden',height:18,marginBottom:5}}>
-            {sel.phases.map((p,i)=>(
-              <div key={i} title={`${phaseStyle(p.state).label} ${p.dur}s`}
-                style={{width:`${(p.dur/sel.cycle)*100}%`,background:phaseStyle(p.state).bg,opacity:i===selInfo.idx?1:0.28,display:'flex',alignItems:'center',justifyContent:'center',transition:'opacity 300ms'}}>
-                <span style={{fontFamily:S.mono,fontSize:9,color:'rgba(255,255,255,0.9)',fontWeight:600}}>{p.dur}s</span>
-              </div>
-            ))}
-          </div>
-
-          {/* 當前相位進度條 */}
-          <div style={{height:3,background:S.bgElev,borderRadius:2,overflow:'hidden',marginBottom:9}}>
-            <div style={{height:'100%',borderRadius:2,background:phaseStyle(selInfo.phase.state).bg,
-              width:`${Math.max(0,((selInfo.phase.dur-selInfo.remaining)/selInfo.phase.dur)*100)}%`,
-              transition:'width 900ms linear'}}/>
-          </div>
-
-          {/* 四相位圖例 */}
-          <div style={{display:'flex',flexWrap:'wrap',gap:'4px 10px'}}>
-            {sel.phases.map((p,i)=>(
-              <div key={i} style={{display:'flex',alignItems:'center',gap:4,fontFamily:S.body,fontSize:10,color:i===selInfo.idx?phaseStyle(p.state).bg:S.fg3,transition:'color 300ms'}}>
-                <span style={{width:6,height:6,borderRadius:'50%',background:phaseStyle(p.state).bg,display:'inline-block',opacity:i===selInfo.idx?1:0.4}}/>
-                {phaseStyle(p.state).label} {p.dur}s
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ══════════════════════════════════════════════════
-   LLM CHAT
-══════════════════════════════════════════════════ */
-const _LC={
-  ff:"'Inter',system-ui,sans-serif", body:"'Noto Sans TC','PingFang TC',sans-serif", mono:"'JetBrains Mono',monospace",
-  bgCard:'#0f1629', bgSurf:'#0a0f1e', bgElev:'#162036',
-  borderMed:'rgba(99,130,200,0.25)', shadow:'0 0 0 1px rgba(99,130,200,0.25),0 1px 3px rgba(0,0,0,0.40)',
-  blue400:'#60a5fa', blue500:'#3b82f6', blueSubtle:'rgba(59,130,246,0.10)', blueBd:'rgba(59,130,246,0.20)',
-  fg:'#f1f5f9', fg2:'#94a3b8', fg3:'#4e6080', fgD:'#2d3d55',
-};
-const SAMPLE_MSGS=[
-  {role:'assistant',text:'您好！我是 TrafficVision AI 助理。請問有什麼關於目前交通數據或號誌控制的問題？',time:new Date().toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'})},
-];
-function parseMarkdown(text){
-  return text.split(/\*\*(.*?)\*\*/g).map((part,i)=>i%2===1?<strong key={i} style={{color:_LC.fg,fontWeight:600}}>{part}</strong>:part);
-}
-function LLMChat({ msgs, setMsgs }){
-  const [input,setInput]=useState('');
-  const [loading,setLoading]=useState(false);
-  const bottomRef=useRef(null);
-  const abortRef=useRef(null);
-  const L=_LC;
-  const now=()=>new Date().toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'});
-  const send=()=>{
-    if(!input.trim()||loading) return;
-    const t=input;
-    setMsgs(m=>[...m,{role:'user',text:t,time:now()}]);
-    setInput(''); setLoading(true);
-    const history = msgs
-      .filter(m => m.role==='user' || m.role==='assistant')
-      .map(m => ({role: m.role, content: m.text}));
-    // 中斷前一個未完成的請求，避免先發後到覆蓋；並設 125s 逾時
-    if(abortRef.current) abortRef.current.abort();
-    const ctrl = new AbortController();
-    abortRef.current = ctrl;
-    const timer = setTimeout(()=>ctrl.abort(), 125000);
-    fetch('/api/chat',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({message:t, history}),
-      signal: ctrl.signal
-    })
-    .then(r=>r.json())
-    .then(data=>{
-      clearTimeout(timer);
-      setMsgs(m=>[...m,{role:'assistant',text:data.reply||'無法取得回應',time:now()}]);
-      setLoading(false);
-    })
-    .catch(err=>{
-      clearTimeout(timer);
-      if(err && err.name==='AbortError') { setLoading(false); return; }
-      setMsgs(m=>[...m,{role:'assistant',text:'連線失敗，請確認 API 伺服器已啟動。',time:now()}]);
-      setLoading(false);
-    });
-  };
-  useEffect(()=>{ bottomRef.current?.scrollIntoView({behavior:'smooth'}); },[msgs,loading]);
-  return (
-    <div style={{display:'flex',flexDirection:'column',background:L.bgCard,border:`1px solid ${L.borderMed}`,borderRadius:12,boxShadow:L.shadow,overflow:'hidden',flex:1,minHeight:0}}>
-      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'11px 14px',borderBottom:`1px solid ${L.borderMed}`,flexShrink:0}}>
-        <div style={{display:'flex',alignItems:'center',gap:8}}>
-          <div style={{width:26,height:26,borderRadius:7,background:L.blueSubtle,border:`1px solid ${L.blueBd}`,display:'flex',alignItems:'center',justifyContent:'center'}}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={L.blue400} strokeWidth="2" strokeLinecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-          </div>
-          <span style={{fontFamily:L.ff,fontSize:13,fontWeight:600,color:L.fg,letterSpacing:'-0.01em'}}>AI 數據助理</span>
-        </div>
-        <span style={{fontFamily:L.mono,fontSize:10,color:L.fg3,background:L.bgSurf,border:`1px solid ${L.borderMed}`,borderRadius:4,padding:'2px 7px'}}>gemma-4</span>
-      </div>
-      <div style={{flex:1,overflowY:'auto',padding:'14px',display:'flex',flexDirection:'column'}}>
-        {msgs.map((m,i)=>{
-          const isUser=m.role==='user';
-          return (
-            <div key={i} style={{display:'flex',justifyContent:isUser?'flex-end':'flex-start',marginBottom:12,gap:8}}>
-              {!isUser&&<div style={{width:26,height:26,borderRadius:7,background:L.blueSubtle,border:`1px solid ${L.blueBd}`,display:'flex',alignItems:'center',justifyContent:'center',fontFamily:L.ff,fontSize:10,fontWeight:700,color:L.blue400,flexShrink:0,marginTop:2}}>AI</div>}
-              <div style={{maxWidth:'80%',display:'flex',flexDirection:'column',gap:3,alignItems:isUser?'flex-end':'flex-start'}}>
-                <div style={{borderRadius:isUser?'10px 10px 3px 10px':'3px 10px 10px 10px',padding:'9px 13px',background:isUser?L.blue500:L.bgElev,border:isUser?'none':`1px solid ${L.borderMed}`,fontFamily:L.body,fontSize:12,lineHeight:1.65,color:isUser?'#fff':L.fg2}}>
-                  {m.text.split('\n').filter(Boolean).map((ln,j)=><p key={j} style={{margin:j>0?'6px 0 0':0}}>{parseMarkdown(ln)}</p>)}
-                </div>
-                <div style={{fontFamily:L.mono,fontSize:10,color:L.fgD}}>{m.time}</div>
-              </div>
-            </div>
-          );
-        })}
-        {loading&&(
-          <div style={{display:'flex',gap:8,alignItems:'flex-start',marginBottom:12}}>
-            <div style={{width:26,height:26,borderRadius:7,background:L.blueSubtle,border:`1px solid ${L.blueBd}`,display:'flex',alignItems:'center',justifyContent:'center',fontFamily:L.ff,fontSize:10,fontWeight:700,color:L.blue400,flexShrink:0}}>AI</div>
-            <div style={{background:L.bgElev,border:`1px solid ${L.borderMed}`,borderRadius:'3px 10px 10px 10px',padding:'10px 14px',display:'flex',gap:5,alignItems:'center'}}>
-              {[0,1,2].map(i=><div key={i} style={{width:5,height:5,borderRadius:'50%',background:L.fg3,animation:`bounce 1.2s ${i*0.2}s ease-in-out infinite`}}/>)}
-            </div>
-          </div>
-        )}
-        <div ref={bottomRef}/>
-      </div>
-      <div style={{padding:'10px 12px',borderTop:`1px solid ${L.borderMed}`,flexShrink:0}}>
-        <div style={{display:'flex',gap:6,marginBottom:8,flexWrap:'wrap'}}>
-          {['壅塞原因分析','號誌優化建議','預測未來1小時'].map(s=>(
-            <button key={s} onClick={()=>setInput(s)} style={{fontFamily:L.body,fontSize:11,color:L.fg2,background:L.bgSurf,border:`1px solid ${L.borderMed}`,borderRadius:5,padding:'3px 9px',transition:'border-color 150ms,color 150ms'}}
-              onMouseEnter={e=>{e.currentTarget.style.borderColor='rgba(99,130,200,0.45)';e.currentTarget.style.color=L.fg;}}
-              onMouseLeave={e=>{e.currentTarget.style.borderColor=L.borderMed;e.currentTarget.style.color=L.fg2;}}
-            >{s}</button>
-          ))}
-        </div>
-        <div style={{display:'flex',gap:8}}>
-          <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&!e.shiftKey&&send()} placeholder="詢問交通狀況、號誌建議..."
-            style={{flex:1,height:36,background:L.bgSurf,border:`1px solid ${L.borderMed}`,borderRadius:8,padding:'0 12px',color:L.fg,fontFamily:L.body,fontSize:12,outline:'none',transition:'border-color 150ms'}}
-            onFocus={e=>e.target.style.borderColor=L.blue500} onBlur={e=>e.target.style.borderColor=L.borderMed}/>
-          <button onClick={send} disabled={loading||!input.trim()} style={{width:36,height:36,borderRadius:8,border:'none',background:(loading||!input.trim())?'rgba(59,130,246,0.3)':L.blue500,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,transition:'background 150ms'}}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ══════════════════════════════════════════════════
-   APP SHELL
-══════════════════════════════════════════════════ */
+// ==== MODES ====
+/* VERBATIM — logic */
 const MODES = {
   cur:  { label:'原始車流', accent:'#3b82f6' },
   pred: { label:'預測車流', accent:'#f59e0b' },
@@ -946,8 +1555,13 @@ const MODES = {
 };
 
 
+// ==== _moeFromSpd ====
+/* VERBATIM — logic */
 const _moeFromSpd = spd => spd === null ? null : spd < 10 ? 2 : spd < 30 ? 1 : 0;
 
+
+// ==== computePredRoads ====
+/* VERBATIM — logic */
 /* ── Predicted roads ← SUMO baseline forecast ({road:{spd,vol,occ}}), heuristic fallback ── */
 function computePredRoads(liveRoads, predForecast) {
   return liveRoads.map(r => {
@@ -963,6 +1577,9 @@ function computePredRoads(liveRoads, predForecast) {
   });
 }
 
+
+// ==== computeOptRoads ====
+/* VERBATIM — logic */
 /* ── Optimised roads ← SUMO best-strategy forecast ({road:{spd,vol,occ}}), heuristic fallback ── */
 function computeOptRoads(liveRoads, optForecast) {
   return liveRoads.map(r => {
@@ -977,94 +1594,136 @@ function computeOptRoads(liveRoads, optForecast) {
   });
 }
 
-/* ── Prediction panel (activeNav==='predict') ── */
-function PredictPanel({ predRoads, predRecords }) {
-  const ff = "'Inter',system-ui,sans-serif", body = "'Noto Sans TC','PingFang TC',sans-serif", mono = "'JetBrains Mono',monospace";
-  return (
-    <div style={{ flex:1, overflow:'hidden', display:'flex', flexDirection:'column', background:'#0f1629', border:'1px solid rgba(99,130,200,0.25)', borderRadius:12, boxShadow:'0 0 0 1px rgba(99,130,200,0.25),0 1px 3px rgba(0,0,0,0.40)' }}>
-      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'11px 16px', borderBottom:'1px solid rgba(99,130,200,0.25)' }}>
-        <span style={{ fontFamily:ff, fontSize:13, fontWeight:600, color:'#f1f5f9' }}>GRU 5 分鐘流量預測</span>
-        {predRecords.length === 0 && <span style={{ fontFamily:body, fontSize:11, color:'#4e6080', background:'rgba(99,130,200,0.08)', border:'1px solid rgba(99,130,200,0.20)', borderRadius:5, padding:'2px 9px' }}>尚無數據 — 請先執行 runtime_pipeline.py</span>}
-        {predRecords.length > 0  && <span style={{ fontFamily:mono, fontSize:10, color:'#4e6080' }}>{predRecords.length} 筆記錄</span>}
-      </div>
-      <div style={{ overflowY:'auto', flex:1 }}>
-        <table style={{ width:'100%', borderCollapse:'collapse' }}>
-          <thead>
-            <tr style={{ background:'#0a0f1e' }}>
-              {['路段','當前車速','預測車速 (5 min)','當前車流','預測車流','預測狀態'].map(h => (
-                <th key={h} style={{ fontFamily:body, fontSize:10, fontWeight:500, letterSpacing:'0.07em', textTransform:'uppercase', color:'#4e6080', padding:'7px 14px', textAlign:'left', borderBottom:'1px solid rgba(99,130,200,0.25)', whiteSpace:'nowrap' }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {predRoads.map(r => {
-              const noData = r.cur.spd === null || r.pred.spd === null;
-              const delta = noData ? 0 : r.pred.spd - r.cur.spd;
-              const arrowCol = delta > 1 ? '#4ade80' : delta < -3 ? '#f87171' : '#fbbf24';
-              const arrow    = delta > 1 ? '↑' : delta < -3 ? '↓' : '→';
-              const moeLabel = r.pred.moe === 2 ? '壅塞' : r.pred.moe === 1 ? '普通' : '暢通';
-              const moeCol   = r.pred.moe === 2 ? '#f87171' : r.pred.moe === 1 ? '#fbbf24' : '#4ade80';
-              const moeBg    = r.pred.moe === 2 ? 'rgba(239,68,68,0.10)' : r.pred.moe === 1 ? 'rgba(245,158,11,0.10)' : 'rgba(34,197,94,0.10)';
-              const moeBd    = r.pred.moe === 2 ? 'rgba(239,68,68,0.25)' : r.pred.moe === 1 ? 'rgba(245,158,11,0.25)' : 'rgba(34,197,94,0.25)';
-              return (
-                <tr key={r.id} style={{ borderBottom:'1px solid rgba(99,130,200,0.08)' }}>
-                  <td style={{ padding:'9px 14px', fontFamily:body, fontSize:13, fontWeight:500, color:'#f1f5f9' }}>{r.name}</td>
-                  <td style={{ padding:'9px 14px', fontFamily:ff, fontSize:13, color:'#94a3b8', fontVariantNumeric:'tabular-nums' }}>{r.cur.spd === null ? '---' : `${r.cur.spd} km/h`}</td>
-                  <td style={{ padding:'9px 14px', fontFamily:ff, fontSize:13, fontWeight:600, color:noData?'#4e6080':arrowCol, fontVariantNumeric:'tabular-nums', whiteSpace:'nowrap' }}>{noData ? '---' : `${arrow} ${r.pred.spd} km/h`}{!noData && r.pred.estimated && <span title="無模擬資料，依當前車況推估" style={{ marginLeft:6, fontFamily:body, fontSize:9, fontWeight:500, color:'#fbbf24', background:'rgba(245,158,11,0.12)', border:'1px solid rgba(245,158,11,0.3)', borderRadius:3, padding:'1px 5px' }}>推估</span>}</td>
-                  <td style={{ padding:'9px 14px', fontFamily:ff, fontSize:13, color:'#94a3b8', fontVariantNumeric:'tabular-nums' }}>{r.cur.vol === null ? '---' : `${r.cur.vol} 輛`}</td>
-                  <td style={{ padding:'9px 14px', fontFamily:ff, fontSize:13, color:'#f1f5f9', fontVariantNumeric:'tabular-nums' }}>{r.pred.vol === null ? '---' : `${r.pred.vol} 輛`}</td>
-                  <td style={{ padding:'9px 14px' }}>
-                    {noData
-                      ? <span style={{ fontFamily:body, fontSize:11, color:'#4e6080' }}>等待數據</span>
-                      : <span style={{ fontFamily:body, fontSize:11, fontWeight:500, color:moeCol, background:moeBg, border:`1px solid ${moeBd}`, borderRadius:4, padding:'2px 9px' }}>{moeLabel}</span>}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
 
-/* ── Export panel (activeNav==='export') ── */
-function ExportPanel() {
-  const [handoff, setHandoff] = useState(null);
-  const [status, setStatus] = useState('loading');
-  const ff = "'Inter',system-ui,sans-serif", body = "'Noto Sans TC','PingFang TC',sans-serif", mono = "'JetBrains Mono',monospace";
+// ==== DetailDrawer ====
+/* NEW — presentational only. Right slide-in glass panel driven by the
+   EXISTING selectedRoadId / onClose state already in App. It reads the
+   selected row out of `roads` (= App's monitorRoads) using the SAME
+   dataKey selection (`road[dataKey] || road.cur`) and the SAME status
+   derivation (_moeFromSpd / speedColor) as RoadTable — it does NOT
+   compute or fetch anything new, so existing data flow is untouched.
+   `open` is a boolean derived in App from selectedRoadId. */
+function DetailDrawer({ open, road, dataKey, onClose }) {
+  // a11y: this aside is role="dialog" aria-modal="true" — the only modal surface.
+  // While open we (a) close on Esc, (b) move focus into the dialog (close button)
+  // and remember the previously-focused element, (c) restore focus to that element
+  // on close, and (d) trap Tab inside the drawer so focus can't fall through to the
+  // still-tabbable sidebar/topbar/table behind it (which aria-modal promises to AT).
+  const drawerRef = useRef(null);
+  const closeBtnRef = useRef(null);
   useEffect(() => {
-    fetch('/api/handoff')
-      .then(r => r.json())
-      .then(d => { setHandoff(d); setStatus(d.error ? 'empty' : 'ok'); })
-      .catch(() => setStatus('error'));
-  }, []);
-  const fileEntries = handoff?.files ? Object.entries(handoff.files) : [];
+    if (!open) return;
+    const prevFocus = document.activeElement;
+    closeBtnRef.current?.focus();
+    const onKey = (e) => {
+      if (e.key === 'Escape') { onClose && onClose(); return; }
+      if (e.key !== 'Tab') return;
+      const root = drawerRef.current;
+      if (!root) return;
+      const focusables = root.querySelectorAll(
+        'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'
+      );
+      if (!focusables.length) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      if (prevFocus && typeof prevFocus.focus === 'function') prevFocus.focus();
+    };
+  }, [open, onClose]);
+
+  // status/colour derivation mirrors RoadTable verbatim in spirit:
+  // colour & level come from the displayed speed, falling back to moe.
+  const d = road ? (road[dataKey] || road.cur || {}) : {};
+  const noData = d.spd == null && d.vol == null;
+  const lvl = noData ? null : (d.spd == null ? (d.moe ?? 1) : _moeFromSpd(d.spd));
+  const pillCls = lvl === 2 ? 'pill-cong' : lvl === 1 ? 'pill-normal' : 'pill-ok';
+  const pillLbl = lvl === 2 ? '壅塞' : lvl === 1 ? '普通' : '暢通';
+  const spdCol = (noData || d.spd == null) ? null : speedColor(d.spd);
+  const occCol = lvl === 2 ? 'var(--red)' : lvl === 1 ? 'var(--amber)' : 'var(--green)';
+  const occW = (d.occ == null) ? 0 : Math.max(0, Math.min(100, d.occ));
+  const rec = lvl === 2
+    ? <>該路段目前<b>壅塞</b>，建議於主要進入方向<b>延長綠燈 8 秒</b>並啟動鄰近路口連鎖協調，以加速車流疏導。</>
+    : lvl === 1
+    ? <>該路段車流<b>普通</b>，維持現行號誌時制即可，持續觀察佔有率變化以提早因應尖峰。</>
+    : <>該路段車流<b>暢通</b>，號誌時制運作良好，目前無需額外調整。</>;
+
   return (
-    <div style={{ flex:1, overflow:'auto', background:'#0f1629', border:'1px solid rgba(99,130,200,0.25)', borderRadius:12, padding:'20px', boxShadow:'0 0 0 1px rgba(99,130,200,0.25),0 1px 3px rgba(0,0,0,0.40)' }}>
-      <div style={{ fontFamily:ff, fontSize:13, fontWeight:600, color:'#f1f5f9', marginBottom:16 }}>Handoff 匯出檔案</div>
-      {status === 'loading' && <div style={{ color:'#4e6080', fontFamily:body }}>載入中…</div>}
-      {(status === 'empty' || status === 'error') && (
-        <div style={{ color:'#4e6080', fontFamily:body, fontSize:13 }}>尚無 handoff 數據，請先執行 runtime_pipeline.py。</div>
-      )}
-      {status === 'ok' && (
-        <>
-          <div style={{ fontFamily:body, fontSize:12, color:'#94a3b8', marginBottom:12 }}>執行時間：<span style={{ color:'#60a5fa' }}>{handoff.run_time || '—'}</span></div>
-          <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-            {fileEntries.map(([key]) => (
-              <div key={key} style={{ background:'#162036', borderRadius:8, padding:'10px 14px', display:'flex', alignItems:'center', gap:10 }}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="1.5" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                <span style={{ fontFamily:mono, fontSize:11, color:'#94a3b8', flex:1 }}>{key}.csv</span>
-                <a href={`/api/handoff/download?name=${encodeURIComponent(key + '.csv')}`} download aria-label={`下載 ${key}.csv`} style={{ fontFamily:body, fontSize:11, fontWeight:500, color:'#60a5fa', background:'rgba(59,130,246,0.12)', border:'1px solid rgba(59,130,246,0.3)', borderRadius:5, padding:'3px 10px', textDecoration:'none', flexShrink:0 }}>下載</a>
-              </div>
-            ))}
+    <>
+      <div className={'drawer-scrim' + (open ? ' open' : '')} onClick={onClose} aria-hidden="true"/>
+      <aside ref={drawerRef} className={'drawer' + (open ? ' open' : '')} role="dialog" aria-modal="true"
+             aria-label="路段詳細資訊" aria-hidden={open ? undefined : true}>
+        <div className="drawer-head">
+          <div className="dh-ico" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19V5M20 19V5M12 19v-3M12 11V8M12 3v1"/></svg>
           </div>
-        </>
-      )}
-    </div>
+          <div style={{minWidth:0}}>
+            <div className="nm">{road ? road.name : '—'}</div>
+            <div className="id mono">{road ? road.id : ''}</div>
+          </div>
+          <button ref={closeBtnRef} className="drawer-close" onClick={onClose} aria-label="關閉詳細資訊">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+
+        <div className="drawer-body">
+          {!road ? (
+            <div className="panel-sub" style={{textAlign:'center',padding:'30px 0'}}>請從路段列表選取一條路段。</div>
+          ) : noData ? (
+            <div className="panel-sub" style={{textAlign:'center',padding:'30px 0'}}>此路段目前等待數據。</div>
+          ) : (
+            <>
+              <div className="dr-status">
+                <span className={'pill ' + pillCls}><span className="pd"></span>{pillLbl}</span>
+              </div>
+
+              <div className="dr-metrics">
+                <div className="dr-metric">
+                  <div className="k">平均車速</div>
+                  <div className="v tnum" style={spdCol ? {color:spdCol} : undefined}>
+                    {d.spd == null ? '--' : d.spd}<small>km/h</small>
+                  </div>
+                </div>
+                <div className="dr-metric">
+                  <div className="k">車流量</div>
+                  <div className="v tnum">{d.vol == null ? '--' : d.vol}<small>輛</small></div>
+                </div>
+              </div>
+
+              <div className="dr-section-t">佔有率</div>
+              <div className="dr-occ-big">
+                <div className="v tnum" style={{fontSize:26,fontWeight:700,fontVariantNumeric:'tabular-nums',lineHeight:1}}>
+                  {d.occ == null ? '--' : d.occ}<small style={{fontSize:13,color:'var(--txt2)',fontWeight:500,marginLeft:3}}>%</small>
+                </div>
+                <div className="track"><span style={{width:`${occW}%`,background:occCol}}></span></div>
+              </div>
+
+              <div className="dr-section-t">建議</div>
+              <div className="dr-rec">
+                <div className="rh">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                  號誌優化建議
+                </div>
+                {rec}
+              </div>
+            </>
+          )}
+        </div>
+      </aside>
+    </>
   );
 }
 
+
+// ==== App ====
+/* Hooks / state / effects / derived consts are BYTE-IDENTICAL to the
+   original dashboard.html App. Only the returned JSX is restyled to the
+   Variant D "Glass Stack Focus" layout (class-based), plus the detail
+   drawer is wired in via the EXISTING selectedRoadId state. */
 function App() {
   const [activeNav, setActiveNav] = useState('dashboard');
   const [mapMode, setMapMode] = useState('cur');
@@ -1314,138 +1973,295 @@ function App() {
   const mins=String(Math.floor(countdown/60)).padStart(2,'0');
   const secs=String(countdown%60).padStart(2,'0');
 
+  /* ── presentational-only derivations for the detail drawer (no data flow change) ──
+     selectedRoad is just a lookup into the existing monitorRoads using the
+     existing selectedRoadId; drawerOpen is a boolean derived from it. */
+  const selectedRoad = selectedRoadId != null ? monitorRoads.find(r => r.id === selectedRoadId) : null;
+  const drawerOpen = selectedRoad != null;
+  const closeDrawer = () => setSelectedRoadId(null);
+
   return (
-    <div style={{display:'flex',flexDirection:'column',height:'100vh',background:'#020617',overflow:'hidden'}}>
+    <div className="app">
+      {/* ambient backdrop glow + scanline overlay (decorative) */}
+      <div className="bg-glow" aria-hidden="true"></div>
+      <div className="scanlines" aria-hidden="true"></div>
 
-      {/* TopBar */}
-      <TopBar time={time} lastFetch={lastFetch} refreshing={refreshing} onRefresh={doRefresh} simStatus={simStatus} onStartOptimize={startOptimize}/>
-
-      {/* API 連線失敗提示 */}
-      {apiError && (
-        <div role="alert" style={{background:'rgba(239,68,68,0.12)',borderBottom:'1px solid rgba(239,68,68,0.35)',color:'#fca5a5',fontFamily:"'Noto Sans TC','PingFang TC',sans-serif",fontSize:12,padding:'6px 16px',display:'flex',alignItems:'center',gap:8,flexShrink:0}}>
-          <span aria-hidden="true" style={{fontWeight:700}}>⚠</span> 無法連線到 API 伺服器，顯示的資料可能不是最新。請確認後端是否啟動。
-        </div>
-      )}
-      {/* 預測資料失敗提示 — 區別於 /api/traffic 失敗，這個只影響 5 分鐘預測 / 優化視圖 */}
-      {forecastError && !apiError && (
-        <div role="alert" style={{background:'rgba(234,179,8,0.10)',borderBottom:'1px solid rgba(234,179,8,0.30)',color:'#fde68a',fontFamily:"'Noto Sans TC','PingFang TC',sans-serif",fontSize:12,padding:'6px 16px',display:'flex',alignItems:'center',gap:8,flexShrink:0}}>
-          <span aria-hidden="true" style={{fontWeight:700}}>⚠</span> 無法取得 5 分鐘預測 / 優化資料（pipeline 可能跳過或尚未產出）。當前車流仍會正常顯示。
-        </div>
-      )}
-      {/* T1+T2: 預測資料新鮮度 + 本輪策略 (僅 pred/opt 模式顯示, 避免 cur 模式佔位)
-              age < 360s: 綠色 (新鮮), 360-900: 黃色 (略舊), > 900: 紅色 (建議查 scheduler) */}
-      {(mapMode === 'pred' || mapMode === 'opt') && healthData?.predict && (() => {
-        const age = healthData.predict.age_sec ?? 999999;
-        const ageMin = Math.floor(age / 60);
-        const ageSec = age % 60;
-        const ageLabel = age < 60 ? `${age} 秒前` : `${ageMin} 分 ${ageSec} 秒前`;
-        const tone = age < 360 ? {bg:'rgba(34,197,94,0.08)',bd:'rgba(34,197,94,0.30)',fg:'#86efac'}
-                   : age < 900 ? {bg:'rgba(234,179,8,0.10)',bd:'rgba(234,179,8,0.30)',fg:'#fde68a'}
-                   :              {bg:'rgba(239,68,68,0.12)',bd:'rgba(239,68,68,0.35)',fg:'#fca5a5'};
-        const strat = healthData.pipeline?.last_strategy;
-        const score = healthData.pipeline?.last_composite_score;
-        const stratLabel = !strat ? '本輪策略未知'
-                         : strat === 'no_control'
-                           ? '本輪維持現狀（優化器未找到優於基準的方案，score = 1.000）'
-                           : `本輪採用 ${strat}（composite_score = ${typeof score === 'number' ? score.toFixed(4) : '?'}，< 1 即優於基準）`;
-        return (
-          <div style={{background:tone.bg,borderBottom:`1px solid ${tone.bd}`,color:tone.fg,fontFamily:"'Noto Sans TC','PingFang TC',sans-serif",fontSize:12,padding:'6px 16px',display:'flex',alignItems:'center',gap:12,flexShrink:0,flexWrap:'wrap'}}>
-            <span style={{display:'inline-flex',alignItems:'center',gap:5}}>
-              <span aria-hidden="true" style={{fontWeight:700}}>●</span>
-              GRU 預測產出於 <strong style={{fontFamily:"'JetBrains Mono',monospace"}}>{ageLabel}</strong>
-            </span>
-            <span style={{opacity:0.55,fontSize:10}}>·</span>
-            <span>{stratLabel}</span>
-            {healthData.pipeline?.last_run_step3_skipped && (
-              <><span style={{opacity:0.55,fontSize:10}}>·</span>
-                <span style={{color:'#fca5a5'}}>Step 3 已跳過：{healthData.pipeline.last_run_step3_skipped}</span></>
-            )}
+      {/* ================= SIDEBAR ================= */}
+      <aside className="sidebar">
+        <div className="brand">
+          <div className="brand-logo" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#22d3ee" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="8" y="2" width="8" height="20" rx="3"/><circle cx="12" cy="7" r="1.6" fill="#ef4444" stroke="none"/><circle cx="12" cy="12" r="1.6" fill="#f59e0b" stroke="none"/><circle cx="12" cy="17" r="1.6" fill="#22c55e" stroke="none"/>
+            </svg>
           </div>
-        );
-      })()}
-
-      {/* Metrics */}
-      <MetricsPanel roads={monitorRoads} dataKey={tableDataKey}/>
-
-      {/* Body */}
-      <div style={{flex:1,display:'grid',gridTemplateColumns:activeNav==='dashboard'?'186px 1fr 290px 272px':'186px 1fr',gap:10,padding:'10px 14px 12px',overflow:'hidden',minHeight:0}}>
-
-        {/* Sidebar */}
-        <Sidebar active={activeNav} onNav={setActiveNav}/>
-
-        {/* Center: content changes with activeNav */}
-        <div style={{display:'flex',flexDirection:'column',gap:8,overflow:'hidden',minHeight:0}}>
-
-          {/* Map card — keep mounted always to avoid Leaflet teardown; hide via display */}
-          <div style={{display:(activeNav==='dashboard'||activeNav==='roads')?'flex':'none',flexDirection:'column',background:'#0f1629',border:`1px solid ${borderMed}`,borderRadius:12,boxShadow:'0 0 0 1px rgba(99,130,200,0.25),0 1px 3px rgba(0,0,0,0.40)',overflow:'hidden',flex:1,minHeight:200}}>
-            {/* Map header */}
-            <div style={{display:'flex',alignItems:'center',padding:'7px 12px',borderBottom:`1px solid ${borderMed}`,background:'#0a0f1e',gap:10,flexShrink:0,flexWrap:'wrap'}}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="2" style={{flexShrink:0}}><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
-              <span style={{fontFamily:"'Inter',system-ui,sans-serif",fontSize:13,fontWeight:600,color:'#f1f5f9',letterSpacing:'-0.01em'}}>路網車流地圖</span>
-              {/* Mode tabs */}
-              <div style={{display:'flex',gap:4}}>
-                {Object.entries(MODES).map(([k,v])=>(
-                  <button key={k} onClick={()=>setMapMode(k)} aria-pressed={mapMode===k} aria-label={`地圖模式：${v.label}`} style={{fontFamily:"'Noto Sans TC',sans-serif",fontSize:10,fontWeight:500,padding:'3px 9px',borderRadius:4,border:`1px solid ${mapMode===k?v.accent:borderMed}`,background:mapMode===k?`${v.accent}20`:'#162036',color:mapMode===k?v.accent:'#94a3b8',transition:'all 150ms'}}>{v.label}</button>
-                ))}
-              </div>
-              {/* Auto-refresh countdown */}
-              <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:8}}>
-                <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:10,color:'#4e6080'}}>下次更新 {mins}:{secs}</span>
-                <SpeedLegend/>
-              </div>
-            </div>
-            {/* Map container */}
-            <div style={{flex:1,position:'relative',minHeight:0,overflow:'hidden'}}>
-              <TrafficMap viewMode={mapMode} roads={displayRoads} heatmapData={heatmapData} baselineHeatmapData={baselineHeatmapData} currentHeatmapData={currentHeatmapData}/>
-            </div>
+          <div className="brand-txt">
+            <h1>TrafficVision</h1>
+            <p>NTUT 交通監控</p>
           </div>
+        </div>
 
-          {/* Road table — dashboard & roads views */}
-          {(activeNav==='dashboard'||activeNav==='roads') && (
-            <div style={{flex:'0 0 auto',height:roadListCollapsed?'auto':280,minHeight:0,display:'flex'}}>
-              <RoadTable roads={monitorRoads} dataKey={tableDataKey} selectedId={selectedRoadId} onSelectRoad={r=>setSelectedRoadId(r.id)} collapsed={roadListCollapsed} onToggleCollapse={()=>setRoadListCollapsed(c=>!c)}/>
+        <nav className="nav" aria-label="主導覽">
+          <span className="nav-label">監控中心</span>
+          <button type="button" className={'nav-item' + (activeNav==='dashboard'?' active':'')} aria-current={activeNav==='dashboard'?'page':undefined} onClick={()=>setActiveNav('dashboard')}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>
+            總覽儀表板
+          </button>
+          <button type="button" className={'nav-item' + (activeNav==='roads'?' active':'')} aria-current={activeNav==='roads'?'page':undefined} onClick={()=>setActiveNav('roads')}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19V5"/><path d="M20 19V5"/><path d="M12 19v-3"/><path d="M12 11V8"/><path d="M12 3v1"/></svg>
+            路段監控
+          </button>
+          <button type="button" className={'nav-item' + (activeNav==='signals'?' active':'')} aria-current={activeNav==='signals'?'page':undefined} onClick={()=>setActiveNav('signals')}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="2" width="6" height="20" rx="3"/><circle cx="12" cy="7" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="17" r="1"/></svg>
+            號誌控制
+          </button>
+          <button type="button" className={'nav-item' + (activeNav==='predict'?' active':'')} aria-current={activeNav==='predict'?'page':undefined} onClick={()=>setActiveNav('predict')}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M17 7h4v4"/></svg>
+            流量預測
+          </button>
+          <span className="nav-label">智慧分析</span>
+          <button type="button" className={'nav-item' + (activeNav==='chat'?' active':'')} aria-current={activeNav==='chat'?'page':undefined} onClick={()=>setActiveNav('chat')}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 1 3 3v1a3 3 0 0 1 3 3 3 3 0 0 1 0 6 3 3 0 0 1-3 3 3 3 0 0 1-6 0 3 3 0 0 1-3-3 3 3 0 0 1 0-6 3 3 0 0 1 3-3V5a3 3 0 0 1 3-3Z"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/></svg>
+            AI 助理
+          </button>
+          <button type="button" className={'nav-item' + (activeNav==='export'?' active':'')} aria-current={activeNav==='export'?'page':undefined} onClick={()=>setActiveNav('export')}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="M9 15l3 3 3-3"/></svg>
+            匯出報告
+          </button>
+        </nav>
+
+        <div className="nav-spacer"></div>
+        <div className="side-status">
+          <div className="row"><span className="dot"></span><span>{apiError ? '連線異常' : '系統運行中'}</span></div>
+          <div className="sub mono">下次更新 {mins}:{secs} · {monitorRoads.length} 路段在線</div>
+        </div>
+      </aside>
+
+      {/* ================= MAIN ================= */}
+      <div className="main">
+        {/* topbar */}
+        <header className="topbar">
+          <div className="titles">
+            <h2>{(MODES_NAV_TITLE[activeNav]) || '總覽儀表板'}</h2>
+            <p>最後更新 <span className="mono">{lastFetch || '—'}</span> · NTUT 校區交通即時監控網</p>
+          </div>
+          <div className="tb-spacer"></div>
+          <span className="live-pill"><span className="live-dot"></span>即時資料 LIVE</span>
+          <span className="clock mono"><span className="visually-hidden">目前時間 </span>{time}</span>
+          <button type="button" className="btn" onClick={doRefresh} disabled={refreshing}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/></svg>
+            {refreshing ? '更新中…' : '立即更新'}
+          </button>
+          <button type="button" className="btn btn-primary" onClick={startOptimize} disabled={simStatus==='running'} aria-label={simStatus==='running'?'模擬中':'啟動優化'}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={simStatus==='running'?{animation:'spin 1s linear infinite'}:undefined}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            {simStatus==='running' ? '模擬中…' : '啟動優化'}
+          </button>
+        </header>
+
+        {/* content */}
+        <div className="content">
+
+          {/* ── banners (restyled, logic preserved) ── */}
+          {/* API 連線失敗提示 */}
+          {apiError && (
+            <div className="banner banner-error" role="alert">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h0"/></svg>
+              <span>無法連線到 API 伺服器，顯示的資料可能不是最新。請確認後端是否啟動。</span>
             </div>
           )}
-
-          {/* Prediction panel */}
-          {activeNav==='predict' && (
-            <div style={{flex:1,overflow:'hidden',display:'flex'}}>
-              <PredictPanel predRoads={predRoads} predRecords={predRecords}/>
+          {/* 預測資料失敗提示 — 區別於 /api/traffic 失敗，這個只影響 5 分鐘預測 / 優化視圖 */}
+          {forecastError && !apiError && (
+            <div className="banner banner-warn" role="alert">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h0"/></svg>
+              <span>無法取得 5 分鐘預測 / 優化資料（pipeline 可能跳過或尚未產出）。當前車流仍會正常顯示。</span>
             </div>
           )}
+          {/* T1+T2: 預測資料新鮮度 + 本輪策略 (僅 pred/opt 模式顯示, 避免 cur 模式佔位)
+                  age < 360s: 綠色 (新鮮), 360-900: 黃色 (略舊), > 900: 紅色 (建議查 scheduler) */}
+          {(mapMode === 'pred' || mapMode === 'opt') && healthData?.predict && (() => {
+            const age = healthData.predict.age_sec ?? 999999;
+            const ageMin = Math.floor(age / 60);
+            const ageSec = age % 60;
+            const ageLabel = age < 60 ? `${age} 秒前` : `${ageMin} 分 ${ageSec} 秒前`;
+            const tone = age < 360 ? 'banner-info'
+                       : age < 900 ? 'banner-warn'
+                       :              'banner-error';
+            const strat = healthData.pipeline?.last_strategy;
+            const score = healthData.pipeline?.last_composite_score;
+            const stratLabel = !strat ? '本輪策略未知'
+                             : strat === 'no_control'
+                               ? '本輪維持現狀（優化器未找到優於基準的方案，score = 1.000）'
+                               : `本輪採用 ${strat}（composite_score = ${typeof score === 'number' ? score.toFixed(4) : '?'}，< 1 即優於基準）`;
+            return (
+              <div className={'banner ' + tone} role={tone === 'banner-error' ? 'alert' : 'status'} aria-live="polite">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+                <span style={{display:'flex',flexWrap:'wrap',alignItems:'center',gap:8}}>
+                  <span style={{display:'inline-flex',alignItems:'center',gap:5}}>
+                    GRU 預測產出於 <b className="mono">{ageLabel}</b>
+                  </span>
+                  <span style={{opacity:0.55,fontSize:10}}>·</span>
+                  <span>{stratLabel}</span>
+                  {healthData.pipeline?.last_run_step3_skipped && (
+                    <>
+                      <span style={{opacity:0.55,fontSize:10}}>·</span>
+                      <span style={{color:'var(--red)'}}>Step 3 已跳過：{healthData.pipeline.last_run_step3_skipped}</span>
+                    </>
+                  )}
+                </span>
+              </div>
+            );
+          })()}
 
-          {/* Full-width signal control */}
+          {/* ── KPI STRIP (full width) ── */}
+          <MetricsPanel roads={monitorRoads} dataKey={tableDataKey}/>
+
+          {/* ── DASHBOARD VIEW: focal map + signals, then table + AI ── */}
+          {activeNav==='dashboard' && (
+            <>
+              <div className="grid-2">
+                {/* MAP panel (TrafficMap rendered inside the focal glass frame) */}
+                <div className="map-panel glass">
+                  <div className="panel-head">
+                    <h3>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 20 3 17V4l6 3 6-3 6 3v13l-6-3-6 3Z"/><path d="M9 7v13M15 4v13"/></svg>
+                      即時車流地圖
+                    </h3>
+                    <div className="ph-spacer"></div>
+                    <div className="seg" role="group" aria-label="地圖車流模式">
+                      {Object.entries(MODES).map(([k,v])=>{
+                        const segRgb = k==='cur' ? '59,130,246' : k==='pred' ? '245,158,11' : '34,197,94';
+                        return (
+                          <button key={k} type="button" className={mapMode===k?'on':''} onClick={()=>setMapMode(k)}
+                                  style={{'--seg-rgb':segRgb}} aria-pressed={mapMode===k} aria-label={`地圖模式：${v.label}`}>
+                            <span className="swatch" style={{background:v.accent}}></span>{v.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div className="map-wrap">
+                    <span className="corner c-tl"></span><span className="corner c-tr"></span><span className="corner c-bl"></span><span className="corner c-br"></span>
+                    {/* focal map — TrafficMap component owns the Leaflet root */}
+                    <TrafficMap viewMode={mapMode} roads={displayRoads} heatmapData={heatmapData} baselineHeatmapData={baselineHeatmapData} currentHeatmapData={currentHeatmapData}/>
+                    <div className="map-banner glass-float" aria-live="polite">
+                      <span className="mb-dot" style={{background:MODES[mapMode].accent,boxShadow:`0 0 8px ${MODES[mapMode].accent}`}}></span>
+                      <span>策略 · <b>{MODES[mapMode].label}</b></span>
+                    </div>
+                    <div className="legend glass-float">
+                      <h4>車速 km/h <span className="mode-tag" style={{background:`${MODES[mapMode].accent}28`,color:lerpColor(MODES[mapMode].accent,'#ffffff',0.45)}}>{MODES[mapMode].label.slice(0,2)}</span></h4>
+                      <div className="scale"></div>
+                      <div className="scale-lbls"><span>0</span><span>10</span><span>20</span><span>30</span><span>40+</span></div>
+                      <div className="width-note"><span className="ln"></span>線寬 = 車流量<span className="ln big"></span></div>
+                    </div>
+                    <div style={{position:'absolute',right:14,bottom:14,zIndex:600}}>
+                      <span className="panel-sub mono" style={{padding:'6px 10px',borderRadius:9,background:'rgba(8,13,28,0.62)',border:'1px solid var(--glass-bd)'}}>下次更新 {mins}:{secs}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* SIGNALS panel (SignalControl component owns its own .sig-panel glass root) */}
+                <SignalControl apiRecords={signalApiRecords} liveSignals={liveSignals}/>
+              </div>
+
+              <div className="grid-2b">
+                {/* ROAD TABLE (RoadTable owns its own .table-panel glass root) */}
+                <RoadTable roads={monitorRoads} dataKey={tableDataKey} selectedId={selectedRoadId} onSelectRoad={r=>setSelectedRoadId(r.id)} collapsed={roadListCollapsed} onToggleCollapse={()=>setRoadListCollapsed(c=>!c)}/>
+
+                {/* AI panel (LLMChat owns its own .ai-panel glass root) */}
+                <LLMChat msgs={chatMsgs} setMsgs={setChatMsgs}/>
+              </div>
+            </>
+          )}
+
+          {/* ── ROADS VIEW: map + full road table ── */}
+          {activeNav==='roads' && (
+            <>
+              <div className="map-panel glass" style={{marginBottom:18}}>
+                <div className="panel-head">
+                  <h3>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 20 3 17V4l6 3 6-3 6 3v13l-6-3-6 3Z"/><path d="M9 7v13M15 4v13"/></svg>
+                    即時車流地圖
+                  </h3>
+                  <div className="ph-spacer"></div>
+                  <div className="seg" role="group" aria-label="地圖車流模式">
+                    {Object.entries(MODES).map(([k,v])=>{
+                      const segRgb = k==='cur' ? '59,130,246' : k==='pred' ? '245,158,11' : '34,197,94';
+                      return (
+                        <button key={k} type="button" className={mapMode===k?'on':''} onClick={()=>setMapMode(k)}
+                                style={{'--seg-rgb':segRgb}} aria-pressed={mapMode===k} aria-label={`地圖模式：${v.label}`}>
+                          <span className="swatch" style={{background:v.accent}}></span>{v.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="map-wrap">
+                  <span className="corner c-tl"></span><span className="corner c-tr"></span><span className="corner c-bl"></span><span className="corner c-br"></span>
+                  <TrafficMap viewMode={mapMode} roads={displayRoads} heatmapData={heatmapData} baselineHeatmapData={baselineHeatmapData} currentHeatmapData={currentHeatmapData}/>
+                  <div className="legend glass-float">
+                    <h4>車速 km/h <span className="mode-tag" style={{background:`${MODES[mapMode].accent}28`,color:lerpColor(MODES[mapMode].accent,'#ffffff',0.45)}}>{MODES[mapMode].label.slice(0,2)}</span></h4>
+                    <div className="scale"></div>
+                    <div className="scale-lbls"><span>0</span><span>10</span><span>20</span><span>30</span><span>40+</span></div>
+                    <div className="width-note"><span className="ln"></span>線寬 = 車流量<span className="ln big"></span></div>
+                  </div>
+                </div>
+              </div>
+              {/* RoadTable owns its own .table-panel glass root; wrapper only supplies sizing */}
+              <div style={{display:'flex',minHeight:520}}>
+                <RoadTable roads={monitorRoads} dataKey={tableDataKey} selectedId={selectedRoadId} onSelectRoad={r=>setSelectedRoadId(r.id)} collapsed={roadListCollapsed} onToggleCollapse={()=>setRoadListCollapsed(c=>!c)}/>
+              </div>
+            </>
+          )}
+
+          {/* ── SIGNALS VIEW: full-width signal control ── */}
           {activeNav==='signals' && (
-            <div style={{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}>
+            /* SignalControl owns its own .sig-panel glass root; wrapper only supplies sizing */
+            <div style={{display:'flex',minHeight:520}}>
               <SignalControl apiRecords={signalApiRecords} liveSignals={liveSignals}/>
             </div>
           )}
 
-          {/* Full-width chat */}
-          {activeNav==='chat' && (
-            <div style={{flex:1,overflow:'hidden'}}><LLMChat msgs={chatMsgs} setMsgs={setChatMsgs}/></div>
+          {/* ── PREDICT VIEW: prediction panel ── */}
+          {activeNav==='predict' && (
+            /* PredictPanel owns its own .table-panel glass root; wrapper only supplies sizing */
+            <div style={{display:'flex',minHeight:520}}>
+              <PredictPanel predRoads={predRoads} predRecords={predRecords}/>
+            </div>
           )}
 
-          {/* Export panel */}
+          {/* ── CHAT VIEW: full-width AI ── */}
+          {activeNav==='chat' && (
+            /* LLMChat owns its own .ai-panel glass root; wrapper only supplies sizing */
+            <div style={{display:'flex',minHeight:560}}>
+              <LLMChat msgs={chatMsgs} setMsgs={setChatMsgs}/>
+            </div>
+          )}
+
+          {/* ── EXPORT VIEW: export panel ── */}
           {activeNav==='export' && (
-            <div style={{flex:1,overflow:'hidden',display:'flex'}}>
+            /* ExportPanel owns its own .table-panel glass root; wrapper only supplies sizing */
+            <div style={{display:'flex',minHeight:520}}>
               <ExportPanel/>
             </div>
           )}
 
         </div>
-
-        {/* Signal Control — dashboard only */}
-        {activeNav==='dashboard' && <SignalControl apiRecords={signalApiRecords} liveSignals={liveSignals}/>}
-
-        {/* LLM Chat — dashboard only */}
-        {activeNav==='dashboard' && <LLMChat msgs={chatMsgs} setMsgs={setChatMsgs}/>}
-
       </div>
+
+      {/* ================= DETAIL DRAWER ================= */}
+      <DetailDrawer open={drawerOpen} road={selectedRoad} dataKey={tableDataKey} onClose={closeDrawer}/>
     </div>
   );
 }
 
+/* presentational lookup for the topbar page title (no logic change) */
+const MODES_NAV_TITLE = {
+  dashboard:'總覽儀表板', roads:'路段監控', signals:'號誌控制',
+  predict:'流量預測', chat:'AI 助理', export:'匯出報告',
+};
+
+
+// ==== ErrorBoundary ====
+/* VERBATIM — logic */
 /* ── Error Boundary：任一元件丟例外時顯示錯誤卡片，避免整頁白屏 ── */
 class ErrorBoundary extends React.Component {
   constructor(props){ super(props); this.state={err:null}; }
@@ -1454,10 +2270,10 @@ class ErrorBoundary extends React.Component {
   render(){
     if(this.state.err){
       return (
-        <div role="alert" style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'100vh',gap:12,background:'#020617',color:'#f1f5f9',fontFamily:"'Noto Sans TC','PingFang TC',sans-serif",padding:24,textAlign:'center'}}>
-          <div style={{fontSize:18,fontWeight:700,color:'#f87171'}}>儀表板發生錯誤</div>
-          <div style={{fontSize:13,color:'#94a3b8',maxWidth:520}}>{String(this.state.err && this.state.err.message || this.state.err)}</div>
-          <button onClick={()=>location.reload()} style={{marginTop:8,fontFamily:"'Inter',system-ui,sans-serif",fontSize:13,padding:'8px 18px',borderRadius:6,border:'1px solid rgba(99,130,200,0.35)',background:'rgba(59,130,246,0.12)',color:'#60a5fa',cursor:'pointer'}}>重新載入</button>
+        <div role="alert" style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'100vh',gap:12,background:'var(--bg)',color:'var(--txt)',fontFamily:"'Noto Sans TC','PingFang TC',sans-serif",padding:24,textAlign:'center'}}>
+          <div style={{fontSize:18,fontWeight:700,color:'var(--red)'}}>儀表板發生錯誤</div>
+          <div style={{fontSize:13,color:'var(--txt2)',maxWidth:520}}>{String(this.state.err && this.state.err.message || this.state.err)}</div>
+          <button onClick={()=>location.reload()} style={{marginTop:8,fontFamily:"'Inter',system-ui,sans-serif",fontSize:13,padding:'8px 18px',borderRadius:'var(--r-ctrl)',border:'1px solid var(--glass-bd)',background:'rgba(59,130,246,0.12)',color:'var(--blue2)',cursor:'pointer'}}>重新載入</button>
         </div>
       );
     }
@@ -1465,6 +2281,9 @@ class ErrorBoundary extends React.Component {
   }
 }
 
+
+// ==== render ====
+/* VERBATIM — logic */
 ReactDOM.createRoot(document.getElementById('root')).render(<ErrorBoundary><App/></ErrorBoundary>);
 </script>
 </body>
