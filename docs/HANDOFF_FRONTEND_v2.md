@@ -17,7 +17,7 @@
   - Speed MAE：~2-3 km/h（in-sample）
 
 ### Runtime pipeline 預設模型已切到 v2
-- `tools/runtime_pipeline.py`、`tools/predict_main.py`、`tools/predict_to_csv.py` 的預設 model_path 都指向 `gru_traffic_model_pair_v2.pth`
+- `src/runtime_pipeline.py`、`src/predict_main.py`、`src/predict_to_csv.py` 的預設 model_path 都指向 `gru_traffic_model_pair_v2.pth`
 - **你不用做任何切換動作**，下次 runtime_pipeline 跑就會用 v2
 
 ---
@@ -104,7 +104,7 @@ predRecords.records.forEach(r => {
 
 ## 5. 已知限制（要做完整流程的話需要注意）
 
-目前 runtime pipeline 走的 SUMO 路徑（`tools/traffic_optimizer_io.py`）**輸入 CSV 沒有速度欄**。v2 模型在 inference 時會 fallback 用 `speed=0` 當輸入，所以：
+目前 runtime pipeline 走的 SUMO 路徑（`src/traffic_optimizer_io.py`）**輸入 CSV 沒有速度欄**。v2 模型在 inference 時會 fallback 用 `speed=0` 當輸入，所以：
 
 - **速度預測會偏低**（很多會在 0-20 km/h，比真實低）
 - 但 count 預測**不受影響**（仍然在 holdout MAE = 0.126 的水準）
@@ -114,8 +114,8 @@ predRecords.records.forEach(r => {
 
 | Step | 動作 | 結果 |
 |------|------|------|
-| 1 | 修 `tools/traffic_optimizer_io.py`：runtime SUMO 模擬也要記錄 `avg_speed_kmh`（照 `VehicleData.py` 第 117-125 行那段抄就好） | runtime CSV 變 4 欄 |
-| 2 | 確認 `tools/generate_edge_traffic.py` 對應更新（可選）| 速度預測精度恢復 |
+| 1 | 修 `src/traffic_optimizer_io.py`：runtime SUMO 模擬也要記錄 `avg_speed_kmh`（照 `VehicleData.py` 第 117-125 行那段抄就好） | runtime CSV 變 4 欄 |
+| 2 | 確認 `src/generate_edge_traffic.py` 對應更新（可選）| 速度預測精度恢復 |
 
 完成後，speed 預測會回到 ~2-3 km/h MAE 水準。**不做也能用，只是 speed 數值偏低**。
 
@@ -125,12 +125,12 @@ predRecords.records.forEach(r => {
 
 ```bash
 # 方案 1: 臨時用 v1 跑一次
-python tools/runtime_pipeline.py --once --model-path gru_traffic_model_pair.pth
+python src/runtime_pipeline.py --once --model-path gru_traffic_model_pair.pth
 
 # 方案 2: 永久切回 v1 - 把這 3 處預設改成 "gru_traffic_model_pair.pth":
-#   tools/predict_to_csv.py  L73     DEFAULT_MODEL_PATH
-#   tools/predict_main.py    L13     MODEL_PATH
-#   tools/runtime_pipeline.py L221   --model-path default
+#   src/predict_to_csv.py  L73     DEFAULT_MODEL_PATH
+#   src/predict_main.py    L13     MODEL_PATH
+#   src/runtime_pipeline.py L221   --model-path default
 ```
 
 切回 v1 後，預測 CSV 自動變回 3 欄（沒有 `avg_speed_kmh`）。前端如果有讀 speed 欄要做 `r.avg_speed_kmh ?? null` 判斷處理 v1 模式。
@@ -141,15 +141,15 @@ python tools/runtime_pipeline.py --once --model-path gru_traffic_model_pair.pth
 
 ```
 * 新訓 v2 模型 gru_traffic_model_pair_v2.pth (output_channels=2)
-* tools/predict_to_csv.py:
+* src/predict_to_csv.py:
     - GRUSequence 加 output_channels 參數
     - load_model 偵測 v2 並調整 GRU input_size
     - load_demo_csv 讀 avg_speed_kmh 欄(缺則填 0 並警告)
     - is_pair_model 涵蓋 v1+v2
     - 輸出 CSV 多 avg_speed_kmh 欄位 (v2 時)
     - 預設 model_path 改 v2
-* tools/predict_main.py: MODEL_PATH 改 v2
-* tools/runtime_pipeline.py: --model-path 預設改 v2
+* src/predict_main.py: MODEL_PATH 改 v2
+* src/runtime_pipeline.py: --model-path 預設改 v2
 * test_model.py: 預設模型改 v2;支援 output_channels
 * train_model.py: OUTPUT_CHANNELS=2 為主流程
 ```
@@ -159,7 +159,7 @@ python tools/runtime_pipeline.py --once --model-path gru_traffic_model_pair.pth
 ## 8. 有問題找誰
 
 - 模型本身（架構 / 訓練）：看 `train_model.py` 註解
-- 推論流程（為何 4 欄 / 為何 speed 變 0）：看 `tools/predict_to_csv.py` L416-486
+- 推論流程（為何 4 欄 / 為何 speed 變 0）：看 `src/predict_to_csv.py` L416-486
 - 整合 / 整體 pipeline：看 `INTEGRATION_PAIR_MODEL.md`
 - Speed 流程徹底修：看 `INTEGRATION_EDGE_SPEED.md`
 

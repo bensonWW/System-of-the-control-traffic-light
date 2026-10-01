@@ -26,11 +26,11 @@ Taipei VD API ──────────────────────
                                                                ▼
                                              serve_api.py /api/traffic
                                                                │
-tools/grabapi.py → convertToRou.py → duarouter                 │
+src/grabapi.py → convertToRou.py → duarouter                 │
   → VehicleData.py (SUMO × 16 workers)                        │
   → data/simulation_data/*.csv                                 │
   → train_model.py → gru_traffic_model.pth                     │
-  → tools/runtime_pipeline.py:                                 │
+  → src/runtime_pipeline.py:                                 │
       1. route 生成                                            │
       2. SUMO 模擬 → CSV                                      │
       3. predict_main.py → prediction CSV + signal XML         │
@@ -80,19 +80,19 @@ python --version    # 需要 3.11+
 pip install -r requirements-training.txt
 
 # 生成 fine-tune 資料集（從 100 個 traffic JSON + 20 個 handoff 目錄）
-python tools/generate_finetune_dataset.py
+python training/generate_finetune_dataset.py
 # 完成後：data/finetune_dataset.jsonl（約 28,000 筆 Q&A）
 ```
 
 ### Step 3 — 微調 Gemma 4（約 1–2 小時）
 
 ```powershell
-python tools/finetune_gemma.py
+python training/finetune_gemma.py
 # A2000 12GB 足夠，不需修改任何超參數
 # 完成後：models/trafficvision-gemma4/（LoRA adapters）
 ```
 
-訓練設定（`tools/finetune_gemma.py` 頂部可調整）：
+訓練設定（`training/finetune_gemma.py` 頂部可調整）：
 - 模型：`unsloth/gemma-4-E4B-it-unsloth-bnb-4bit`（4B 參數，4-bit NF4）
 - LoRA rank：16，epochs：3，learning rate：2e-4
 - VRAM 用量：約 8–10GB（A2000 12GB 有餘裕）
@@ -104,7 +104,7 @@ python tools/finetune_gemma.py
 ollama serve
 
 # 匯出並自動匯入（約 10–20 分鐘）
-python tools/export_to_gguf.py
+python training/export_to_gguf.py
 # 完成後：models/gguf/trafficvision-gemma4-q8_0.gguf
 # 自動執行：ollama create trafficvision-gemma4
 ```
@@ -168,16 +168,16 @@ docker compose logs -f api  # 查看 API 即時 log
 
 ```powershell
 $env:SUMO_HOME = "C:\path\to\sumo"
-python tools/runtime_pipeline.py --once          # 執行一次
-python tools/runtime_pipeline.py --interval 300  # 每 5 分鐘自動執行
+python src/runtime_pipeline.py --once          # 執行一次
+python src/runtime_pipeline.py --interval 300  # 每 5 分鐘自動執行
 ```
 
 ### 更新 LLM（資料累積後重新微調）
 
 ```powershell
-python tools/generate_finetune_dataset.py   # 重新生成資料集
-python tools/finetune_gemma.py              # 重新微調
-python tools/export_to_gguf.py             # 重新匯出並匯入 Ollama
+python training/generate_finetune_dataset.py   # 重新生成資料集
+python training/finetune_gemma.py              # 重新微調
+python training/export_to_gguf.py             # 重新匯出並匯入 Ollama
 docker compose restart api                  # 重啟 API（不需 rebuild）
 ```
 
@@ -195,7 +195,7 @@ pip install -r "$HOME\.unsloth\llama.cpp\requirements.txt"
 
 `edge_heatmap.json` 由 `runtime_pipeline.py` 生成，首次啟動前不存在。
 可以從舊電腦複製 `dashboard/data/edge_heatmap.json`，
-或啟動後執行一次 `python tools/runtime_pipeline.py --once`。
+或啟動後執行一次 `python src/runtime_pipeline.py --once`。
 
 **`/api/chat` 回應「AI 服務暫時無法使用」？**
 

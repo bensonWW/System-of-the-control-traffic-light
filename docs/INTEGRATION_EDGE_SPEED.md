@@ -27,7 +27,7 @@ time, edge_id, vehicle_count, avg_speed_kmh
 SUMO 模擬
    ↓ (--additional-files edgedata.add.xml, period="300")
 data/edgedata_baseline.xml  ← 5 分鐘區間,每 edge 一個 mean speed (m/s)
-   ↓ tools/generate_edge_traffic.py
+   ↓ src/generate_edge_traffic.py
       - 取「最忙時間窗」(busiest interval)
       - speed × 3.6 → km/h
       - 套用「VD 校準」(用 VD 真實速度錨定)
@@ -50,7 +50,7 @@ SUMO 模擬
    ↓ TraCI 每 20 秒採樣
    ↓ traci.edge.getLastStepMeanSpeed(edge) × 3.6
 runtime CSV (含 avg_speed_kmh)  ← 每 edge 每 20 秒一筆瞬時平均速度
-   ↓ tools/generate_edge_traffic.py (要改:從 CSV 算 speed)
+   ↓ src/generate_edge_traffic.py (要改:從 CSV 算 speed)
    ↓
 edge_heatmap.json  ← spd 欄位 = TraCI 採樣平均(更精細)
    ↓ 前端
@@ -61,9 +61,9 @@ edge_heatmap.json  ← spd 欄位 = TraCI 採樣平均(更精細)
 
 ## 需要改的 4 處
 
-### Step 1: `tools/traffic_optimizer_io.py` — runtime SUMO 模擬也要採速度
+### Step 1: `src/traffic_optimizer_io.py` — runtime SUMO 模擬也要採速度
 
-`runtime_pipeline.py` 走的是 `tools/traffic_optimizer_io.py` 的 `run_sumo_simulation_with_end_time()`，目前**只寫 `vehicle_count`**。
+`runtime_pipeline.py` 走的是 `src/traffic_optimizer_io.py` 的 `run_sumo_simulation_with_end_time()`，目前**只寫 `vehicle_count`**。
 
 需要照 `VehicleData.py` 的做法，加上：
 
@@ -83,7 +83,7 @@ CSV header 改成：
 f.write("time,edge_id,vehicle_count,avg_speed_kmh\n")
 ```
 
-**影響檔案位置**：搜 `tools/traffic_optimizer_io.py` 內所有 `traci.edge.getLastStepVehicleNumber` 並對應的 CSV 寫檔處。
+**影響檔案位置**：搜 `src/traffic_optimizer_io.py` 內所有 `traci.edge.getLastStepVehicleNumber` 並對應的 CSV 寫檔處。
 
 **下游相容性**：
 - `train_model.py` / `predict_to_csv.py` 用具名欄位讀,多 1 欄不影響 ✓
@@ -92,7 +92,7 @@ f.write("time,edge_id,vehicle_count,avg_speed_kmh\n")
 
 ---
 
-### Step 2: `tools/generate_edge_traffic.py` — 從新 CSV 算 speed,取代 edgedata
+### Step 2: `src/generate_edge_traffic.py` — 從新 CSV 算 speed,取代 edgedata
 
 **位置**：L98-142 的「Traffic metrics from edgedata_output.xml」段落
 
@@ -133,7 +133,7 @@ if os.path.exists(runtime_csv):
 
 ### Step 3: 移除或調整「VD 校準」邏輯（可選）
 
-**位置**：`tools/generate_edge_traffic.py` L202-???（「VD 校準」段落）
+**位置**：`src/generate_edge_traffic.py` L202-???（「VD 校準」段落）
 
 現有：因為 SUMO speed 太低,套用一個 VD/SUMO 比例係數放大。
 
@@ -157,7 +157,7 @@ ENABLE_VD_CALIBRATION = not USE_TRACI_SPEED  # TraCI 已直測,不需校準
 `edge_heatmap.json` schema 不變（仍然有 `spd` 欄位），所以**前端讀檔不用改**。
 但可以加一個 metadata 標記讓使用者知道資料來源：
 
-**`tools/generate_edge_traffic.py` 最末段**：
+**`src/generate_edge_traffic.py` 最末段**：
 ```python
 return {
     'meta': {
@@ -185,7 +185,7 @@ return {
 
 ### 5.1 確認 runtime CSV 有 speed 欄位
 ```bash
-python tools/runtime_pipeline.py --once
+python src/runtime_pipeline.py --once
 ls data/runtime_data/<latest>/
 head -3 data/runtime_data/<latest>/traffic_data_*.csv
 # 應該看到 4 欄: time,edge_id,vehicle_count,avg_speed_kmh

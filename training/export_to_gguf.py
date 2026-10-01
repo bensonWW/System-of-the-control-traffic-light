@@ -3,10 +3,10 @@
 export_to_gguf.py — Windows 版 GGUF 匯出 + Ollama Modelfile 生成
 
 執行方式：
-    python tools/export_to_gguf.py
+    python training/export_to_gguf.py
 
 前置條件：
-    - 已完成 python tools/finetune_gemma.py（models/trafficvision-gemma4/ 存在）
+    - 已完成 python training/finetune_gemma.py（models/trafficvision-gemma4/ 存在）
     - Ollama 已安裝：https://ollama.com/download
 
 輸出：
@@ -34,7 +34,7 @@ CONVERT_SCRIPT   = LLAMA_CPP_DIR / "convert_hf_to_gguf.py"
 
 def check_prerequisites():
     if not ADAPTER_DIR.exists() or not (ADAPTER_DIR / "adapter_model.safetensors").exists():
-        sys.exit(f"ERROR: 找不到 {ADAPTER_DIR}，請先執行 python tools/finetune_gemma.py")
+        sys.exit(f"ERROR: 找不到 {ADAPTER_DIR}，請先執行 python training/finetune_gemma.py")
     if not CONVERT_SCRIPT.exists():
         sys.exit(
             f"ERROR: 找不到 {CONVERT_SCRIPT}\n"

@@ -4,7 +4,7 @@
 輸出格式：data/finetune_dataset.jsonl（Unsloth chat template）
 
 執行方式：
-    python tools/generate_finetune_dataset.py
+    python training/generate_finetune_dataset.py
 
 設計原則（vs 舊版）：
     - 答案**全部來自實際 handoff CSV 內容**，不再使用「if MOE=2 → 建議延長綠燈」

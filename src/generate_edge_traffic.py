@@ -8,7 +8,7 @@ Combine:
 Output: edge_heatmap.json  (served via GET /api/edge-heatmap)
 
 可直接執行（使用預設路徑）：
-    python tools/generate_edge_traffic.py
+    python src/generate_edge_traffic.py
 
 或從 runtime_pipeline.py 呼叫：
     from generate_edge_traffic import generate

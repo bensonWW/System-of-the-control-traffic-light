@@ -3,9 +3,9 @@ compare_models.py — 用同一份 SUMO base CSV 跑兩個 GRU 模型的完整 p
 並在結束後印出對照表。
 
 用法：
-    python tools/compare_models.py                              # 自動找最新的 base CSV
-    python tools/compare_models.py --csv data/runtime_data/.../xxx.csv
-    python tools/compare_models.py --model-a gru_traffic_model.pth --model-b gru_traffic_model_pair.pth
+    python src/compare_models.py                              # 自動找最新的 base CSV
+    python src/compare_models.py --csv data/runtime_data/.../xxx.csv
+    python src/compare_models.py --model-a models/gru_traffic_model.pth --model-b models/gru_traffic_model_pair.pth
 """
 
 import argparse
@@ -41,7 +41,7 @@ def _find_latest_base_csv():
     if not candidates:
         raise FileNotFoundError(
             "找不到 base simulation CSV。"
-            "請先執行 python tools/runtime_pipeline.py --once 產生資料。"
+            "請先執行 python src/runtime_pipeline.py --once 產生資料。"
         )
     return max(candidates, key=os.path.getmtime)
 
@@ -259,10 +259,10 @@ def main():
     parser = argparse.ArgumentParser(description="Compare two GRU models on the same SUMO CSV")
     parser.add_argument("--csv", default=None,
                         help="Base simulation CSV path (auto-detects latest if omitted)")
-    parser.add_argument("--model-a", default="gru_traffic_model.pth",
-                        help="First model path (default: gru_traffic_model.pth)")
-    parser.add_argument("--model-b", default="gru_traffic_model_pair.pth",
-                        help="Second model path (default: gru_traffic_model_pair.pth)")
+    parser.add_argument("--model-a", default="models/gru_traffic_model.pth",
+                        help="First model path (default: models/gru_traffic_model.pth)")
+    parser.add_argument("--model-b", default="models/gru_traffic_model_pair.pth",
+                        help="Second model path (default: models/gru_traffic_model_pair.pth)")
     args = parser.parse_args()
 
     input_csv = args.csv or _find_latest_base_csv()

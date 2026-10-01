@@ -163,7 +163,7 @@ def _fetch_taipei_traffic() -> dict:
         from defusedxml.ElementTree import fromstring as _safe_fromstring
         root = _safe_fromstring(gz.read())
     data: dict = {}
-    # Schema-drift visibility (mirrors tools/fetch_vd_data.py).
+    # Schema-drift visibility (mirrors src/fetch_vd_data.py).
     parse_errors: list = []
     for item in root[2]:
         section_name = ""
@@ -486,7 +486,7 @@ def get_metrics_trends(limit: int = 200):
     Step 3" or "composite_score creeping toward 1.0" trends.
     """
     if not _METRICS_PATH.exists():
-        return {"error": "no metrics yet", "hint": "run tools/runtime_pipeline.py"}
+        return {"error": "no metrics yet", "hint": "run src/runtime_pipeline.py"}
 
     # Tail-read last N lines (keep memory bounded even with months of data)
     try:
@@ -721,7 +721,7 @@ async def refresh_traffic():
         return {"status": "error", "message": str(exc)}
 
 
-# ─── Run history helpers (read tools/runtime_pipeline.py's _metrics.jsonl) ──
+# ─── Run history helpers (read src/runtime_pipeline.py's _metrics.jsonl) ──
 _METRICS_PATH = BASE_DIR.parent / "data" / "runtime_data" / "_metrics.jsonl"
 
 
@@ -755,7 +755,7 @@ def _diagnose_missing_handoff():
     if last is None:
         return {
             "error": "pipeline_never_ran",
-            "message": "尚無任何 pipeline 執行紀錄。請執行 python tools/runtime_pipeline.py --once",
+            "message": "尚無任何 pipeline 執行紀錄。請執行 python src/runtime_pipeline.py --once",
             "hint": "通常每 5 分鐘自動跑一次；如未啟用 scheduler，請先手動跑一輪。",
         }
     if last.get("error"):
@@ -870,7 +870,7 @@ def get_edge_heatmap():
     if data is None:
         return {
             "error": "edge_heatmap.json 尚未生成",
-            "hint": "請先執行 runtime_pipeline.py 或 python tools/generate_edge_traffic.py",
+            "hint": "請先執行 runtime_pipeline.py 或 python src/generate_edge_traffic.py",
         }
     return data
 
@@ -1469,7 +1469,7 @@ def _pipeline_status_block() -> str:
     讓助理可以回答「為何 opt==pred」「現在優化器選什麼」這類問題。"""
     m = _latest_run_metric() or {}
     if not m:
-        return "（pipeline 尚未產生紀錄；請執行 python tools/runtime_pipeline.py --once）"
+        return "（pipeline 尚未產生紀錄；請執行 python src/runtime_pipeline.py --once）"
     ts = m.get("ts", "?")
     age_sec = None
     try:

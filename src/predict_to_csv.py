@@ -75,7 +75,7 @@ TRAFFIC_LIGHT_DEMO_DIR = os.path.join(ROOT_DIR, "data", "traffic_light_demo")
 # Rollback 路徑:
 #   v2 → v1 (count only): gru_traffic_model_pair.pth
 #   v2 → 舊 sliding     : gru_traffic_model.pth
-DEFAULT_MODEL_PATH = os.path.join(ROOT_DIR, "gru_traffic_model_pair_v2.pth")
+DEFAULT_MODEL_PATH = os.path.join(ROOT_DIR, "models", "gru_traffic_model_pair_v2.pth")
 PREDICTION_MIN_THRESHOLD = 0.02
 PREDICTION_TOP_K_PER_STEP = 40
 PREDICTION_FUSION_LAST_WINDOWS = 10

@@ -2,7 +2,7 @@
 
 本文件指引：當新的 `gru_traffic_model_pair.pth`（pair-based 5 分鐘預測模型）經 `train_model.py --mode eval-batch` 驗證表現符合預期後，如何把它接入既有的 runtime pipeline。
 
-> **設計原則**：訓練階段（`train_model.py`）完全獨立，不影響 runtime；整合需要修改 `tools/predict_to_csv.py`（4 處）、視情況調整 `tools/traffic_light_optimizer.py`、選擇模型檔切換策略，本文件按步驟說明。
+> **設計原則**：訓練階段（`train_model.py`）完全獨立，不影響 runtime；整合需要修改 `src/predict_to_csv.py`（4 處）、視情況調整 `src/traffic_light_optimizer.py`、選擇模型檔切換策略，本文件按步驟說明。
 
 ---
 
@@ -12,7 +12,7 @@
 
 執行：
 ```bash
-python train_model.py --mode eval-batch --dir data/simulation_data/
+python training/train_model.py --mode eval-batch --dir data/simulation_data/
 ```
 
 驗收條件：
@@ -32,13 +32,13 @@ python train_model.py --mode eval-batch --dir data/simulation_data/
 
 ---
 
-## Step 2 — 修改 `tools/predict_to_csv.py`
+## Step 2 — 修改 `src/predict_to_csv.py`
 
 需要動四處：
 
 ### 2.1 `load_model()` — 依 `model_type` 決定 input 維度
 
-**位置**：`tools/predict_to_csv.py` 約 L83-113 的 `load_model()` 函式內
+**位置**：`src/predict_to_csv.py` 約 L83-113 的 `load_model()` 函式內
 
 **修改前**（節錄關鍵段）：
 ```python
@@ -69,7 +69,7 @@ return model, scaler, edge_ids, input_len, pred_horizon, config
 
 ### 2.2 `build_time_features()` — 新增選用的 `gap_minutes` 參數
 
-**位置**：`tools/predict_to_csv.py` 約 L151-163
+**位置**：`src/predict_to_csv.py` 約 L151-163
 
 **修改前**：
 ```python
@@ -102,7 +102,7 @@ gap_for_inference = 5.0 if config.get("gap_feature", False) else None
 
 **為何必要**：新模型訓練時只見過「CSV 前 15 步（SUMO 暖機段，time 60-340s）」這種分布。若仍用滑動視窗把 CSV 中段（如 time 3000-3340s）當輸入，模型會輸出垃圾（訓練分布外）。**必須改成只用前 15 步、跑一次預測**。
 
-**位置**：`tools/predict_to_csv.py` 的 `export_prediction_csv()` 內，原本呼叫 `_aggregate_predictions(...)` 的部分
+**位置**：`src/predict_to_csv.py` 的 `export_prediction_csv()` 內，原本呼叫 `_aggregate_predictions(...)` 的部分
 
 **修改方式**：依 `config.get("model_type")` 分支：
 
@@ -177,7 +177,7 @@ else:
 新模型的「5 分鐘預測對應 5 分鐘決策」符合 runtime pipeline 每 5 分鐘重跑一輪的設計本意。下游 `apply_time = current_bin - base_prediction_time` 邏輯本就用相對時間，1-2 個 bin 不會造成 crash，只是優化粒度變粗。先用 Step 5 回歸測試驗證這條路能否跑通。
 
 **選項 B — 降低 `update_interval` 換取更細決策粒度**：
-若 Step 5 發現「號誌切換太稀疏導致 adaptive/baseline 策略永遠輸給 no_control」，再改 `tools/traffic_light_optimizer.py` 約 L240-270 的 5 個策略定義，把 `update_interval` 從 `180.0` 改成 `60.0`，讓 5 分鐘內有 5 個切換點：
+若 Step 5 發現「號誌切換太稀疏導致 adaptive/baseline 策略永遠輸給 no_control」，再改 `src/traffic_light_optimizer.py` 約 L240-270 的 5 個策略定義，把 `update_interval` 從 `180.0` 改成 `60.0`，讓 5 分鐘內有 5 個切換點：
 
 ```python
 {
@@ -222,17 +222,17 @@ mv gru_traffic_model_pair.pth gru_traffic_model.pth
 
 修改三處 `DEFAULT_MODEL_PATH` 與預設值：
 
-**`tools/predict_to_csv.py`** 約 L60：
+**`src/predict_to_csv.py`** 約 L60：
 ```python
 DEFAULT_MODEL_PATH = os.path.join(ROOT_DIR, "gru_traffic_model_pair.pth")
 ```
 
-**`tools/predict_main.py`** 約 L11：
+**`src/predict_main.py`** 約 L11：
 ```python
 MODEL_PATH = os.path.join(ROOT_DIR, "gru_traffic_model_pair.pth")
 ```
 
-**`tools/runtime_pipeline.py`** 約 L218-222（`--model-path` 預設值）：
+**`src/runtime_pipeline.py`** 約 L218-222（`--model-path` 預設值）：
 ```python
 parser.add_argument(
     "--model-path",
@@ -251,7 +251,7 @@ parser.add_argument(
 
 ### 5.1 單次 pipeline 跑通
 ```bash
-python tools/runtime_pipeline.py --once
+python src/runtime_pipeline.py --once
 ```
 觀察：
 - [ ] Step 1/4 route 產生成功
@@ -302,11 +302,11 @@ restore 完畢，runtime 立即回到舊版行為。
 把 Step 4 改過的三處 `DEFAULT_MODEL_PATH` 改回 `gru_traffic_model.pth`（舊檔名）即可。
 
 ### 若 Step 3.2 選了選項 B 改了 `update_interval`
-把 `tools/traffic_light_optimizer.py` 內五個策略的 `update_interval` 改回 `180.0`，並把 `adaptive_interval` 計算式還原。
+把 `src/traffic_light_optimizer.py` 內五個策略的 `update_interval` 改回 `180.0`，並把 `adaptive_interval` 計算式還原。
 
 ### 若是 `predict_to_csv.py` 改壞了
 ```bash
-git checkout tools/predict_to_csv.py
+git checkout src/predict_to_csv.py
 ```
 （前提：整合前已 commit 過此檔的修改）
 
@@ -315,19 +315,19 @@ git checkout tools/predict_to_csv.py
 ## 附錄 A — 檔案異動清單
 
 整合完成後預期會修改的檔案：
-- `tools/predict_to_csv.py`（Step 2 四處修改 — load_model、build_time_features、gap 傳遞、單次預測分支）
-- `tools/predict_main.py`（Step 4 選項 B 的 MODEL_PATH）
-- `tools/runtime_pipeline.py`（Step 4 選項 B 的 --model-path 預設值）
-- `tools/traffic_light_optimizer.py`（Step 3.2 選項 B 的 update_interval，**可選**）
+- `src/predict_to_csv.py`（Step 2 四處修改 — load_model、build_time_features、gap 傳遞、單次預測分支）
+- `src/predict_main.py`（Step 4 選項 B 的 MODEL_PATH）
+- `src/runtime_pipeline.py`（Step 4 選項 B 的 --model-path 預設值）
+- `src/traffic_light_optimizer.py`（Step 3.2 選項 B 的 update_interval，**可選**）
 
 整合完成後預期會新增的檔案：
 - `gru_traffic_model_sliding_legacy.pth`（Step 4 選項 A）— 舊模型備份
 - 或無新增檔（Step 4 選項 B，兩個 checkpoint 共存於原路徑）
 
 整合**不會**修改：
-- `tools/traffic_optimizer_io.py`
-- `tools/traffic_optimizer_signal.py`
-- `tools/export_handoff.py`
+- `src/traffic_optimizer_io.py`
+- `src/traffic_optimizer_signal.py`
+- `src/export_handoff.py`
 - `dashboard/serve_api.py`
 - `dashboard/ui_kits/traffic-dashboard/dashboard.html`
 - `train_model.py`（已是新版）

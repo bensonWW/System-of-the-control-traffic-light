@@ -18,8 +18,8 @@ persistence 預測驅動」，因此為乾淨的 ablation。
 
 用法
 ----
-    python tools/da1_ablation.py --sample 15
-    python tools/da1_ablation.py --sample 15 --seed 0   # seed 影響抽樣
+    python analysis/da1_ablation.py --sample 15
+    python analysis/da1_ablation.py --sample 15 --seed 0   # seed 影響抽樣
 """
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ import tempfile
 import numpy as np
 import pandas as pd
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"))
 from traffic_light_optimizer import run_prediction_driven_strategy  # noqa: E402
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

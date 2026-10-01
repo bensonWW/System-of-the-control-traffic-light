@@ -17,11 +17,11 @@ test_model.py — Pair-based GRU 模型真實泛化測試 (holdout)
 若 Model > Persist → 模型只是學會「下一步 ≈ 當前」,沒學到時間演化
 
 執行:
-  python test_model.py
-  python test_model.py --max-pairs 500              # 快測 (約 1 分鐘)
-  python test_model.py --include-overlap-dates       # 保留與訓練重疊日期
-  python test_model.py --model path/to/other.pth
-  python test_model.py --dir path/to/test/csvs
+  python training/test_model.py
+  python training/test_model.py --max-pairs 500              # 快測 (約 1 分鐘)
+  python training/test_model.py --include-overlap-dates       # 保留與訓練重疊日期
+  python training/test_model.py --model path/to/other.pth
+  python training/test_model.py --dir path/to/test/csvs
 """
 import argparse
 import os
@@ -42,6 +42,7 @@ for _stream_name in ("stdout", "stderr"):
             pass
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+ROOT_DIR = os.path.dirname(BASE_DIR)  # repo root (this file lives in training/)
 sys.path.insert(0, BASE_DIR)
 
 # 重用 train_model.py 的元件,確保推論邏輯與訓練端一致
@@ -57,9 +58,9 @@ from train_model import (
     PRED_HORIZON,
 )
 
-DEFAULT_TEST_DIR = os.path.join(BASE_DIR, "data", "simulation_data_check")
-DEFAULT_TRAIN_DIR = os.path.join(BASE_DIR, "data", "simulation_data")
-DEFAULT_MODEL_PATH = os.path.join(BASE_DIR, "gru_traffic_model_pair_v2.pth")
+DEFAULT_TEST_DIR = os.path.join(ROOT_DIR, "data", "simulation_data_check")
+DEFAULT_TRAIN_DIR = os.path.join(ROOT_DIR, "data", "simulation_data")
+DEFAULT_MODEL_PATH = os.path.join(ROOT_DIR, "models", "gru_traffic_model_pair_v2.pth")
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 

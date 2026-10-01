@@ -31,8 +31,8 @@
 
 用法
 ----
-    python tools/da1_congestion_stratified.py
-    python tools/da1_congestion_stratified.py --top25 51.4 --top10 76.2
+    python analysis/da1_congestion_stratified.py
+    python analysis/da1_congestion_stratified.py --top25 51.4 --top10 76.2
 """
 from __future__ import annotations
 

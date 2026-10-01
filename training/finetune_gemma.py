@@ -6,16 +6,16 @@
     pip install -r requirements-training.txt
 
 執行前先生成資料集：
-    python tools/generate_finetune_dataset.py
+    python training/generate_finetune_dataset.py
 
 執行方式（本機 NVIDIA GPU）：
-    python tools/finetune_gemma.py
+    python training/finetune_gemma.py
 
 輸出：
     models/trafficvision-gemma4/  ← LoRA adapters + tokenizer
 
 下一步：
-    bash tools/export_to_gguf.sh  ← 合併、量化、匯入 Ollama
+    bash training/export_to_gguf.sh  ← 合併、量化、匯入 Ollama
 """
 from unsloth import FastLanguageModel
 from datasets import load_dataset
@@ -68,7 +68,7 @@ model = FastLanguageModel.get_peft_model(
 print(f"載入資料集 {DATASET} ...")
 if not DATASET.exists():
     raise FileNotFoundError(
-        f"找不到 {DATASET}，請先執行：python tools/generate_finetune_dataset.py"
+        f"找不到 {DATASET}，請先執行：python training/generate_finetune_dataset.py"
     )
 
 dataset = load_dataset("json", data_files=str(DATASET), split="train")
@@ -126,4 +126,4 @@ model.save_pretrained(str(OUTPUT_DIR))
 tokenizer.save_pretrained(str(OUTPUT_DIR))
 
 print(f"\nLoRA adapters 已儲存 → {OUTPUT_DIR}")
-print("下一步：bash tools/export_to_gguf.sh")
+print("下一步：bash training/export_to_gguf.sh")

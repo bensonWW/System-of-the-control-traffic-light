@@ -6,10 +6,10 @@ train_model.py — Pair-based 5 分鐘車流預測 GRU 模型
 Pair 由同日內檔名相鄰、timestamp 差 [3, 15] 分鐘的 CSV 對構成。
 
 支援三種模式 (CLI):
-  python train_model.py                                      # 訓練 (預設)
-  python train_model.py --mode eval --input A.csv --target B.csv [--gap 5.0]
-  python train_model.py --mode eval-batch --dir data/simulation_data/
-  python train_model.py --mode eval-batch --dir ... --dry-run    # 只看 pair 統計
+  python training/train_model.py                                      # 訓練 (預設)
+  python training/train_model.py --mode eval --input A.csv --target B.csv [--gap 5.0]
+  python training/train_model.py --mode eval-batch --dir data/simulation_data/
+  python training/train_model.py --mode eval-batch --dir ... --dry-run    # 只看 pair 統計
 
 新模型存到 gru_traffic_model_pair.pth (不覆寫舊的 gru_traffic_model.pth)，
 inference 整合方式詳見 docs/INTEGRATION_PAIR_MODEL.md。
@@ -43,9 +43,10 @@ if torch.cuda.is_available():
     torch.cuda.manual_seed_all(SEED)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, "data", "simulation_data")
-MODEL_PATH = os.path.join(BASE_DIR, "gru_traffic_model_pair_v2.pth")
-EDGE_UNION_CACHE = os.path.join(BASE_DIR, "data", "edge_ids_union.json")
+ROOT_DIR = os.path.dirname(BASE_DIR)  # repo root (this file lives in training/)
+DATA_DIR = os.path.join(ROOT_DIR, "data", "simulation_data")
+MODEL_PATH = os.path.join(ROOT_DIR, "models", "gru_traffic_model_pair_v2.pth")
+EDGE_UNION_CACHE = os.path.join(ROOT_DIR, "data", "edge_ids_union.json")
 
 INPUT_LEN = 15        # 5 分鐘 (20 秒/步)
 PRED_HORIZON = 15     # 5 分鐘

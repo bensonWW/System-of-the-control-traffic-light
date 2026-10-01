@@ -1,5 +1,5 @@
 """
-Unit tests for tools/predict_to_csv.py.
+Unit tests for src/predict_to_csv.py.
 
 Runs with stdlib only (no pytest required):
     python -m unittest tests.test_predict_to_csv
@@ -17,11 +17,11 @@ import sys
 import tempfile
 import unittest
 
-# Make `import tools.predict_to_csv` resolvable from repo root
+# Make `import predict_to_csv` resolvable from repo root
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-TOOLS_DIR = os.path.join(REPO_ROOT, "tools")
-if TOOLS_DIR not in sys.path:
-    sys.path.insert(0, TOOLS_DIR)
+SRC_DIR = os.path.join(REPO_ROOT, "src")
+if SRC_DIR not in sys.path:
+    sys.path.insert(0, SRC_DIR)
 
 
 class TestErrorClasses(unittest.TestCase):
@@ -125,7 +125,7 @@ class TestLoadProductionCheckpointSmoke(unittest.TestCase):
     """If the deployed pair model is present, verify load_model succeeds
     on it. Skips silently when the file isn't available (CI / clean clone)."""
 
-    PROD_MODEL = os.path.join(REPO_ROOT, "gru_traffic_model_pair.pth")
+    PROD_MODEL = os.path.join(REPO_ROOT, "models", "gru_traffic_model_pair.pth")
 
     def test_production_pair_model_loads(self):
         if not os.path.exists(self.PROD_MODEL):

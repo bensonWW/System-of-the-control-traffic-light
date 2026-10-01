@@ -32,7 +32,7 @@ echo ""
 # 確認 adapter 目錄存在
 if [ ! -d "$ADAPTER_DIR" ]; then
     echo "ERROR: 找不到 $ADAPTER_DIR"
-    echo "請先執行：python tools/finetune_gemma.py"
+    echo "請先執行：python training/finetune_gemma.py"
     exit 1
 fi
 

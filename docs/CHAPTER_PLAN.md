@@ -84,7 +84,7 @@
 
 ---
 
-## 4. 真實數據事實表（全部可由 `tools/sensitivity_analysis.py` 重現）
+## 4. 真實數據事實表（全部可由 `analysis/sensitivity_analysis.py` 重現）
 
 **樣本**：405 次有效自動排程模擬（466 筆紀錄，61 筆因資料不足跳過）。
 
@@ -161,7 +161,7 @@
 
 | 資產 | 路徑 | 用途 |
 |---|---|---|
-| 敏感度/表/Oracle 腳本 | `tools/sensitivity_analysis.py` | 一行重現全部分析（呼應「可驗證」） |
+| 敏感度/表/Oracle 腳本 | `analysis/sensitivity_analysis.py` | 一行重現全部分析（呼應「可驗證」） |
 | 表 5.2 資料 | `data/analysis/results_table_5_2.csv` | 真實 6 指標 |
 | 壅塞分層 | `data/analysis/congestion_strata.csv` | 高壅塞遞增證據 |
 | Oracle 比較 | `data/analysis/fixed_strategy_means.csv`, `oracle_summary.json` | 第五槍最強證據 |

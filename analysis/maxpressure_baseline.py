@@ -24,9 +24,9 @@ Max-Pressure 原理
 
 用法
 ----
-    python tools/maxpressure_baseline.py --sample 60
-    python tools/maxpressure_baseline.py --sample 5 --seed 0    # 先小樣本驗證
-    python tools/maxpressure_baseline.py --stems-from-ablation  # 用消融的同一批 run 配對比較
+    python analysis/maxpressure_baseline.py --sample 60
+    python analysis/maxpressure_baseline.py --sample 5 --seed 0    # 先小樣本驗證
+    python analysis/maxpressure_baseline.py --stems-from-ablation  # 用消融的同一批 run 配對比較
 """
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ import sys
 import numpy as np
 import pandas as pd
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"))
 
 if "SUMO_HOME" not in os.environ:
     os.environ["SUMO_HOME"] = r"C:\Sumo"

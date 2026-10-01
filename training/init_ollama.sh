@@ -4,18 +4,18 @@
 # 執行順序（在 GPU 機器上）：
 #   1. 安裝 NVIDIA Container Toolkit（若尚未安裝）
 #   2. docker compose up -d ollama        # 先啟動 Ollama
-#   3. bash init_ollama.sh                # 載入模型
+#   3. bash training/init_ollama.sh                # 載入模型
 #   4. docker compose up -d api           # 再啟動 API server
 #
 # 或全部一起：
 #   docker compose up -d
-#   bash init_ollama.sh
+#   bash training/init_ollama.sh
 
 set -euo pipefail
 
 OLLAMA_URL="${OLLAMA_URL:-http://localhost:11434}"
 MODEL_TAG="${OLLAMA_MODEL:-trafficvision-gemma4}"
-GGUF_DIR="$(cd "$(dirname "$0")" && pwd)/models/gguf"
+GGUF_DIR="$(cd "$(dirname "$0")/.." && pwd)/models/gguf"
 GGUF_FILE="$GGUF_DIR/${MODEL_TAG}-q4_k_m.gguf"
 MODELFILE="$GGUF_DIR/Modelfile"
 
@@ -51,9 +51,9 @@ if [ ! -f "$GGUF_FILE" ]; then
     echo "ERROR: 找不到 GGUF 檔案：$GGUF_FILE"
     echo ""
     echo "請先完成微調流程："
-    echo "  1. python tools/generate_finetune_dataset.py"
-    echo "  2. python tools/finetune_gemma.py"
-    echo "  3. bash tools/export_to_gguf.sh"
+    echo "  1. python training/generate_finetune_dataset.py"
+    echo "  2. python training/finetune_gemma.py"
+    echo "  3. bash training/export_to_gguf.sh"
     echo ""
     echo "或使用通用 Gemma 3 測試："
     echo "  docker exec trafficvision-ollama ollama pull gemma3:12b"

@@ -12,7 +12,7 @@ Start-Process powershell -ArgumentList "-NoExit", "-Command", "python '$apiScrip
 Start-Sleep -Seconds 3
 
 Write-Host "[2/2] Starting runtime pipeline (every 5 min)..." -ForegroundColor Yellow
-$toolsDir = Join-Path $root "tools"
+$toolsDir = Join-Path $root "src"
 Start-Process powershell -ArgumentList "-NoExit", "-Command", "Set-Location '$toolsDir'; python runtime_pipeline.py"
 
 Write-Host ""

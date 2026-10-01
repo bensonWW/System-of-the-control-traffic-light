@@ -1,5 +1,5 @@
 """
-Unit tests for tools/runtime_pipeline.py.
+Unit tests for src/runtime_pipeline.py.
 
 Targets the non-trivial concurrency / process logic added in F1 (stale
 lockfile auto-cleanup) and the contextmanager + PipelineBusy contract.
@@ -14,9 +14,9 @@ import tempfile
 import unittest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-TOOLS_DIR = os.path.join(REPO_ROOT, "tools")
-if TOOLS_DIR not in sys.path:
-    sys.path.insert(0, TOOLS_DIR)
+SRC_DIR = os.path.join(REPO_ROOT, "src")
+if SRC_DIR not in sys.path:
+    sys.path.insert(0, SRC_DIR)
 
 
 class TestParseLockfilePid(unittest.TestCase):

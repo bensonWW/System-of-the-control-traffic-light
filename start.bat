@@ -12,7 +12,7 @@ start "TrafficVision API" cmd /k python "%~dp0dashboard\serve_api.py"
 timeout /t 3 /nobreak >nul
 
 echo [2/2] Starting runtime pipeline (every 5 min)...
-start "TrafficVision Pipeline" cmd /k "cd /d %~dp0tools && python runtime_pipeline.py"
+start "TrafficVision Pipeline" cmd /k "cd /d %~dp0src && python runtime_pipeline.py"
 
 echo.
 echo Two windows opened:

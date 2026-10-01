@@ -6,7 +6,7 @@ test_model.py 只測 count channel (L244-254 hard-code 切 [:num_edges])。
 
 用途: 確認 v2 重訓後 speed channel 真的有學到,不是 mode collapse to 0。
 
-執行: python eval_speed_holdout.py
+執行: python training/eval_speed_holdout.py
 """
 import argparse
 import os
@@ -25,6 +25,7 @@ for _stream_name in ("stdout", "stderr"):
             pass
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+ROOT_DIR = os.path.dirname(BASE_DIR)  # repo root (this file lives in training/)
 sys.path.insert(0, BASE_DIR)
 
 from train_model import (
@@ -46,9 +47,9 @@ from test_model import (
     predict_persist,
 )
 
-DEFAULT_TEST_DIR = os.path.join(BASE_DIR, "data", "simulation_data_check")
-DEFAULT_TRAIN_DIR = os.path.join(BASE_DIR, "data", "simulation_data")
-DEFAULT_MODEL_PATH = os.path.join(BASE_DIR, "gru_traffic_model_pair_v2.pth")
+DEFAULT_TEST_DIR = os.path.join(ROOT_DIR, "data", "simulation_data_check")
+DEFAULT_TRAIN_DIR = os.path.join(ROOT_DIR, "data", "simulation_data")
+DEFAULT_MODEL_PATH = os.path.join(ROOT_DIR, "models", "gru_traffic_model_pair_v2.pth")
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 

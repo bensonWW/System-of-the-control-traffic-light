@@ -450,10 +450,10 @@ def main():
     )
     parser.add_argument(
         "--model-path",
-        default=os.path.join(ROOT_DIR, "gru_traffic_model_pair_v2.pth"),
+        default=os.path.join(ROOT_DIR, "models", "gru_traffic_model_pair_v2.pth"),
         help="模型路徑,未指定時使用 v2 pair-based 模型 (gru_traffic_model_pair_v2.pth, "
-             "預測 count + speed)。Rollback: --model-path gru_traffic_model_pair.pth (v1) "
-             "或 gru_traffic_model.pth (舊 sliding)",
+             "預測 count + speed)。Rollback: --model-path models/gru_traffic_model_pair.pth (v1) "
+             "或 models/gru_traffic_model.pth (舊 sliding)",
     )
     args = parser.parse_args()
 

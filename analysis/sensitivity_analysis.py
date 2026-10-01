@@ -26,9 +26,9 @@
 
 用法
 ----
-    python tools/sensitivity_analysis.py
-    python tools/sensitivity_analysis.py --weights 0.5 0.6 0.7 --out-dir data/analysis
-    python tools/sensitivity_analysis.py --no-figure
+    python analysis/sensitivity_analysis.py
+    python analysis/sensitivity_analysis.py --weights 0.5 0.6 0.7 --out-dir data/analysis
+    python analysis/sensitivity_analysis.py --no-figure
 """
 from __future__ import annotations
 

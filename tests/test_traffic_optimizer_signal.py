@@ -1,5 +1,5 @@
 """
-Unit tests for tools/traffic_optimizer_signal.py.
+Unit tests for src/traffic_optimizer_signal.py.
 
 Covers the SUMO physics floor enforcement added in Week 2-D (commit
 e57cb6937): clamp_phase_duration must respect minimum yellow / all-red /
@@ -13,9 +13,9 @@ import sys
 import unittest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-TOOLS_DIR = os.path.join(REPO_ROOT, "tools")
-if TOOLS_DIR not in sys.path:
-    sys.path.insert(0, TOOLS_DIR)
+SRC_DIR = os.path.join(REPO_ROOT, "src")
+if SRC_DIR not in sys.path:
+    sys.path.insert(0, SRC_DIR)
 
 
 class TestClassifyPhaseKind(unittest.TestCase):
