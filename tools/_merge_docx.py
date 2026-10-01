@@ -8,8 +8,8 @@ from docx.oxml.ns import qn
 from docx.text.paragraph import Paragraph
 from docx.table import Table
 
-SRC = "REVISED_DRAFT (1).docx"
-OUT = "REVISED_DRAFT_merged.docx"
+SRC = "docs/paper/REVISED_DRAFT (1).docx"
+OUT = "docs/paper/REVISED_DRAFT_merged.docx"
 
 doc = Document(SRC)
 

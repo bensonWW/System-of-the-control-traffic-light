@@ -416,10 +416,10 @@ def main():
     print("─" * 70)
     if n_fail == 0:
         print(f">>> 模型通過 holdout 測試 ({n_pass} pass, 0 fail) <<<")
-        print(">>> 可以進行 INTEGRATION_PAIR_MODEL.md Step 2 整合 <<<")
+        print(">>> 可以進行 docs/INTEGRATION_PAIR_MODEL.md Step 2 整合 <<<")
     elif n_fail >= 2:
         print(f">>> 模型未通過 holdout 測試 ({n_pass} pass, {n_fail} fail) <<<")
-        print(">>> 建議檢查 INTEGRATION_PAIR_MODEL.md 附錄 C 調整超參數重訓 <<<")
+        print(">>> 建議檢查 docs/INTEGRATION_PAIR_MODEL.md 附錄 C 調整超參數重訓 <<<")
     else:
         print(f">>> 模型部分通過 ({n_pass} pass, {n_fail} fail),整合風險中等 <<<")
         print(">>> 建議: 直接整合並用 INTEGRATION Step 5 (SUMO 回歸測試) 做最終把關 <<<")

@@ -12,7 +12,7 @@ Pair 由同日內檔名相鄰、timestamp 差 [3, 15] 分鐘的 CSV 對構成。
   python train_model.py --mode eval-batch --dir ... --dry-run    # 只看 pair 統計
 
 新模型存到 gru_traffic_model_pair.pth (不覆寫舊的 gru_traffic_model.pth)，
-inference 整合方式詳見 INTEGRATION_PAIR_MODEL.md。
+inference 整合方式詳見 docs/INTEGRATION_PAIR_MODEL.md。
 """
 import argparse
 import json
@@ -782,7 +782,7 @@ def evaluate_batch(args):
                     for i in range(len(per_step_mean) - 1))
     print(f"Monotonic per-step degradation (count): {'YES' if monotonic else 'NO'}")
 
-    # ---------- Step 1 驗收 (對照 INTEGRATION_PAIR_MODEL.md) ----------
+    # ---------- Step 1 驗收 (對照 docs/INTEGRATION_PAIR_MODEL.md) ----------
     mae_mean = float(np.mean(overall_maes))
     mae_median = float(np.median(overall_maes))
     rmse_mean = float(np.mean(overall_rmses))
@@ -826,9 +826,9 @@ def evaluate_batch(args):
     all_pass = n_pass == len(checks)
     print(f"\n通過: {n_pass}/{len(checks)}")
     if all_pass:
-        print(">>> 全部通過,可進行 INTEGRATION_PAIR_MODEL.md Step 2 整合 <<<")
+        print(">>> 全部通過,可進行 docs/INTEGRATION_PAIR_MODEL.md Step 2 整合 <<<")
     else:
-        print(">>> 未全部通過,請依 INTEGRATION_PAIR_MODEL.md 附錄 C 調整 hyperparameters <<<")
+        print(">>> 未全部通過,請依 docs/INTEGRATION_PAIR_MODEL.md 附錄 C 調整 hyperparameters <<<")
 
 
 # =================================================

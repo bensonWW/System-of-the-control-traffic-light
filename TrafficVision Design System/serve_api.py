@@ -1049,7 +1049,7 @@ def _gru_predict_speed_by_road() -> dict:
 # trained on data/simulation_data/ CSVs that had no avg_speed_kmh column
 # (training Y filled speed=0) — model output's speed channel is collapsed
 # near zero. After v2 is retrained against runtime CSVs that contain real
-# speed (Step 1 of INTEGRATION_EDGE_SPEED.md, now in place), flip this to 1
+# speed (Step 1 of docs/INTEGRATION_EDGE_SPEED.md, now in place), flip this to 1
 # to give the dashboard a single-source-of-truth for pred (vol + spd both
 # from GRU instead of mixed GRU vol / SUMO baseline spd).
 #
