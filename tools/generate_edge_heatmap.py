@@ -12,7 +12,7 @@ ROOT = os.path.dirname(BASE)
 
 NET_FILE = os.path.join(ROOT, 'data', 'ntut_network_split.net copy.xml')
 ROU_FILE = os.path.join(ROOT, 'data', 'final_output.rou.alt.xml')
-OUT_FILE = os.path.join(ROOT, 'TrafficVision Design System', 'data', 'edge_heatmap.json')
+OUT_FILE = os.path.join(ROOT, 'dashboard', 'data', 'edge_heatmap.json')
 
 # ── 1. Count vehicles per edge (use the selected route at index `last`) ────────
 print('Parsing routes...')

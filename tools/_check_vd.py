@@ -1,7 +1,7 @@
 import json, glob, sys
 
 files = sorted(glob.glob(
-    r"D:\System-of-the-control-traffic-light-master\TrafficVision Design System\data\trafficData\*.json"
+    r"D:\System-of-the-control-traffic-light-master\dashboard\data\trafficData\*.json"
 ))
 if not files:
     print("No traffic data files found")

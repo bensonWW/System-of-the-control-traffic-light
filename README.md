@@ -69,7 +69,7 @@ python --version    # 需要 3.11+
 |---|---|---|
 | `gru_traffic_model.pth` | GRU 預測模型（API pipeline 用） | 必要 |
 | `data/simulation_data/` | SUMO 模擬訓練資料 | 只需重訓 GRU 時才複製 |
-| `TrafficVision Design System/data/trafficData/` | 歷史 VD 快取 | 選填，API 啟動後會自動補抓 |
+| `dashboard/data/trafficData/` | 歷史 VD 快取 | 選填，API 啟動後會自動補抓 |
 
 > `models/gguf/` 的 GGUF **不用**複製，Step 4 會在新電腦重新生成。
 
@@ -194,7 +194,7 @@ pip install -r "$HOME\.unsloth\llama.cpp\requirements.txt"
 **儀表板地圖是空的？**
 
 `edge_heatmap.json` 由 `runtime_pipeline.py` 生成，首次啟動前不存在。
-可以從舊電腦複製 `TrafficVision Design System/data/edge_heatmap.json`，
+可以從舊電腦複製 `dashboard/data/edge_heatmap.json`，
 或啟動後執行一次 `python tools/runtime_pipeline.py --once`。
 
 **`/api/chat` 回應「AI 服務暫時無法使用」？**
@@ -210,7 +210,7 @@ pip install -r "$HOME\.unsloth\llama.cpp\requirements.txt"
 ## 專案結構
 
 ```
-├── TrafficVision Design System/
+├── dashboard/
 │   ├── serve_api.py                         ← FastAPI 主程式（含靜態文件服務）
 │   ├── ui_kits/traffic-dashboard/index.html ← 儀表板（GET /）
 │   └── data/

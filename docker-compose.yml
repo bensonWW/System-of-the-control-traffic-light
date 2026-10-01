@@ -51,7 +51,7 @@ services:
     volumes:
       # 資料目錄：讓 runtime_pipeline 寫入的資料可被 API 讀取
       - ./data:/app/data
-      - ./TrafficVision Design System/data:/app/TrafficVision Design System/data
+      - ./dashboard/data:/app/dashboard/data
     depends_on:
       ollama:
         condition: service_healthy

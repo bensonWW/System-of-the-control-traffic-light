@@ -18,9 +18,9 @@ COPY . .
 
 # 建立資料目錄（掛載 volume 後會覆蓋，但確保目錄存在）
 RUN mkdir -p \
-    "TrafficVision Design System/data/trafficData" \
-    "TrafficVision Design System/data/runtime_data" \
-    "TrafficVision Design System/data" \
+    "dashboard/data/trafficData" \
+    "dashboard/data/runtime_data" \
+    "dashboard/data" \
     data
 
 # P7: drop root inside the container — audit L1. With ./data bind-mounted,
@@ -38,4 +38,4 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
     CMD curl -f http://localhost:8000/api/status || exit 1
 
-CMD ["python", "TrafficVision Design System/serve_api.py"]
+CMD ["python", "dashboard/serve_api.py"]

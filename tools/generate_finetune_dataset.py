@@ -26,7 +26,7 @@ from pathlib import Path
 
 BASE = Path(__file__).parent
 ROOT = BASE.parent
-TRAFFIC_DIR = ROOT / "TrafficVision Design System" / "data" / "trafficData"
+TRAFFIC_DIR = ROOT / "dashboard" / "data" / "trafficData"
 RUNTIME_DIR = ROOT / "data" / "runtime_data"
 NET_XML     = ROOT / "data" / "ntut_network_split.net.xml"
 OUT_FILE    = ROOT / "data" / "finetune_dataset.jsonl"

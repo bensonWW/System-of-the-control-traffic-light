@@ -13,7 +13,7 @@ There are two independent data flows that feed the system:
 **Flow 1 — Real-world VD API (frontend display only)**
 ```
 Taipei City VD API → tools/fetch_vd_data.py
-                   → TrafficVision Design System/data/trafficData/*.json
+                   → dashboard/data/trafficData/*.json
                    → serve_api.py /api/traffic endpoint
 ```
 
@@ -33,7 +33,7 @@ tools/grabapi.py (VD API)
 ```
 
 **Frontend / API**
-- `TrafficVision Design System/serve_api.py` — FastAPI server; reads from both data flows. Exposes REST endpoints and a WebSocket for live SUMO streaming.
+- `dashboard/serve_api.py` — FastAPI server; reads from both data flows. Exposes REST endpoints and a WebSocket for live SUMO streaming.
 - `docker-compose.yml` — runs `api` (FastAPI) + `ollama` (Gemma 4 LLM). Use this for production.
 
 **LLM fine-tuning (offline, GPU required)**
@@ -53,7 +53,7 @@ tools/grabapi.py (VD API)
 | `tools/export_handoff.py` | Copies all outputs into `handoff/` with a manifest CSV |
 | `train_model.py` | GRU model training (offline, run once after collecting simulation data) |
 | `VehicleData.py` | Batch SUMO simulation with 16 parallel processes; requires `SUMO_HOME` |
-| `TrafficVision Design System/serve_api.py` | FastAPI app; also embeds a TraCI WebSocket streaming endpoint |
+| `dashboard/serve_api.py` | FastAPI app; also embeds a TraCI WebSocket streaming endpoint |
 
 ## Common Commands
 
@@ -65,7 +65,7 @@ pip install -r requirements-training.txt # Fine-tuning only (GPU required)
 
 ### Run the API server (development)
 ```bash
-python "TrafficVision Design System/serve_api.py"
+python "dashboard/serve_api.py"
 # Listening on http://localhost:8000
 ```
 
@@ -121,7 +121,7 @@ python tools/export_to_gguf.py             # exports to GGUF for Ollama
 | `data/VehicleData/` | SUMO route files (input to `VehicleData.py`) |
 | `data/simulation_data/` | Per-run CSVs from batch simulation (training data) |
 | `data/runtime_data/<stem>/handoff/` | Live pipeline outputs consumed by the API |
-| `TrafficVision Design System/data/trafficData/` | Real-world VD JSON snapshots |
+| `dashboard/data/trafficData/` | Real-world VD JSON snapshots |
 
 ## Environment Requirements
 

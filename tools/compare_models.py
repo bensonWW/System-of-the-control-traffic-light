@@ -104,7 +104,7 @@ def run_comparison(input_csv, model_a_path, model_b_path):
 
     stem = os.path.splitext(os.path.basename(input_csv))[0]
     run_dir = os.path.dirname(input_csv)
-    tvds_data_dir = os.path.join(ROOT_DIR, "TrafficVision Design System", "data")
+    tvds_data_dir = os.path.join(ROOT_DIR, "dashboard", "data")
 
     results = {}
     for label, model_path in [("model_a", model_a_path), ("model_b", model_b_path)]:

@@ -12,7 +12,7 @@ React / ReactDOM / Babel / Leaflet 走 CDN（已加 SRI 完整性檢核），在
 ## 啟動
 
 ```bash
-python "TrafficVision Design System/serve_api.py"
+python "dashboard/serve_api.py"
 # 瀏覽器開 http://localhost:8000/  （會自動導向 dashboard.html）
 ```
 

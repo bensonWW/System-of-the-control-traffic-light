@@ -5,7 +5,7 @@ import pandas as pd
 
 _TOOLS_DIR      = os.path.dirname(os.path.abspath(__file__))
 _ROOT_DIR       = os.path.dirname(_TOOLS_DIR)
-_EDGE_HEATMAP   = os.path.join(_ROOT_DIR, "TrafficVision Design System", "data", "edge_heatmap.json")
+_EDGE_HEATMAP   = os.path.join(_ROOT_DIR, "dashboard", "data", "edge_heatmap.json")
 
 
 def export_handoff_outputs(prediction_result, strategy_result, handoff_dir=None):

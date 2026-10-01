@@ -580,7 +580,7 @@ def get_health():
     """深度健康檢查 — 給 dashboard / ops 用。
 
     回傳每個資料源的「上次更新何時、距現在幾秒」：
-      vd            ← TrafficVision Design System/data/trafficData/*.json
+      vd            ← dashboard/data/trafficData/*.json
       predict       ← runtime_pipeline 的 *_predict.csv
       handoff       ← 整個 handoff/ 目錄
       pipeline_lock ← runtime_pipeline scheduler 是否在跑

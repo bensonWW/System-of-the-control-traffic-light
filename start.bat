@@ -7,7 +7,7 @@ echo  TrafficVision - Local Startup
 echo ============================================
 echo.
 echo [1/2] Starting FastAPI backend (port 8000)...
-start "TrafficVision API" cmd /k python "%~dp0TrafficVision Design System\serve_api.py"
+start "TrafficVision API" cmd /k python "%~dp0dashboard\serve_api.py"
 
 timeout /t 3 /nobreak >nul
 
@@ -19,5 +19,5 @@ echo Two windows opened:
 echo   - TrafficVision API      http://localhost:8000/api/status
 echo   - TrafficVision Pipeline runs every 5 minutes
 echo.
-echo Dashboard: open TrafficVision Design System\ui_kits\traffic-dashboard\dashboard.html
+echo Dashboard: open dashboard\ui_kits\traffic-dashboard\dashboard.html
 pause

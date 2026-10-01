@@ -354,7 +354,7 @@ def _run_once_locked(model_path=None):
             raise
 
     _log("Step 4/4: 生成邊道熱力圖 JSON")
-    tvds_data_dir = os.path.join(ROOT_DIR, "TrafficVision Design System", "data")
+    tvds_data_dir = os.path.join(ROOT_DIR, "dashboard", "data")
     edge_heatmap_out = os.path.join(tvds_data_dir, "edge_heatmap.json")
     net_file = os.path.join(DATA_DIR, "ntut_network_split.net.xml")
     rou_file = os.path.join(DATA_DIR, "final_output.rou.alt.xml")

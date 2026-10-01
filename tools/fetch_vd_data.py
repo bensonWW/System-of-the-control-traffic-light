@@ -11,7 +11,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 ROOT = Path(__file__).parent.parent
-TRAFFIC_DIR = ROOT / "TrafficVision Design System" / "data" / "trafficData"
+TRAFFIC_DIR = ROOT / "dashboard" / "data" / "trafficData"
 TRAFFIC_DIR.mkdir(parents=True, exist_ok=True)
 
 NTUT_PREFIXES = ["忠孝東路", "八德路", "市民大道", "建國北路", "建國南路", "新生南路", "新生北路", "松江路"]

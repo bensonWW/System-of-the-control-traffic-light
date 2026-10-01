@@ -195,7 +195,7 @@ head -3 data/runtime_data/<latest>/traffic_data_*.csv
 ```bash
 python -c "
 import json
-with open('TrafficVision Design System/data/edge_heatmap_baseline.json') as f:
+with open('dashboard/data/edge_heatmap_baseline.json') as f:
     d = json.load(f)
 print('speed_source:', d.get('meta', {}).get('speed_source'))
 sample = next(iter(d['edges'].values()))

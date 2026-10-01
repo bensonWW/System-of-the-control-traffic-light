@@ -24,8 +24,8 @@ _ROOT = os.path.dirname(_BASE)
 _DEFAULT_NET_FILE  = os.path.join(_ROOT, 'data', 'ntut_network_split.net copy.xml')
 _DEFAULT_ROU_FILE  = os.path.join(_ROOT, 'data', 'final_output.rou.alt.xml')
 _DEFAULT_EDGE_FILE = os.path.join(_ROOT, 'data', 'edgedata_output.xml')
-_DEFAULT_OUT_FILE  = os.path.join(_ROOT, 'TrafficVision Design System', 'data', 'edge_heatmap.json')
-_DEFAULT_VD_DIR    = os.path.join(_ROOT, 'TrafficVision Design System', 'data', 'trafficData')
+_DEFAULT_OUT_FILE  = os.path.join(_ROOT, 'dashboard', 'data', 'edge_heatmap.json')
+_DEFAULT_VD_DIR    = os.path.join(_ROOT, 'dashboard', 'data', 'trafficData')
 
 # 顯示用車流量縮放倍數（模擬累積車流量偏大時除以此值；VD 真實車流不受影響）
 VOL_SCALE = 3

@@ -273,7 +273,7 @@ python tools/runtime_pipeline.py --once
 
 ### 5.4 前端 API
 ```bash
-python "TrafficVision Design System/serve_api.py"
+python "dashboard/serve_api.py"
 ```
 - [ ] `GET /api/prediction` 回傳有 records（非空）
 - [ ] `GET /api/edge-heatmap` 回傳有 edges
@@ -328,8 +328,8 @@ git checkout tools/predict_to_csv.py
 - `tools/traffic_optimizer_io.py`
 - `tools/traffic_optimizer_signal.py`
 - `tools/export_handoff.py`
-- `TrafficVision Design System/serve_api.py`
-- `TrafficVision Design System/ui_kits/traffic-dashboard/dashboard.html`
+- `dashboard/serve_api.py`
+- `dashboard/ui_kits/traffic-dashboard/dashboard.html`
 - `train_model.py`（已是新版）
 
 ---
