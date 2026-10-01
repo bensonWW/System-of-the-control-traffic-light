@@ -21,9 +21,9 @@ Taipei City VD API → src/fetch_vd_data.py
 ```
 src/grabapi.py (VD API)
   → src/convertToRou.py + duarouter  (route generation)
-  → VehicleData.py (SUMO batch simulation, 16 workers)
+  → training/VehicleData.py (SUMO batch simulation, 16 workers)
   → data/simulation_data/*.csv
-  → train_model.py  (offline: GRU model training → gru_traffic_model.pth)
+  → training/train_model.py  (offline: GRU model training → models/gru_traffic_model*.pth)
   → src/runtime_pipeline.py:
       Step 1: src/main.py (grab + route gen)
       Step 2: SUMO simulation → CSV
@@ -40,6 +40,22 @@ src/grabapi.py (VD API)
 - `training/generate_finetune_dataset.py` → `data/finetune_dataset.jsonl`
 - `training/finetune_gemma.py` (Unsloth + TRL) → `training/export_to_gguf.py`
 
+## Repository Layout
+
+| Path | Role |
+|------|------|
+| `dashboard/` | FastAPI server (`serve_api.py`) + frontend (`ui_kits/`), internal layout unchanged |
+| `src/` | Runtime pipeline + SUMO route modules (plain `import x` between them — keep together) |
+| `training/` | GRU training/eval, `VehicleData.py`, LLM fine-tune + GGUF export |
+| `analysis/` | Paper experiment scripts writing `data/analysis/*` |
+| `scripts/dev/` | One-off dev utilities |
+| `tests/` | Unit tests (`python -m pytest tests`) |
+| `models/` | Model weights (`*.pth`, GGUF; contents gitignored) |
+| `data/` | SUMO network/config and analysis outputs |
+| `docs/`, `docs/paper/` | Design/handoff notes; paper drafts |
+
+Run every script from the repo root (several use `./data/...` relative paths).
+
 ## Key Files
 
 | File | Role |
@@ -49,10 +65,10 @@ src/grabapi.py (VD API)
 | `src/traffic_light_optimizer.py` | Core signal-timing strategy; evaluates multiple strategies via SUMO |
 | `src/traffic_optimizer_signal.py` | Builds phase-override XML (`add.xml`) written to SUMO |
 | `src/traffic_optimizer_io.py` | SUMO I/O helpers (config creation, simulation runner, stats parsing) |
-| `src/predict_to_csv.py` | Loads `gru_traffic_model.pth`, produces prediction CSV |
+| `src/predict_to_csv.py` | Loads `models/gru_traffic_model*.pth`, produces prediction CSV |
 | `src/export_handoff.py` | Copies all outputs into `handoff/` with a manifest CSV |
-| `train_model.py` | GRU model training (offline, run once after collecting simulation data) |
-| `VehicleData.py` | Batch SUMO simulation with 16 parallel processes; requires `SUMO_HOME` |
+| `training/train_model.py` | GRU model training (offline, run once after collecting simulation data) |
+| `training/VehicleData.py` | Batch SUMO simulation with 16 parallel processes; requires `SUMO_HOME` |
 | `dashboard/serve_api.py` | FastAPI app; also embeds a TraCI WebSocket streaming endpoint |
 
 ## Common Commands
@@ -84,7 +100,7 @@ python src/runtime_pipeline.py --once --model-path path/to/model.pth
 ### Train the GRU model
 ```bash
 python training/train_model.py
-# Reads from data/simulation_data/  →  writes gru_traffic_model.pth
+# Reads from data/simulation_data/  →  writes models/gru_traffic_model_pair_v2.pth
 ```
 
 ### Evaluate the model
@@ -118,20 +134,20 @@ python training/export_to_gguf.py             # exports to GGUF for Ollama
 
 | Path | Contents |
 |------|----------|
-| `data/VehicleData/` | SUMO route files (input to `VehicleData.py`) |
+| `data/VehicleData/` | SUMO route files (input to `training/VehicleData.py`) |
 | `data/simulation_data/` | Per-run CSVs from batch simulation (training data) |
 | `data/runtime_data/<stem>/handoff/` | Live pipeline outputs consumed by the API |
 | `dashboard/data/trafficData/` | Real-world VD JSON snapshots |
 
 ## Environment Requirements
 
-- **SUMO_HOME** must be set to run `VehicleData.py` or any code that imports `traci`/`sumolib`.
+- **SUMO_HOME** must be set to run `training/VehicleData.py` or any code that imports `traci`/`sumolib`.
 - The API container does **not** need SUMO — it only reads files produced by the pipeline.
 - Ollama service must be running at `http://localhost:11434` (or `$OLLAMA_BASE_URL`) for LLM features.
 
 ## Model Details
 
-`gru_traffic_model.pth` is a PyTorch checkpoint containing `model_state_dict`, `edge_ids`, `scaler` (Log1p), and a `config` dict. The `GRUSequence` and `Log1pScaler` class definitions must be re-declared when loading the checkpoint outside `train_model.py` — see `test_model.py:register_legacy_checkpoint_classes()`.
+`models/gru_traffic_model.pth` (and the `_pair` / `_pair_v2` variants) is a PyTorch checkpoint containing `model_state_dict`, `edge_ids`, `scaler` (Log1p), and a `config` dict. The `GRUSequence` and `Log1pScaler` class definitions must be re-declared when loading the checkpoint outside `training/train_model.py` — see `training/test_model.py:register_legacy_checkpoint_classes()`.
 
 - Input: 15 timesteps × (num_edges + 2 time features), 20 s per step
 - Output: 15-step sequence (5 min horizon) per edge
@@ -197,7 +213,7 @@ Added in this stabilization round; defaults preserve original behavior.
 
 | Env var | Default | Effect | Where |
 |---------|---------|--------|-------|
-| `TRAFFICVISION_VD_WORKERS` | `min(16, cpu_count())` | SUMO batch sim worker pool | `VehicleData.py` |
+| `TRAFFICVISION_VD_WORKERS` | `min(16, cpu_count())` | SUMO batch sim worker pool | `training/VehicleData.py` |
 | `TRAFFICVISION_STRATEGY_TIMEOUT` | `300` | Per-strategy SUMO eval budget (s) | `src/traffic_light_optimizer.py` |
 | `TRAFFICVISION_MIN_YELLOW` | `3.0` | Min yellow phase duration (SUMO physics floor) | `src/traffic_optimizer_signal.py` |
 | `TRAFFICVISION_MIN_ALL_RED` | `1.0` | Min all-red clearance | same |

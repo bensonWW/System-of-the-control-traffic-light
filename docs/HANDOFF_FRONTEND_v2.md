@@ -125,7 +125,7 @@ predRecords.records.forEach(r => {
 
 ```bash
 # 方案 1: 臨時用 v1 跑一次
-python src/runtime_pipeline.py --once --model-path gru_traffic_model_pair.pth
+python src/runtime_pipeline.py --once --model-path models/gru_traffic_model_pair.pth
 
 # 方案 2: 永久切回 v1 - 把這 3 處預設改成 "gru_traffic_model_pair.pth":
 #   src/predict_to_csv.py  L73     DEFAULT_MODEL_PATH

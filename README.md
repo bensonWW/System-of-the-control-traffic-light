@@ -10,7 +10,7 @@
 |------|------|------|
 | FastAPI 後端 | ✅ 完成 | 所有 REST 端點 + WebSocket 模擬串流 |
 | 前端儀表板 | ✅ 完成 | React + Leaflet 熱力圖 + LLM 聊天面板，`GET /` 直接可用 |
-| GRU 預測模型 | ✅ 完成 | 已訓練，`gru_traffic_model.pth`（需手動複製至新電腦） |
+| GRU 預測模型 | ✅ 完成 | 已訓練，`models/gru_traffic_model.pth`（需手動複製至新電腦） |
 | 號誌優化引擎 | ✅ 完成 | 5 策略並行評估，composite score 選最佳 |
 | 資料集生成 | ✅ 完成 | 從 100 個 traffic JSON + 20 個 handoff 目錄生成 ~28k 筆 Q&A |
 | LLM 微調 | ⏳ **待新電腦執行** | A2000 12GB，約 1–2 小時 |
@@ -27,9 +27,9 @@ Taipei VD API ──────────────────────
                                              serve_api.py /api/traffic
                                                                │
 src/grabapi.py → convertToRou.py → duarouter                 │
-  → VehicleData.py (SUMO × 16 workers)                        │
+  → training/VehicleData.py (SUMO × 16 workers)      │
   → data/simulation_data/*.csv                                 │
-  → train_model.py → gru_traffic_model.pth                     │
+  → training/train_model.py → models/gru_traffic_model*.pth │
   → src/runtime_pipeline.py:                                 │
       1. route 生成                                            │
       2. SUMO 模擬 → CSV                                      │
@@ -67,7 +67,7 @@ python --version    # 需要 3.11+
 
 | 檔案 / 目錄 | 用途 | 備註 |
 |---|---|---|
-| `gru_traffic_model.pth` | GRU 預測模型（API pipeline 用） | 必要 |
+| `models/gru_traffic_model*.pth` | GRU 預測模型（API pipeline 用） | 必要 |
 | `data/simulation_data/` | SUMO 模擬訓練資料 | 只需重訓 GRU 時才複製 |
 | `dashboard/data/trafficData/` | 歷史 VD 快取 | 選填，API 啟動後會自動補抓 |
 
@@ -210,30 +210,57 @@ pip install -r "$HOME\.unsloth\llama.cpp\requirements.txt"
 ## 專案結構
 
 ```
-├── dashboard/
-│   ├── serve_api.py                         ← FastAPI 主程式（含靜態文件服務）
-│   ├── ui_kits/traffic-dashboard/index.html ← 儀表板（GET /）
+├── README.md  AGENTS.md  CLAUDE.md          ← 專案說明與 AI 助理指引
+├── Dockerfile  docker-compose.yml           ← API 容器（python:3.11-slim，無 SUMO）＋ Ollama
+├── requirements.txt                         ← API／pipeline 執行期依賴
+├── requirements-training.txt                ← LLM 微調依賴（GPU 環境）
+├── start.bat  start.ps1                     ← Windows 本機一鍵啟動（API + pipeline）
+├── .env.example  .dockerignore  .gitignore
+├── dashboard/                               ← FastAPI 後端 + 前端儀表板（原 "TrafficVision Design System"）
+│   ├── serve_api.py                         ← FastAPI 主程式（REST、WebSocket、靜態檔）
+│   ├── ui_kits/traffic-dashboard/dashboard.html ← 儀表板（GET /）
+│   ├── preview/  colors_and_type.css        ← 設計系統預覽與樣式 token
 │   └── data/
 │       ├── trafficData/      ← VD 快取 JSON（gitignore，API 自動更新）
-│       └── edge_heatmap.json ← 路段熱力圖（gitignore，pipeline 生成）
-├── tools/
-│   ├── runtime_pipeline.py          ← 主排程器（grab→simulate→predict→handoff）
-│   ├── generate_finetune_dataset.py ← 生成 LLM 訓練資料（100 個 JSON）
-│   ├── finetune_gemma.py            ← Gemma 4 LoRA 微調（GPU）
-│   └── export_to_gguf.py            ← 匯出 GGUF + 自動匯入 Ollama
-├── models/
-│   ├── trafficvision-gemma4/         ← LoRA adapters（gitignore）
-│   ├── trafficvision-gemma4-merged/  ← 合併 fp16（gitignore，微調後可刪）
-│   └── gguf/
-│       ├── trafficvision-gemma4-q8_0.gguf ← 量化模型（gitignore）
-│       └── Modelfile                       ← Ollama 設定（temperature=0.2, ctx=8192）
-├── data/
-│   ├── simulation_data/  ← SUMO 模擬輸出（gitignore）
-│   └── runtime_data/     ← Pipeline 執行結果（gitignore）
-├── gru_traffic_model.pth ← GRU 模型（gitignore，需手動複製）
-├── train_model.py        ← GRU 離線訓練
-├── docker-compose.yml    ← ollama + api 兩個服務
-├── Dockerfile            ← API 容器（python:3.11-slim，無 SUMO）
-├── requirements.txt      ← API 容器依賴
-└── requirements-training.txt ← 微調依賴（GPU 環境）
+│       └── edge_heatmap*.json ← 路段熱力圖（pipeline 生成）
+├── src/                                     ← 執行期 pipeline 與 SUMO 路網／路徑模組（彼此以 import 互相引用，須同目錄）
+│   ├── runtime_pipeline.py  ← 主排程器（grab→simulate→predict→handoff）
+│   ├── predict_main.py  predict_to_csv.py  ← GRU 推論
+│   ├── traffic_light_optimizer.py  traffic_optimizer_io.py  traffic_optimizer_signal.py ← 號誌優化
+│   ├── export_handoff.py  generate_edge_traffic.py  generate_edge_heatmap.py ← 輸出給 API 的成品
+│   ├── fetch_vd_data.py  grabapi.py ← 台北市 VD API 擷取
+│   ├── main.py  convertToRou.py  selectRoad.py  fixRoadData.py  searchnetdata.py  connections_out.py ← 路網／路徑資料處理
+│   └── compare_models.py    ← 兩個 GRU 模型的 pipeline 結果比較（匯入 predict_main，故置於 src/）
+├── training/                                ← 離線訓練與 LLM 微調
+│   ├── train_model.py  test_model.py  eval_speed_holdout.py ← GRU 訓練／評估
+│   ├── VehicleData.py       ← SUMO 批次模擬（產生訓練資料）
+│   ├── generate_finetune_dataset.py  finetune_gemma.py ← Gemma 4 LoRA 微調（GPU）
+│   ├── export_to_gguf.py  export_to_gguf.sh  init_ollama.sh ← GGUF 匯出與匯入 Ollama
+│   └── train_requirements.txt ← GRU 訓練依賴
+├── analysis/                                ← 論文實驗腳本（輸出至 data/analysis/）
+│   └── da1_ablation.py  da1_congestion_stratified.py  maxpressure_baseline.py  sensitivity_analysis.py
+├── scripts/dev/                             ← 一次性開發小工具（_check_encoding、_check_vd、_merge_docx）
+├── tests/                                   ← 單元測試（pytest / unittest）
+├── data/                                    ← SUMO 路網、設定與分析輸出
+│   ├── simulation_data/  runtime_data/      ← 模擬／pipeline 輸出（gitignore）
+│   └── analysis/                            ← 論文分析結果 CSV／圖
+├── models/                                  ← 模型權重（內容 gitignore，僅追蹤 .gitkeep）
+│   ├── gru_traffic_model*.pth               ← GRU 權重（需手動複製）
+│   ├── trafficvision-gemma4/                ← LoRA adapters
+│   └── gguf/                                ← 量化模型與 Ollama Modelfile
+└── docs/                                    ← 文件
+    ├── CHAPTER_PLAN.md  HANDOFF_FRONTEND_v2.md  INTEGRATION_*.md ← 規劃與整合筆記
+    ├── Training_Explanation.md  Testing_Explanation.md  VehicleData_Explain.md ← 程式解析
+    └── paper/                               ← 論文草稿、修訂回覆、原稿 PDF
+```
+
+### 常用指令（皆自 repo 根目錄執行）
+
+```powershell
+python dashboard/serve_api.py                   # 啟動 API（http://localhost:8000）
+python src/runtime_pipeline.py --once           # 執行一次 pipeline（需 SUMO_HOME）
+python training/train_model.py                  # 訓練 GRU（讀 data/simulation_data/，寫 models/）
+python training/test_model.py                   # 評估 GRU（讀 data/simulation_data_check/）
+python analysis/sensitivity_analysis.py         # 重現論文敏感度分析
+python -m pytest tests                          # 單元測試
 ```
